@@ -91,7 +91,9 @@ purchase; its items are many and small, so the ceiling is the throttle.
 Publishes `HacknetStatus` on `STATUS_PORTS.hacknet`, including the resolved
 upgrade name, its target and where the target came from (`spendTarget` or the
 hack daemon), and a `spendBlocked` reason when spending is skipped. The status
-also carries `skippedForPayback`, `bestPaybackSec` and `paybackHorizon`, and
+also carries `cashPerSec` (hash rate at the sell rate under the `money`
+strategy, 0 otherwise; the budget daemon sums it into its income estimate),
+`skippedForPayback`, `bestPaybackSec` and `paybackHorizon`, and
 the Hacknet tab shows "Waiting: best payback X > Y horizon" when the ceiling
 stopped every purchase this tick; `nextTarget` is the best candidate the ceiling
 allows. Dashboard:

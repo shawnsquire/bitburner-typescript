@@ -20,6 +20,11 @@ import {
   selectGoal,
   computeReserve,
   isGranted,
+  sumProducerIncome,
+  updateCashTrend,
+  goalEtaSeconds,
+  isGoalFeasible,
+  CASH_TREND_TAU_SEC,
   applyStocks4SWeight,
   DEFAULT_STOCKS_WEIGHT_4S,
 } from "/controllers/budget";
@@ -236,7 +241,7 @@ describe("selectGoal", () => {
 
   it("picks the cheapest pending item", () => {
     const goal = selectGoal({ home: item(1e9, "RAM"), programs: item(250e6, "SQLInject.exe"), servers: item(4e9) }, ew);
-    expect(goal).toEqual({ bucket: "programs", label: "SQLInject.exe", cost: 250e6 });
+    expect(goal).toEqual({ bucket: "programs", label: "SQLInject.exe", cost: 250e6, etaSec: 0 });
   });
 
   it("ignores buckets whose effective weight is zero (done, frozen, released)", () => {
@@ -265,10 +270,96 @@ describe("selectGoal", () => {
   it("breaks ties by bucket name", () => {
     expect(selectGoal({ programs: item(5), home: item(5) }, ew)?.bucket).toBe("home");
   });
+
+  describe("with feasibility", () => {
+    // 87m cash, 10m/s income, share 50, horizon 2h: a 250m item is 413m away (41 s),
+    // a 15.8t home upgrade is 31.6t away (36 days).
+    const feas = { cash: 87e6, reserveShare: 50, incomePerSec: 10e6, goalHorizon: 7200 };
+
+    it("skips an item whose ETA exceeds the horizon and takes the next cheapest", () => {
+      const goal = selectGoal({ home: item(15.8e12, "Home RAM"), programs: item(250e6, "SQLInject.exe") }, ew, feas);
+      expect(goal?.bucket).toBe("programs");
+      expect(goal?.etaSec).toBeCloseTo((500e6 - 87e6) / 10e6, 6);
+    });
+
+    it("returns null when nothing is feasible", () => {
+      expect(selectGoal({ home: item(15.8e12) }, ew, feas)).toBeNull();
+    });
+
+    it("always accepts an item already at its grant point, even with zero income", () => {
+      const goal = selectGoal({ programs: item(40e6) }, ew, { ...feas, incomePerSec: 0 });
+      expect(goal?.bucket).toBe("programs");
+      expect(goal?.etaSec).toBe(0);
+    });
+
+    it("skips every unreached item when income is zero", () => {
+      expect(selectGoal({ programs: item(250e6) }, ew, { ...feas, incomePerSec: 0 })).toBeNull();
+    });
+
+    it("disables the check when the horizon is 0", () => {
+      expect(selectGoal({ home: item(15.8e12) }, ew, { ...feas, goalHorizon: 0 })?.bucket).toBe("home");
+    });
+  });
+});
+
+describe("sumProducerIncome", () => {
+  it("sums finite rates and names the sources that counted", () => {
+    const r = sumProducerIncome({ hack: 5, hacknet: 3, gang: null, stocks: undefined });
+    expect(r.total).toBe(8);
+    expect(r.sources).toEqual(["hack", "hacknet"]);
+  });
+
+  it("reports no sources when nothing is publishing", () => {
+    expect(sumProducerIncome({ hack: null, hacknet: undefined, gang: NaN })).toEqual({ total: 0, sources: [] });
+  });
+
+  it("clamps a net negative total (stock losses) at 0", () => {
+    expect(sumProducerIncome({ hack: 2, stocks: -5 }).total).toBe(0);
+  });
+});
+
+describe("updateCashTrend", () => {
+  it("seeds from the first sample", () => {
+    expect(updateCashTrend(null, 20, 0, 2)).toBe(10);
+  });
+
+  it("adds spender purchases back and moves toward the sample with the tau", () => {
+    const next = updateCashTrend(10, 0, 40, 2); // sample 20/s
+    const alpha = 1 - Math.exp(-2 / CASH_TREND_TAU_SEC);
+    expect(next).toBeCloseTo(10 + alpha * 10, 12);
+  });
+
+  it("is unchanged without elapsed time", () => {
+    expect(updateCashTrend(10, 100, 0, 0)).toBe(10);
+    expect(updateCashTrend(null, 100, 0, 0)).toBe(0);
+  });
+});
+
+describe("goalEtaSeconds and isGoalFeasible", () => {
+  it("is 0 once cash covers the grant point", () => {
+    expect(goalEtaSeconds(500e6, 250e6, 50, 0)).toBe(0);
+    expect(goalEtaSeconds(600e6, 250e6, 50, 1)).toBe(0);
+  });
+
+  it("divides the gap to the grant point by income", () => {
+    expect(goalEtaSeconds(100e6, 250e6, 50, 10e6)).toBe(40);
+  });
+
+  it("is Infinity without income or with share 0", () => {
+    expect(goalEtaSeconds(100e6, 250e6, 50, 0)).toBe(Infinity);
+    expect(goalEtaSeconds(100e6, 250e6, 0, 10e6)).toBe(Infinity);
+  });
+
+  it("feasibility honours the horizon and 0 disables it", () => {
+    expect(isGoalFeasible(7200, 7200)).toBe(true);
+    expect(isGoalFeasible(7201, 7200)).toBe(false);
+    expect(isGoalFeasible(Infinity, 7200)).toBe(false);
+    expect(isGoalFeasible(Infinity, 0)).toBe(true);
+  });
 });
 
 describe("computeReserve and isGranted", () => {
-  const goal = { bucket: "programs", label: "SQLInject.exe", cost: 250e6 };
+  const goal = { bucket: "programs", label: "SQLInject.exe", cost: 250e6, etaSec: 0 };
 
   it("reserves the share of cash below the price and caps at the price above it", () => {
     expect(computeReserve(226e6, goal, 50)).toBe(113e6);
@@ -296,7 +387,7 @@ describe("computeAllowances with a savings goal", () => {
   const weights = { ...DEFAULT_WEIGHTS, hacknet: 15, home: 10, programs: 5, stocks: 40 };
   const activeFlags = Object.fromEntries(Object.keys(weights).map(b => [b, true]));
   const holdings = { portfolioValue: 99e6, corpFunds: 0 };
-  const goal = { bucket: "programs", label: "SQLInject.exe", cost: 250e6 };
+  const goal = { bucket: "programs", label: "SQLInject.exe", cost: 250e6, etaSec: 0 };
 
   function plan(cash: number) {
     return { goal, reserve: computeReserve(cash, goal, 50) };

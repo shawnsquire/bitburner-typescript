@@ -15,6 +15,7 @@ import { BucketState } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
+import { formatTime } from "lib/utils";
 import {
   rushBudgetBucket,
   cancelBudgetRush,
@@ -206,6 +207,16 @@ function BudgetDetailPanel({
             <span style={styles.statLabel}>NW: </span>
             <span style={{ color: "#00ff00", fontWeight: "bold" }}>{status.netWorthFormatted}</span>
           </span>
+          {status.incomePerSecFormatted && (
+            <>
+              <span style={styles.dim}>|</span>
+              <span>
+                <span style={styles.statLabel}>Income: </span>
+                <span style={{ color: "#88ff88" }}>{status.incomePerSecFormatted}</span>
+                <span style={styles.dim}> ({status.incomeSource})</span>
+              </span>
+            </>
+          )}
           {status.rushBucket && (
             <>
               <span style={styles.dim}>|</span>
@@ -223,8 +234,12 @@ function BudgetDetailPanel({
           <div style={{ fontSize: "12px", marginBottom: "4px" }}>
             <span style={{ color: getBarColor(status.goal.bucket), fontWeight: "bold" }}>{status.goal.label}</span>
             <span style={styles.dim}> ({status.goal.bucket})</span>
-            {status.goal.granted && (
+            {status.goal.granted ? (
               <span style={{ color: "#00ff00", marginLeft: "8px" }}>GRANTED</span>
+            ) : (
+              <span style={{ color: "#aaa", marginLeft: "8px" }}>
+                ETA {status.goal.etaSec !== undefined && isFinite(status.goal.etaSec) ? formatTime(status.goal.etaSec) : "unknown"}
+              </span>
             )}
           </div>
           <ProgressBar

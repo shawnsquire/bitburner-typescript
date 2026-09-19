@@ -1054,7 +1054,11 @@ export interface BudgetGoal {
   /** reserved / cost, clamped to 0..1 */
   progress: number;
   granted: boolean;
+  /** Seconds until cash reaches the grant point at the estimated income; 0 when granted. */
+  etaSec: number;
 }
+
+export type BudgetIncomeSource = "producers" | "cash-trend";
 
 export interface BudgetStatus {
   totalCash: number;
@@ -1068,6 +1072,12 @@ export interface BudgetStatus {
   buckets: Record<string, BucketState>;
   rushBucket: string | null;
   goal: BudgetGoal | null;
+  /** Estimated cash income used for goal feasibility, and where it came from. */
+  incomePerSec: number;
+  incomePerSecFormatted: string;
+  incomeSource: BudgetIncomeSource;
+  /** Max seconds to save for one goal (config goalHorizon); 0 = disabled. */
+  goalHorizon: number;
   /** Max seconds an upgrade may take to pay for itself (config paybackHorizon); 0 = disabled. */
   paybackHorizon: number;
   lastUpdated: number;
@@ -1505,6 +1515,8 @@ export interface HacknetStatus {
   hashUtilization: number; // 0-1
   totalProduction: number;
   totalProductionFormatted: string;
+  /** Cash per second: hash rate at the sell rate under the `money` strategy, 0 otherwise. */
+  cashPerSec: number;
 
   // Costs
   nextNodeCost: number | null;

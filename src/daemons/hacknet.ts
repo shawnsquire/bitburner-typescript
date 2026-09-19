@@ -547,6 +547,7 @@ export async function main(ns: NS): Promise<void> {
       hashCapacity,
       hashUtilization: hashCapacity > 0 ? updatedHashes / hashCapacity : 0,
       totalProduction,
+      cashPerSec: spendStrategy === "money" ? totalHashRate * MONEY_PER_HASH : 0,
       totalProductionFormatted: ns.format.number(totalProduction),
 
       nextNodeCost: updatedNextNodeCost,

@@ -18,6 +18,10 @@ import {
   BudgetControlMessage,
   StocksStatus,
   CorpStatus,
+  HackStatus,
+  GangStatus,
+  HacknetStatus,
+  BudgetIncomeSource,
 } from "/types/ports";
 import {
   DEFAULT_WEIGHTS,
@@ -40,7 +44,12 @@ import {
   selectGoal,
   computeReserve,
   isGranted,
+  HOLDER_BUCKETS,
+  DEFAULT_GOAL_HORIZON,
+  sumProducerIncome,
+  updateCashTrend,
 } from "/controllers/budget";
+import { formatTime } from "/lib/utils";
 
 const C = COLORS;
 const BALANCE_FILE = "/data/budget-balances.json";
@@ -58,6 +67,9 @@ let state: PersistedBudgetState;
 let prevCash = 0;
 /** Next purchase per bucket (reportNext). Memory only: consumers re-report every cycle. */
 let pending: Record<string, PendingItem> = {};
+/** Cash-trend income estimate (EMA, $/s), the fallback when no producer publishes a rate. */
+let cashTrend: number | null = null;
+let lastTickAt = 0;
 
 // === PERSISTENCE ===
 
@@ -103,9 +115,13 @@ function saveState(ns: NS): void {
 
 // === CONTROL PORT ===
 
-/** Drain control port, returning total spending from "purchased" messages. */
-function drainControlPort(ns: NS): number {
-  let spending = 0;
+/**
+ * Drain control port, returning spending from "purchased" messages: `total` for aug-reset
+ * detection, `spenders` (holders excluded) for the cash-trend income estimate.
+ */
+function drainControlPort(ns: NS): { total: number; spenders: number } {
+  let total = 0;
+  let spenders = 0;
   const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
   while (!port.empty()) {
     const data = port.read();
@@ -113,14 +129,34 @@ function drainControlPort(ns: NS): number {
     try {
       const msg = JSON.parse(data as string) as BudgetControlMessage;
       if (msg.action === "purchased" && msg.amount && msg.amount > 0) {
-        spending += msg.amount;
+        total += msg.amount;
+        if (!HOLDER_BUCKETS.has(msg.bucket)) spenders += msg.amount;
       }
       handleMessage(ns, msg);
     } catch {
       // Invalid message, skip
     }
   }
-  return spending;
+  return { total, spenders };
+}
+
+/**
+ * Cash income per second for goal feasibility: the sum of what the producer daemons
+ * publish (hack, hacknet, gang, stocks), or the cash-trend EMA when none is publishing.
+ */
+function readIncome(ns: NS): { incomePerSec: number; source: BudgetIncomeSource } {
+  const hack = peekStatus<HackStatus>(ns, STATUS_PORTS.hack, 30_000);
+  const hacknet = peekStatus<HacknetStatus>(ns, STATUS_PORTS.hacknet, 30_000);
+  const gang = peekStatus<GangStatus>(ns, STATUS_PORTS.gang, 30_000);
+  const stocks = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, 30_000);
+  const producers = sumProducerIncome({
+    hack: hack?.incomePerSec,
+    hacknet: hacknet?.cashPerSec,
+    gang: gang?.moneyGainRate,
+    stocks: stocks?.profitPerSec,
+  });
+  if (producers.sources.length > 0) return { incomePerSec: producers.total, source: "producers" };
+  return { incomePerSec: Math.max(0, cashTrend ?? 0), source: "cash-trend" };
 }
 
 function handleMessage(ns: NS, msg: BudgetControlMessage): void {
@@ -276,6 +312,7 @@ async function daemon(ns: NS): Promise<void> {
     interval: "2000",
     reserveShare: String(DEFAULT_RESERVE_SHARE),
     paybackHorizon: String(DEFAULT_PAYBACK_HORIZON),
+    goalHorizon: String(DEFAULT_GOAL_HORIZON),
     stocksWeight4S: String(DEFAULT_STOCKS_WEIGHT_4S),
   });
 
@@ -296,7 +333,7 @@ async function daemon(ns: NS): Promise<void> {
 
   // Drain any pending purchases before aug-reset check — spending that happened
   // while we were down explains the cash drop and shouldn't trigger a false reset.
-  const startupSpending = drainControlPort(ns);
+  const startupSpending = drainControlPort(ns).total;
 
   if (isAugReset(prevCash, currentCash + startupSpending)) {
     ns.print(`  ${C.yellow}AUG RESET DETECTED (startup)${C.reset} — zeroing lifetime spent`);
@@ -317,7 +354,8 @@ async function daemon(ns: NS): Promise<void> {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     // 1. Drain control port + check persistent done markers
-    const tickSpending = drainControlPort(ns);
+    const spending = drainControlPort(ns);
+    const tickSpending = spending.total;
     checkDoneMarkers(ns);
 
     // 2. Get current cash
@@ -328,6 +366,8 @@ async function daemon(ns: NS): Promise<void> {
     // cash drop and shouldn't trigger a false reset. In a real aug reset the
     // game clears all ports, so tickSpending is 0 and the check still fires.
     if (isAugReset(prevCash, currentCash + tickSpending)) {
+      cashTrend = null;
+      lastTickAt = 0;
       ns.print(`  ${C.yellow}AUG RESET DETECTED${C.reset} — zeroing lifetime spent`);
       for (const bucket of Object.keys(state.weights)) {
         state.lifetimeSpent[bucket] = 0;
@@ -350,6 +390,14 @@ async function daemon(ns: NS): Promise<void> {
     //    into a per-tick copy, so it can never go stale or be cleared by a stray message.
     const now = Date.now();
     pending = prunePending(pending, now);
+
+    //    Income estimate for feasibility. The cash trend is kept warm every tick so the
+    //    fallback is ready the moment the producers stop publishing.
+    if (lastTickAt > 0) {
+      cashTrend = updateCashTrend(cashTrend, currentCash - prevCash, spending.spenders, (now - lastTickAt) / 1000);
+    }
+    lastTickAt = now;
+    const income = readIncome(ns);
     const candidates: Record<string, PendingItem> = { ...pending };
     if (holdings.pendingWseCost > 0) {
       candidates[WSE_ACCESS_BUCKET] = {
@@ -362,6 +410,7 @@ async function daemon(ns: NS): Promise<void> {
     }
     const reserveShare = getConfigNumber(ns, "budget", "reserveShare", DEFAULT_RESERVE_SHARE);
     const paybackHorizon = getConfigNumber(ns, "budget", "paybackHorizon", DEFAULT_PAYBACK_HORIZON);
+    const goalHorizon = getConfigNumber(ns, "budget", "goalHorizon", DEFAULT_GOAL_HORIZON);
 
     //    With 4S data the stocks bucket is lifted to stocksWeight4S percent of net worth
     //    (applyStocks4SWeight never lowers a weight and leaves a zero/frozen one alone).
@@ -372,7 +421,11 @@ async function daemon(ns: NS): Promise<void> {
     //    granted the full price once the reserve covers it (see docs/systems/budget.md).
     const effectiveWeights = computeEffectiveWeights(weights, state.activeFlags, state.rushBucket);
     const rushActive = state.rushBucket !== null && !!state.activeFlags[state.rushBucket];
-    const goal = rushActive ? null : selectGoal(candidates, effectiveWeights);
+    const goal = rushActive
+      ? null
+      : selectGoal(candidates, effectiveWeights, {
+          cash: currentCash, reserveShare, incomePerSec: income.incomePerSec, goalHorizon,
+        });
     const reserve = computeReserve(currentCash, goal, reserveShare);
     const granted = isGranted(goal, reserve);
     const allowances = computeAllowances(
@@ -437,8 +490,13 @@ async function daemon(ns: NS): Promise<void> {
             reservedFormatted: ns.format.number(reserve),
             progress: Math.min(1, reserve / goal.cost),
             granted,
+            etaSec: goal.etaSec,
           }
         : null,
+      incomePerSec: income.incomePerSec,
+      incomePerSecFormatted: `$${ns.format.number(income.incomePerSec)}/s`,
+      incomeSource: income.source,
+      goalHorizon: goalHorizon > 0 ? goalHorizon : 0,
       paybackHorizon: paybackHorizon > 0 ? paybackHorizon : 0,
       lastUpdated: now,
     };
@@ -457,13 +515,15 @@ async function daemon(ns: NS): Promise<void> {
     const rushLabel = state.rushBucket ? ` ${C.yellow}RUSH:${state.rushBucket}${C.reset}` : "";
     const goalLabel = goal
       ? ` | ${C.yellow}Goal:${C.reset} ${goal.label} (${goal.bucket}) ` +
-        `${ns.format.number(reserve)}/${ns.format.number(goal.cost)}${granted ? ` ${C.green}GRANTED${C.reset}` : ""}`
+        `${ns.format.number(reserve)}/${ns.format.number(goal.cost)}` +
+        (granted ? ` ${C.green}GRANTED${C.reset}` : isFinite(goal.etaSec) ? ` ETA ${formatTime(goal.etaSec)}` : "")
       : "";
+    const incomeLabel = ` | Income: $${ns.format.number(income.incomePerSec)}/s (${income.source})`;
     ns.print(
       `${C.cyan}=== Budget ===${C.reset} ` +
       `Cash: ${ns.format.number(currentCash)} | ` +
       `NW: ${ns.format.number(netWorth)} | ` +
-      `Active: ${activeCount}/${totalBuckets}${rushLabel}${goalLabel}`
+      `Active: ${activeCount}/${totalBuckets}${rushLabel}${incomeLabel}${goalLabel}`
     );
 
     for (const bucket of Object.keys(buckets)) {

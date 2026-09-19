@@ -112,6 +112,17 @@ export interface Goal {
   bucket: string;
   label: string;
   cost: number;
+  /** Seconds until cash reaches the grant point at the estimated income (0 when already there). */
+  etaSec: number;
+}
+
+/** Inputs for the feasibility check in selectGoal. */
+export interface GoalFeasibility {
+  cash: number;
+  reserveShare: number;
+  incomePerSec: number;
+  /** Max seconds to save for one item; 0 disables the check. */
+  goalHorizon: number;
 }
 
 /** The selected goal and the cash reserved toward it this tick. */
@@ -137,21 +148,91 @@ export function prunePending(
 
 /**
  * Cheapest pending item among buckets whose effective weight is above zero. Done, frozen,
- * zeroed and rush-sidelined buckets can never be the goal. Ties break by bucket name.
+ * zeroed and rush-sidelined buckets can never be the goal. With `feasibility`, an item whose
+ * ETA to its grant point exceeds the horizon is skipped for the next cheapest. Ties break by
+ * bucket name.
  */
 export function selectGoal(
   pending: Record<string, PendingItem>,
   effectiveWeights: Record<string, number>,
+  feasibility?: GoalFeasibility,
 ): Goal | null {
   let best: Goal | null = null;
   for (const [bucket, item] of Object.entries(pending)) {
     if (!(item.cost > 0)) continue;
     if (!((effectiveWeights[bucket] ?? 0) > 0)) continue;
+    const etaSec = feasibility
+      ? goalEtaSeconds(feasibility.cash, item.cost, feasibility.reserveShare, feasibility.incomePerSec)
+      : 0;
+    if (feasibility && !isGoalFeasible(etaSec, feasibility.goalHorizon)) continue;
     if (best === null || item.cost < best.cost || (item.cost === best.cost && bucket < best.bucket)) {
-      best = { bucket, label: item.label, cost: item.cost };
+      best = { bucket, label: item.label, cost: item.cost, etaSec };
     }
   }
   return best;
+}
+
+// === GOAL FEASIBILITY ===
+
+/** Max seconds the daemon will save for one item. 0 disables the check. */
+export const DEFAULT_GOAL_HORIZON = 7200;
+
+/** Time constant of the cash-trend fallback estimator. */
+export const CASH_TREND_TAU_SEC = 60;
+
+/**
+ * Sum the income rates the producer daemons publish. Missing (null/undefined) or
+ * non-finite entries are ignored; `sources` names the ones that counted, so an empty
+ * list means no producer is publishing and the caller should fall back.
+ */
+export function sumProducerIncome(
+  rates: Record<string, number | null | undefined>,
+): { total: number; sources: string[] } {
+  let total = 0;
+  const sources: string[] = [];
+  for (const [name, rate] of Object.entries(rates)) {
+    if (typeof rate !== "number" || !isFinite(rate)) continue;
+    total += rate;
+    sources.push(name);
+  }
+  return { total: Math.max(0, total), sources };
+}
+
+/**
+ * Exponential moving average of cash income per second, fed once per tick with the cash
+ * change and the spending the spender buckets reported (holders excluded, so trading
+ * nets out to profit). The first sample seeds the average.
+ */
+export function updateCashTrend(
+  prev: number | null,
+  deltaCash: number,
+  spenderSpend: number,
+  dtSec: number,
+  tauSec: number = CASH_TREND_TAU_SEC,
+): number {
+  if (!(dtSec > 0)) return prev ?? 0;
+  const sample = (deltaCash + spenderSpend) / dtSec;
+  if (prev === null) return sample;
+  const alpha = 1 - Math.exp(-dtSec / tauSec);
+  return prev + alpha * (sample - prev);
+}
+
+/**
+ * Seconds until cash reaches an item's grant point (cost / share) at `incomePerSec`.
+ * 0 when cash already covers it; Infinity when it never will (no income, or share 0).
+ * Optimistic: ignores what the other spenders take from income meanwhile.
+ */
+export function goalEtaSeconds(cash: number, cost: number, reserveShare: number, incomePerSec: number): number {
+  if (!(reserveShare > 0)) return Infinity;
+  const gap = cost / (reserveShare / 100) - cash;
+  if (gap <= 0) return 0;
+  if (!(incomePerSec > 0)) return Infinity;
+  return gap / incomePerSec;
+}
+
+/** An item is feasible when the horizon is disabled or its ETA is within it. */
+export function isGoalFeasible(etaSec: number, goalHorizon: number): boolean {
+  return !(goalHorizon > 0) || etaSec <= goalHorizon;
 }
 
 /** Cash locked toward the goal: min(cost, cash * share). 0 without a goal or with share <= 0. */

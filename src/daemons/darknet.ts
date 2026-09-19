@@ -168,7 +168,9 @@ function readControlCommands(ns: NS, model: DarknetModel): boolean {
 
     switch (cmd.action) {
       case "set":
-        if (cmd.key !== undefined && cmd.value !== undefined) {
+        // Restrict to known keys: setConfigValue builds a RegExp from `key`
+        // unescaped, so an arbitrary/malformed key could throw.
+        if (cmd.key !== undefined && cmd.key in DEFAULT_CONFIG && cmd.value !== undefined) {
           setConfigValue(ns, "darknet", cmd.key, String(cmd.value));
         }
         break;
@@ -244,7 +246,9 @@ function reseed(ns: NS, model: DarknetModel, lastSeedAttempt: Record<string, num
 
     const pid = ns.exec(DNET_WORKERS.agent, host, { threads: 1, preventDuplicates: true }, host);
     if (pid === 0) {
-      ns.print(`darknet: exec agent on ${host} failed`);
+      // preventDuplicates also returns 0 when an agent is already running
+      // there, so this isn't necessarily a failure — just nothing new started.
+      ns.print(`darknet: exec agent on ${host} returned 0 (already running, or failed)`);
     } else {
       ns.print(`darknet: seeded agent on ${host} (pid ${pid})`);
     }

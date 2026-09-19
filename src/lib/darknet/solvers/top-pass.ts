@@ -1,15 +1,122 @@
 /**
- * Darknet Solver Stub: TopPass
+ * Darknet Solver: TopPass
  *
- * Unimplemented — a later task fills in `next`. Registered in `index.ts`;
- * that file already lists this export, so it does not need editing to wire
- * this solver in.
+ * CommonPasswordDictionary (LargeDictionary) servers pick the password from
+ * the game's `commonPasswordDictionary` (src/DarkNet/models/dictionaryData.ts),
+ * copied verbatim below (93 entries). Blind dictionary attack: try each
+ * entry in order.
  */
 import { Solver } from "/lib/darknet/solvers/types";
 
-export const topPass: Solver<Record<string, never>> = {
+// Copied verbatim from the game's `commonPasswordDictionary`.
+const COMMON_PASSWORDS = [
+  "123456",
+  "password",
+  "12345678",
+  "qwerty",
+  "123456789",
+  "12345",
+  "1234",
+  "111111",
+  "1234567",
+  "dragon",
+  "123123",
+  "baseball",
+  "abc123",
+  "football",
+  "monkey",
+  "letmein",
+  "696969",
+  "shadow",
+  "master",
+  "666666",
+  "qwertyuiop",
+  "123321",
+  "mustang",
+  "1234567890",
+  "michael",
+  "654321",
+  "superman",
+  "1qaz2wsx",
+  "7777777",
+  "121212",
+  "0",
+  "qazwsx",
+  "123qwe",
+  "trustno1",
+  "jordan",
+  "jennifer",
+  "zxcvbnm",
+  "asdfgh",
+  "hunter",
+  "buster",
+  "soccer",
+  "harley",
+  "batman",
+  "andrew",
+  "tigger",
+  "sunshine",
+  "iloveyou",
+  "2000",
+  "charlie",
+  "robert",
+  "thomas",
+  "hockey",
+  "ranger",
+  "daniel",
+  "starwars",
+  "112233",
+  "george",
+  "computer",
+  "michelle",
+  "jessica",
+  "pepper",
+  "1111",
+  "zxcvbn",
+  "555555",
+  "11111111",
+  "131313",
+  "freedom",
+  "777777",
+  "pass",
+  "maggie",
+  "159753",
+  "aaaaaa",
+  "ginger",
+  "princess",
+  "joshua",
+  "cheese",
+  "amanda",
+  "summer",
+  "love",
+  "ashley",
+  "6969",
+  "nicole",
+  "chelsea",
+  "biteme",
+  "matthew",
+  "access",
+  "yankees",
+  "987654321",
+  "dallas",
+  "austin",
+  "thunder",
+  "taylor",
+  "matrix",
+] as const;
+
+interface State {
+  index: number;
+}
+
+export const topPass: Solver<State> = {
   id: "TopPass",
   blind: true,
-  start: () => ({}),
-  next: () => ({ giveUp: true, reason: "unimplemented" }),
+  start: () => ({ index: 0 }),
+  next: (state) => {
+    if (state.index >= COMMON_PASSWORDS.length) {
+      return { giveUp: true, reason: "exhausted dictionary" };
+    }
+    return { attempt: COMMON_PASSWORDS[state.index], state: { index: state.index + 1 } };
+  },
 };

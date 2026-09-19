@@ -1,15 +1,27 @@
 /**
- * Darknet Solver Stub: Laika4
+ * Darknet Solver: Laika4
  *
- * Unimplemented — a later task fills in `next`. Registered in `index.ts`;
- * that file already lists this export, so it does not need editing to wire
- * this solver in.
+ * DogNames servers pick the password from the game's `dogNameDictionary`
+ * (src/DarkNet/models/dictionaryData.ts), copied verbatim below. Blind
+ * dictionary attack: try each entry in order.
  */
 import { Solver } from "/lib/darknet/solvers/types";
 
-export const laika: Solver<Record<string, never>> = {
+// Copied verbatim from the game's `dogNameDictionary`.
+const DOG_NAMES = ["fido", "spot", "rover", "max"] as const;
+
+interface State {
+  index: number;
+}
+
+export const laika: Solver<State> = {
   id: "Laika4",
   blind: true,
-  start: () => ({}),
-  next: () => ({ giveUp: true, reason: "unimplemented" }),
+  start: () => ({ index: 0 }),
+  next: (state) => {
+    if (state.index >= DOG_NAMES.length) {
+      return { giveUp: true, reason: "exhausted dictionary" };
+    }
+    return { attempt: DOG_NAMES[state.index], state: { index: state.index + 1 } };
+  },
 };

@@ -1,15 +1,33 @@
 /**
- * Darknet Solver Stub: 110100100
+ * Darknet Solver: 110100100
  *
- * Unimplemented — a later task fills in `next`. Registered in `index.ts`;
- * that file already lists this export, so it does not need editing to wire
- * this solver in.
+ * BinaryEncodedFeedback servers publish `passwordHintData` as
+ * space-separated 8-bit binary groups, one per password character (see the
+ * game's `getBinaryEncodedConfig`). Decode each group with
+ * `String.fromCharCode(parseInt(group, 2))` and concatenate. One attempt.
  */
-import { Solver } from "/lib/darknet/solvers/types";
+import { Solver, SolverDetails } from "/lib/darknet/solvers/types";
 
-export const binary: Solver<Record<string, never>> = {
+interface State {
+  tried: boolean;
+  password: string;
+}
+
+function decodeBinary(data: string): string {
+  return data
+    .trim()
+    .split(/\s+/)
+    .filter((group) => group.length > 0)
+    .map((group) => String.fromCharCode(parseInt(group, 2)))
+    .join("");
+}
+
+export const binary: Solver<State> = {
   id: "110100100",
   blind: true,
-  start: () => ({}),
-  next: () => ({ giveUp: true, reason: "unimplemented" }),
+  start: (details: SolverDetails) => ({ tried: false, password: decodeBinary(details.data) }),
+  next: (state) => {
+    if (state.tried) return { giveUp: true, reason: "exhausted dictionary" };
+    return { attempt: state.password, state: { ...state, tried: true } };
+  },
 };

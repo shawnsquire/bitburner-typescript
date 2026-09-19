@@ -1,15 +1,23 @@
 /**
- * Darknet Solver Stub: ZeroLogon
+ * Darknet Solver: ZeroLogon
  *
- * Unimplemented — a later task fills in `next`. Registered in `index.ts`;
- * that file already lists this export, so it does not need editing to wire
- * this solver in.
+ * NoPassword servers never had a password set — the game's
+ * `getNoPasswordConfig` builds from `getDictionaryAttackConfig(difficulty,
+ * [""], hintTemplates, ModelIds.NoPassword)`, so the password is always the
+ * empty string. One attempt.
  */
 import { Solver } from "/lib/darknet/solvers/types";
 
-export const zeroLogon: Solver<Record<string, never>> = {
+interface State {
+  tried: boolean;
+}
+
+export const zeroLogon: Solver<State> = {
   id: "ZeroLogon",
   blind: true,
-  start: () => ({}),
-  next: () => ({ giveUp: true, reason: "unimplemented" }),
+  start: () => ({ tried: false }),
+  next: (state) => {
+    if (state.tried) return { giveUp: true, reason: "exhausted dictionary" };
+    return { attempt: "", state: { tried: true } };
+  },
 };

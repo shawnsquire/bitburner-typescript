@@ -26,7 +26,11 @@ Categories: infrastructure, skills, factions, augmentations, gang, endgame.
 
 Endgame rules key off the rep daemon's BitNode status, which treats the
 Daedalus skill requirement as hacking 2500 or all combat skills 1500, matching
-the game.
+the game. "Destroy the Bitnode" additionally waits for `worldDaemonComplete`:
+`w0r1d_d43m0n` needs hacking 3000 times the BitNode's `WorldDaemonDifficulty`
+(6000 in BN9), which the rep daemon publishes as `worldDaemonRequired` (see
+`docs/systems/rep.md`). A status without that field, from an older rep daemon,
+never triggers the exit recommendation.
 
 ## Ports and dashboard
 

@@ -10,7 +10,10 @@ run daemons/pserv.js [--one-shot] [--min-ram <GB>] [--reserve <$>] [--interval <
 ```
 
 Optional daemon in `start.js`, about 6 GB. Exits when every slot is filled
-and every server is at the configured or game maximum.
+and every server is at the configured or game maximum. It also exits at
+startup, after printing one line and signalling the `servers` budget bucket
+done, when the game allows zero purchased servers (`ns.cloud.getServerLimit()`
+is 0, as in BitNode 9); `getPservStatus` reports this as `purchasingDisabled`.
 
 ## Config: `/config/pserv.txt`
 

@@ -141,7 +141,7 @@ function printOverview(ns: NS, log: Log): void {
   const bitnode = peekStatus<BitnodeStatus>(ns, STATUS_PORTS.bitnode);
   if (bitnode) {
     const check = (v: boolean) => v ? `${C.green}[x]${C.reset}` : `${C.red}[ ]${C.reset}`;
-    log(`  ${C.cyan}FL1GHT.EXE${C.reset}  ${check(bitnode.augsComplete)} Augs: ${bitnode.augmentations}/${bitnode.augmentationsRequired}  ${check(bitnode.moneyComplete)} Money: ${bitnode.moneyFormatted}/${bitnode.moneyRequiredFormatted}  ${check(bitnode.hackingComplete)} Hack: ${bitnode.hacking}/${bitnode.hackingRequired}`);
+    log(`  ${C.cyan}FL1GHT.EXE${C.reset}  ${check(bitnode.augsComplete)} Augs: ${bitnode.augmentations}/${bitnode.augmentationsRequired}  ${check(bitnode.moneyComplete)} Money: ${bitnode.moneyFormatted}/${bitnode.moneyRequiredFormatted}  ${check(bitnode.hackingComplete)} Hack: ${bitnode.hacking}/${bitnode.hackingRequired}  ${check(bitnode.worldDaemonComplete)} WD: ${bitnode.hacking}/${Math.ceil(bitnode.worldDaemonRequired)}${bitnode.worldDaemonRequiredLive ? "" : "?"}`);
   }
 
   // Nuke

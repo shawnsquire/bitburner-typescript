@@ -367,6 +367,9 @@ export function ruleDaedalusWork(ctx: AdvisorContext): Recommendation | null {
 export function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
   const bn = ctx.bitnode;
   if (!bn || !bn.allComplete) return null;
+  // Daedalus requirements are the invite; w0r1d_d43m0n itself needs 3000 x the BitNode's
+  // WorldDaemonDifficulty (6000 in BN9). Missing field means an old rep daemon: wait.
+  if (!bn.worldDaemonComplete) return null;
 
   const daedalus = findDaedalus(ctx);
   if (!daedalus || daedalus.status !== "joined") return null;
@@ -381,7 +384,7 @@ export function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
   return {
     id: "bitnode-exit",
     title: "Destroy the Bitnode",
-    reason: "Hack w0r1d_d43m0n — all Daedalus requirements met",
+    reason: `Hack w0r1d_d43m0n — Daedalus requirements met and hacking ${bn.hacking} >= ${Math.ceil(bn.worldDaemonRequired)}`,
     category: "endgame",
     score: 100,
   };

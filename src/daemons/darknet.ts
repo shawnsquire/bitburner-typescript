@@ -231,15 +231,13 @@ function readControlCommands(ns: NS, model: DarknetModel): boolean {
  */
 function reseed(ns: NS, model: DarknetModel, lastSeedAttempt: Record<string, number>, config: DarknetConfig, forceReseed: boolean, now: number): void {
   const throttleMs = config.agentIntervalMs * RESEED_THROTTLE_MULT;
+  // Only darkweb (always authed) and stasis hosts (whose stasis link sets a
+  // backdoor, letting home `exec` remotely, `backdoorBypasses` in
+  // `checkDarknetServer`) can be re-seeded from home. A cleared lab has admin
+  // but NO backdoor and is not adjacent to home, so `exec` there returns
+  // DirectConnectionRequired; the lab is instead seeded by its adjacent runner
+  // agent (see `handleNeighbour` in dnet-agent.ts).
   const targets = new Set<string>(["darkweb", ...model.stasisHosts]);
-  // A cleared labyrinth (design section 7) is now an admin host with a known
-  // vault password and an unopened `the_great_work` reward cache. Seed an agent
-  // onto it -- via the same connectToSession + scp + exec path as a stasis host
-  // -- so `computePolicy` runs a harvest worker there to `openCache` the reward
-  // and queue the augmentation. Without this the reward is stranded forever.
-  if (model.lab?.cleared && model.lab.name && model.vault.entries[model.lab.name]) {
-    targets.add(model.lab.name);
-  }
 
   for (const host of targets) {
     const cell = model.cells[host];

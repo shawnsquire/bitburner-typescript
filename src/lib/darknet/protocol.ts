@@ -16,7 +16,7 @@ import type { DarknetServerDetails } from "@ns";
  * mismatched `policy.version` exits so the coordinator can re-exec it with
  * the current bundle.
  */
-export const AGENT_VERSION = 1;
+export const AGENT_VERSION = 2;
 
 /**
  * The three fields that identify a server across restarts and hostname
@@ -65,6 +65,14 @@ export type SeenDetails = DarknetServerDetails & { isOnline: boolean; maxRam: nu
  */
 export interface WorkerFlags {
   harvest: boolean;
+  /**
+   * Thread count for the harvest worker. `memoryReallocation` frees RAM in
+   * proportion to the calling script's threads, so clearing a large block at
+   * one thread is very slow; the coordinator sizes this to a bounded share of
+   * the host's free RAM when a block exists (1 for a cache-only pass). Ignored
+   * unless `harvest` is true.
+   */
+  harvestThreads: number;
   phishThreads: number;
   lab: boolean;
   stasis: boolean | null;
@@ -106,6 +114,7 @@ export type ReportEvent =
   | { t: "ramfreed"; host: string; remaining: number }
   | { t: "contract"; host: string; file: string }
   | { t: "storm-seed"; host: string }
+  | { t: "storm-fired"; host: string }
   | { t: "phish"; host: string; money: number; cache: boolean }
   | { t: "lab"; host: string; grid: string[]; pos: [number, number]; moves: number; cleared: boolean; password?: string }
   | { t: "error"; host: string; op: string; code: number; message: string };

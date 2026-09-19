@@ -103,6 +103,10 @@ async function agentLoop(ns: NS): Promise<void> {
         const result = ns.dnet.unleashStormSeed();
         if (result.success) {
           stormFired = true;
+          // Acknowledge the fire so the coordinator stops flagging the storm.
+          // Without this the flag is published on a timer and a long crack tick
+          // here can miss the window; the ack is the reliable signal.
+          events.push({ t: "storm-fired", host: self });
         } else {
           // Not latched: e.g. no STORM_SEED.exe here yet -- retry next tick
           // once the coordinator's harvest reports one, rather than
@@ -141,7 +145,21 @@ async function handleNeighbour(ns: NS, self: string, n: string, policy: Policy, 
   events.push({ t: "seen", host: n, details, neighbours: [] });
 
   if (!details.isOnline) return;
-  if (details.modelId === LAB_MODEL_ID) return; // walked by dnet-lab.js, not cracked here
+  if (details.modelId === LAB_MODEL_ID) {
+    // A lab is WALKED by dnet-lab.js, never cracked. But once it is cleared it
+    // has admin rights and holds an unopened `the_great_work` reward cache
+    // (design section 7). Home cannot seed an agent there -- it is not directly
+    // connected to the lab and a cleared lab has no backdoor -- but this runner
+    // is adjacent, so seed it from here: `connectToSession` on a cleared
+    // (admin) lab returns Success for any token, and `replicate`'s exec is
+    // allowed because it originates from this directly-connected host. The
+    // seeded agent then runs a harvest worker that opens the reward cache.
+    if (details.hasAdmin && !details.hasSession) {
+      const r = ns.dnet.connectToSession(n, policy.vault[n]?.password ?? "");
+      if (r.success) await replicate(ns, self, n);
+    }
+    return;
+  }
   if (details.hasSession) return; // nothing to do -- already have a session
 
   const vaultEntry = policy.vault[n];
@@ -336,7 +354,12 @@ function launchLocalWorkers(ns: NS, self: string, policy: Policy): void {
   if (!flags) return;
 
   if (flags.harvest) {
-    ns.run(DNET_WORKERS.harvest, { threads: 1, preventDuplicates: true }, self);
+    // memoryReallocation frees RAM per thread, so a big block clears faster with
+    // more threads (sized by the coordinator). The thread count goes in the run
+    // options, NOT in args, so preventDuplicates keeps exactly one harvest per
+    // host; when the count should change (block cleared -> cache-only pass) the
+    // running worker exits on its own and the next launch starts at the new size.
+    ns.run(DNET_WORKERS.harvest, { threads: Math.max(1, flags.harvestThreads), preventDuplicates: true }, self);
   }
   if (flags.phishThreads > 0) {
     // Phishing income scales with thread count -- it must run at phishThreads

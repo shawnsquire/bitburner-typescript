@@ -51,12 +51,25 @@ const MAX_NET_DEPTH = 40;
 const AGENT_LIVENESS_FLOOR_MS = 300_000;
 
 /**
- * How long the policy keeps flagging the seed host to fire the storm once the
- * pre-storm pause elapses. A window (not a single tick) so the seed host's
- * agent, polling only every `agentIntervalMs`, reliably catches it; firing is
- * latched per agent process, so a multi-tick window still fires exactly once.
+ * How long the policy keeps flagging the seed host to fire the storm after the
+ * pre-storm pause, before giving up. `stormPending` is normally cleared by the
+ * seed host's `storm-fired` acknowledgement, not by this timeout -- the timeout
+ * only stops the flag from persisting forever when the seed host's agent is
+ * dead. It is generous (covering a long crack tick) because the agent checks
+ * the storm flag only once per tick, after its neighbour crack loop.
  */
-const STORM_FIRE_WINDOW_MS = 10_000;
+const STORM_FIRE_TIMEOUT_MS = 120_000;
+
+/**
+ * Upper bound on harvest threads used to clear a RAM block. `memoryReallocation`
+ * frees RAM per thread, so more threads clear a big block faster, but each
+ * thread costs `DNET_WORKER_RAM.harvest` and competes with phishing; this caps
+ * how much of a host is devoted to clearing.
+ */
+const HARVEST_MAX_THREADS = 8;
+
+/** Rough block size (GB) each harvest thread is sized to clear, so threads scale with the block, not the host. */
+const HARVEST_GB_PER_THREAD = 16;
 
 // === MODEL ===
 
@@ -415,6 +428,13 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
         break;
       }
 
+      case "storm-fired": {
+        // The seed host confirmed it unleashed the storm; stop flagging it.
+        m.stormPending = false;
+        m.stormFireUntil = 0;
+        break;
+      }
+
       case "phish": {
         m.income.money += event.money;
         if (event.cache) ensureCell(m, event.host).cacheSeen = true;
@@ -768,22 +788,26 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     m.stormPending = true;
   }
 
-  // Arming the pause (and firing the storm once it elapses) both require a
-  // real seed host. Without one, `stormPending` stays true but inert rather
-  // than cycling pause on/off every tick with nothing to fire at.
+  // Arming the pause, then flagging the storm, both require a real seed host.
+  // Without one, `stormPending` stays true but inert rather than cycling pause
+  // on/off every tick with nothing to fire at. `stormPending` is cleared by the
+  // seed host's `storm-fired` acknowledgement (in applyReport), NOT here on a
+  // timer -- so a long crack tick on the seed host can't cause it to miss the
+  // flag. The timeout branch only gives up when the seed host never acks (dead
+  // agent), so the flag doesn't persist forever.
   if (m.stormPending && m.stormSeedHost !== null) {
-    if (m.pauseUntil === 0) {
-      m.pauseUntil = now + 30_000;
-    } else if (now >= m.pauseUntil) {
-      // Open a firing window (see STORM_FIRE_WINDOW_MS) instead of firing for a
-      // single tick, so the seed host's agent doesn't miss the flag.
-      m.stormFireUntil = now + STORM_FIRE_WINDOW_MS;
-      m.stormPending = false;
+    if (m.pauseUntil === 0 && m.stormFireUntil === 0) {
+      m.pauseUntil = now + 30_000; // settle before the net reshuffles
+    } else if (m.pauseUntil !== 0 && now >= m.pauseUntil) {
       m.pauseUntil = 0;
+      m.stormFireUntil = now + STORM_FIRE_TIMEOUT_MS; // open the fire window
+    } else if (m.stormFireUntil !== 0 && now >= m.stormFireUntil) {
+      m.stormPending = false; // never acknowledged (seed host likely dead)
+      m.stormFireUntil = 0;
     }
   }
   const pause = now < m.pauseUntil;
-  const stormFiring = now < m.stormFireUntil;
+  const stormFiring = m.stormPending && m.stormFireUntil !== 0 && now < m.stormFireUntil;
 
   const labHost = selectLabHost(m, limits);
   const labCha = limits.labName ? LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.cha ?? Infinity : Infinity;
@@ -798,6 +822,23 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     const maxRam = cell.details?.maxRam ?? 0;
     const blockedRam = cell.details?.blockedRam ?? 0;
     const harvest = config.harvest && (blockedRam > 0 || cell.cacheSeen) && player.karma >= config.harvestKarmaFloor;
+    // Multi-thread only helps clear a RAM block (memoryReallocation scales with
+    // threads); opening caches is instant, so a cache-only pass runs at one
+    // thread. When clearing, size to a bounded share of the host's non-agent
+    // RAM so a big block clears in reasonable time without starving everything.
+    let harvestThreads = 0;
+    if (harvest) {
+      if (blockedRam > 0) {
+        // Scale threads to the block size (~one per HARVEST_GB_PER_THREAD), so a
+        // big block clears fast while a small one leaves RAM for phishing;
+        // capped by HARVEST_MAX_THREADS and by what actually fits in the host's
+        // free RAM (maxRam minus the still-blocked RAM and the agent).
+        const fits = Math.floor(Math.max(0, maxRam - blockedRam - DNET_WORKER_RAM.agent) / DNET_WORKER_RAM.harvest);
+        harvestThreads = Math.max(1, Math.min(HARVEST_MAX_THREADS, Math.ceil(blockedRam / HARVEST_GB_PER_THREAD), fits));
+      } else {
+        harvestThreads = 1; // cache-only pass -- opening caches is instant
+      }
+    }
 
     const wantsLink = stasisTargets.includes(cell.host);
     const hasLink = m.stasisHosts.includes(cell.host);
@@ -822,7 +863,7 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     // only while we are about to SET a link (stasis === true); once the link
     // is placed the flag goes null and phish reclaims the space next tick.
     let reserved = DNET_WORKER_RAM.agent;
-    if (harvest) reserved += DNET_WORKER_RAM.harvest;
+    if (harvest) reserved += DNET_WORKER_RAM.harvest * harvestThreads;
     if (charge) reserved += DNET_WORKER_RAM.charge;
     if (lab) reserved += DNET_WORKER_RAM.lab;
     if (stasis === true) reserved += DNET_WORKER_RAM.stasis;
@@ -838,6 +879,7 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
 
     workers[cell.host] = {
       harvest,
+      harvestThreads,
       phishThreads,
       lab,
       stasis,

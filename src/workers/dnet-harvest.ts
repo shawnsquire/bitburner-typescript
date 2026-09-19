@@ -10,8 +10,9 @@
  * the RAM freed per call off the script's own thread count
  * (`getRamBlockRemoved`, `src/DarkNet/effects/ramblock.ts`), which is set by
  * the agent's `ns.run(..., {threads})` -- not an argument to the call. The
- * thread count the agent chose rides along as `ns.args[1]` for the agent's
- * own bookkeeping only; this worker never needs to read it back.
+ * coordinator sizes that thread count to clear a block faster; this worker
+ * reads nothing back, it just runs at whatever thread count it was launched
+ * with.
  *
  * A big block can take many rounds to clear (each round is a multi-second
  * `netscriptDelay`), so progress is reported as `ramfreed` periodically
@@ -20,7 +21,7 @@
  * daemon, which can't reach darknet hosts itself. `STORM_SEED.exe` is only
  * reported too; storms fire per policy, never from here.
  *
- * Usage: run workers/dnet-harvest.js <self> <threads>
+ * Usage: run workers/dnet-harvest.js <self>
  */
 import type { NS } from "@ns";
 import { CODE, ReportBatch, ReportEvent } from "/lib/darknet/protocol";

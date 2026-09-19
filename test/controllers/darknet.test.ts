@@ -688,12 +688,33 @@ describe("computePolicy", () => {
     const m = createModel(0);
     const cell = agentCell(m, "host1", { maxRam: 32, blockedRam: 20 });
     const cfg: DarknetConfig = { ...DEFAULT_CONFIG, phishMaxThreads: 1000 };
-    // Heavily blocked: free = 32 - 20 - 11.15 = 0.85 -> 0 phish threads.
+    // Heavily blocked: harvest takes ceil(20/16)=2 threads (9.8), reserved
+    // 6.25+9.8=16.05, free = 32 - 20 - 16.05 < 0 -> 0 phish threads.
     expect(computePolicy(m, cfg, player, noAccess, 0).workers["host1"].phishThreads).toBe(0);
-    // Block cleared: free = 32 - 11.15 = 20.85 -> 5 threads.
+    // Block cleared: harvest is a 1-thread cache pass (cacheSeen), reserved
+    // 11.15, free = 32 - 11.15 = 20.85 -> 5 threads.
     cell.details = { ...cell.details!, blockedRam: 0 };
     cell.cacheSeen = true; // keep harvest reserved so the comparison is apples-to-apples
     expect(computePolicy(m, cfg, player, noAccess, 0).workers["host1"].phishThreads).toBe(5);
+  });
+
+  it("sizes harvest threads to the block size, capped and one for a cache-only pass", () => {
+    const m = createModel(0);
+    const cell = agentCell(m, "host1", { maxRam: 128, blockedRam: 64 });
+    const cfg: DarknetConfig = { ...DEFAULT_CONFIG, phishMaxThreads: 1000 };
+    // 64 GB block -> ceil(64/16) = 4 harvest threads (fits: (128-6.25)/4.9 ~= 24, cap 8).
+    let flags = computePolicy(m, cfg, player, noAccess, 0).workers["host1"];
+    expect(flags.harvest).toBe(true);
+    expect(flags.harvestThreads).toBe(4);
+    // A small block clears with one thread, leaving RAM for phishing.
+    cell.details = { ...cell.details!, blockedRam: 4 };
+    expect(computePolicy(m, cfg, player, noAccess, 0).workers["host1"].harvestThreads).toBe(1);
+    // A cache-only pass (no block) is one thread; opening caches is instant.
+    cell.details = { ...cell.details!, blockedRam: 0 };
+    cell.cacheSeen = true;
+    flags = computePolicy(m, cfg, player, noAccess, 0).workers["host1"];
+    expect(flags.harvest).toBe(true);
+    expect(flags.harvestThreads).toBe(1);
   });
 
   it("caps phishThreads at phishMaxThreads", () => {
@@ -713,7 +734,7 @@ describe("computePolicy", () => {
     expect(policy.publishedAt).toBe(1234);
   });
 
-  it("arms a 30s pause then fires the storm on the seed host, once", () => {
+  it("arms a 30s pause, flags the storm until the seed host acknowledges, then stops", () => {
     const m = createModel(0);
     agentCell(m, "seedHost", { maxRam: 32 });
     m.stormSeedHost = "seedHost";
@@ -727,22 +748,38 @@ describe("computePolicy", () => {
     expect(policy.pause).toBe(true);
     expect(policy.workers["seedHost"].storm).toBe(false);
 
+    // Pause elapsed: flag the storm. stormPending stays set until the seed host
+    // acks with a `storm-fired` report -- NOT cleared on a timer -- so a long
+    // crack tick on the seed host cannot cause it to miss the flag.
     policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 30_000);
     expect(policy.pause).toBe(false);
     expect(policy.workers["seedHost"].storm).toBe(true);
+    expect(m.stormPending).toBe(true);
+
+    // Still flagged many ticks later (well within the dead-host timeout).
+    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 90_000);
+    expect(policy.workers["seedHost"].storm).toBe(true);
+
+    // The seed host acknowledges: the flag clears and does not fire again.
+    applyReport(m, batch("seedHost", [{ t: "storm-fired", host: "seedHost" }]), 90_100);
     expect(m.stormPending).toBe(false);
+    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 90_200);
+    expect(policy.workers["seedHost"].storm).toBe(false);
+  });
 
-    // The storm flag is published for a short WINDOW (not a single tick) so the
-    // seed host's agent, which polls only every agentIntervalMs, reliably
-    // catches it. The agent latches its own firing, so the multi-tick flag
-    // still fires exactly once.
-    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 30_001);
-    expect(policy.workers["seedHost"].storm).toBe(true);
-    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 39_999);
-    expect(policy.workers["seedHost"].storm).toBe(true);
+  it("gives up flagging the storm if the seed host never acknowledges (dead agent)", () => {
+    const m = createModel(0);
+    agentCell(m, "seedHost", { maxRam: 32 });
+    m.stormSeedHost = "seedHost";
+    m.stormPending = true;
 
-    // Once the window elapses the flag drops.
-    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 40_001);
+    computePolicy(m, DEFAULT_CONFIG, player, noAccess, 0); // arm pause
+    let policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 30_000); // flag
+    expect(policy.workers["seedHost"].storm).toBe(true);
+    // No ack ever arrives; past the timeout (fire window opened at 30_000) the
+    // flag is abandoned so it doesn't publish forever.
+    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 30_000 + 120_001);
+    expect(m.stormPending).toBe(false);
     expect(policy.workers["seedHost"].storm).toBe(false);
   });
 
@@ -858,6 +895,9 @@ describe("computePolicy", () => {
       policy = computePolicy(m, cfg, player, stormLimits, 1000 + 30_000);
       expect(policy.pause).toBe(false);
       expect(policy.workers["seedHost"].storm).toBe(true);
+      // stormPending stays set until the seed host acknowledges the fire.
+      expect(m.stormPending).toBe(true);
+      applyReport(m, batch("seedHost", [{ t: "storm-fired", host: "seedHost" }]), 1000 + 30_100);
       expect(m.stormPending).toBe(false);
     });
 

@@ -83,7 +83,7 @@ move and delete) from the vault.
 |---|---|---|
 | `daemons/darknet.js` | Coordinator: map, vault, policy, budgets, re-seeding, status | 5.3 GB |
 | `workers/dnet-agent.js` | Probe, restore/crack neighbours, replicate, launch local workers, batch reports | 6.25 GB |
-| `workers/dnet-harvest.js` | Memory reallocation, `.cache`/`.cct` opening, contract and storm-seed discovery on its own host | 4.9 GB |
+| `workers/dnet-harvest.js` | Memory reallocation, `.cache`/`.cct` opening, contract and storm-seed discovery on its own host. The coordinator scales its thread count to the RAM block size (memoryReallocation frees RAM per thread), capped at 8; a cache-only pass runs at one thread. | 4.9 GB/thread |
 | `workers/dnet-phish.js` | Phishing loop, thread count from policy | 3.6 GB |
 | `workers/dnet-lab.js` | Labyrinth walker, runs on the host adjacent to the current lab | 2.1 GB |
 | `workers/dnet-stasis.js` | One-shot: set or clear a stasis link on its own host | 13.6 GB |
@@ -207,7 +207,10 @@ decisions, and one section per subsystem).
   `STORM_SEED.exe` (a harvest reward), so `dnet-agent.ts` calls it directly
   once `policy.workers[self].storm` is set and latches success for the
   process lifetime; the coordinator only ever decides *when* to arm that flag
-  in the policy, it never calls the dnet function itself.
+  in the policy, it never calls the dnet function itself. The agent reports a
+  `storm-fired` acknowledgement on success, which is what clears the
+  coordinator's pending flag (a timeout only gives up if the seed host's agent
+  is dead), so a long crack tick on the seed host cannot make it miss the flag.
 - **A fully RAM-blocked host cannot host an agent, so it is not colonized
   until its owner's processes free some RAM.** The game blocks up to a host's
   entire `maxRam` (`getRamBlock`, `ramblock.ts`), and blocked RAM counts as

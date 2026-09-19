@@ -8,6 +8,8 @@ import {
   ruleStartShare,
   ruleBitnodeExit,
   ruleGangTerritory,
+  ruleDarknetCharisma,
+  ruleDarknetInstallAug,
 } from "/daemons/advisor";
 import {
   RepStatus,
@@ -18,6 +20,7 @@ import {
   WorkStatus,
   GangStatus,
   GangTerritoryStatus,
+  DarknetStatus,
 } from "/types/ports";
 
 // A context with every port null, so each rule's "no data yet" guard is exercised
@@ -36,6 +39,7 @@ function emptyContext(): AdvisorContext {
     gang: null,
     gangTerritory: null,
     augments: null,
+    darknet: null,
   };
 }
 
@@ -99,6 +103,28 @@ function factionStatus(overrides: Partial<FactionStatus>): FactionStatus {
     joinedCount: 0,
     invitedCount: 0,
     notInvitedCount: 0,
+    ...overrides,
+  };
+}
+
+function darknetStatus(overrides: Partial<DarknetStatus>): DarknetStatus {
+  return {
+    access: "full",
+    heartbleedAllowed: true,
+    heartbleedUsedThisNode: false,
+    charisma: 0,
+    counts: { seen: 0, admin: 0, agents: 0, frontier: 0, blocked: 0, offline: 0 },
+    deepestAdmin: 0,
+    netDepth: 0,
+    instability: { authenticationDurationMultiplier: 1, authenticationTimeoutChance: 0 },
+    stasis: { used: 0, limit: 1, hosts: [], mode: "auto" },
+    charismaNeed: null,
+    lab: null,
+    income: { moneyPerHour: 0, cachesOpened: 0, contractsFound: 0, augsAwarded: 0 },
+    stormSeedHost: null,
+    stuck: false,
+    config: {},
+    map: { rows: [], edges: [] },
     ...overrides,
   };
 }
@@ -311,6 +337,70 @@ describe("ruleGangTerritory", () => {
     ctx.gangTerritory = { ...base, recommendedAction: "disable" };
     const rec = ruleGangTerritory(ctx);
     expect(rec?.title).toBe("Disable Territory Warfare");
+  });
+});
+
+// === ruleDarknetCharisma / ruleDarknetInstallAug ===
+
+describe("ruleDarknetCharisma", () => {
+  it("recommends training when the target is within reach and fewer than 3 frontier servers are crackable", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({
+      charisma: 250,
+      charismaNeed: { target: 300, unlocks: 4, reason: "unlocks 4 servers" },
+      counts: { seen: 10, admin: 5, agents: 2, frontier: 2, blocked: 1, offline: 0 }, // frontier - blocked = 1
+    });
+    expect(ruleDarknetCharisma(ctx)?.id).toBe("darknet-charisma");
+  });
+
+  it("returns null when there is no charisma need", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({ charismaNeed: null });
+    expect(ruleDarknetCharisma(ctx)).toBeNull();
+  });
+
+  it("returns null once 3 or more frontier servers are still crackable", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({
+      charisma: 250,
+      charismaNeed: { target: 300, unlocks: 4, reason: "unlocks 4 servers" },
+      counts: { seen: 10, admin: 5, agents: 2, frontier: 5, blocked: 1, offline: 0 }, // frontier - blocked = 4
+    });
+    expect(ruleDarknetCharisma(ctx)).toBeNull();
+  });
+
+  it("returns null when the charisma target is out of reach", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({
+      charisma: 50,
+      charismaNeed: { target: 3000, unlocks: 4, reason: "unlocks 4 servers" },
+      counts: { seen: 10, admin: 5, agents: 2, frontier: 2, blocked: 1, offline: 0 },
+    });
+    expect(ruleDarknetCharisma(ctx)).toBeNull();
+  });
+});
+
+describe("ruleDarknetInstallAug", () => {
+  it("recommends installing once the labyrinth augmentation is pending", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({
+      lab: { name: "The Cave", runner: "agent1", cha: 300, cleared: true, augPending: true, moves: 120 },
+    });
+    expect(ruleDarknetInstallAug(ctx)?.id).toBe("darknet-install-aug");
+  });
+
+  it("returns null when no augmentation is pending", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({
+      lab: { name: "The Cave", runner: "agent1", cha: 300, cleared: true, augPending: false, moves: 120 },
+    });
+    expect(ruleDarknetInstallAug(ctx)).toBeNull();
+  });
+
+  it("returns null when there is no lab", () => {
+    const ctx = emptyContext();
+    ctx.darknet = darknetStatus({ lab: null });
+    expect(ruleDarknetInstallAug(ctx)).toBeNull();
   });
 });
 

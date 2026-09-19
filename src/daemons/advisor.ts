@@ -28,6 +28,7 @@ import {
   GangStatus,
   GangTerritoryStatus,
   AugmentsStatus,
+  DarknetStatus,
 } from "/types/ports";
 
 const C = COLORS;
@@ -47,6 +48,7 @@ export interface AdvisorContext {
   gang: GangStatus | null;
   gangTerritory: GangTerritoryStatus | null;
   augments: AugmentsStatus | null;
+  darknet: DarknetStatus | null;
 }
 
 function gatherContext(ns: NS): AdvisorContext {
@@ -63,6 +65,7 @@ function gatherContext(ns: NS): AdvisorContext {
     gang: peekStatus<GangStatus>(ns, STATUS_PORTS.gang),
     gangTerritory: peekStatus<GangTerritoryStatus>(ns, STATUS_PORTS.gangTerritory),
     augments: peekStatus<AugmentsStatus>(ns, STATUS_PORTS.augments),
+    darknet: peekStatus<DarknetStatus>(ns, STATUS_PORTS.darknet),
   };
 }
 
@@ -420,6 +423,32 @@ export function ruleGangAscension(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
+export function ruleDarknetCharisma(ctx: AdvisorContext): Recommendation | null {
+  const d = ctx.darknet;
+  if (!d || !d.charismaNeed) return null;
+  if (d.counts.frontier - d.counts.blocked >= 3) return null;
+  if (d.charismaNeed.target - d.charisma > Math.max(100, d.charisma * 0.5)) return null;
+  return {
+    id: "darknet-charisma",
+    title: "Train Charisma (Darknet)",
+    reason: `Need ${d.charismaNeed.target} charisma to unlock ${d.charismaNeed.unlocks} darknet server(s)`,
+    category: "skills",
+    score: 55,
+  };
+}
+
+export function ruleDarknetInstallAug(ctx: AdvisorContext): Recommendation | null {
+  const d = ctx.darknet;
+  if (!d || !d.lab || !d.lab.augPending) return null;
+  return {
+    id: "darknet-install-aug",
+    title: "Install labyrinth augmentation",
+    reason: `Cleared the ${d.lab.name} labyrinth; its augmentation is waiting to be installed`,
+    category: "augmentations",
+    score: 70,
+  };
+}
+
 // === RULE REGISTRY ===
 
 export const RULES: AdvisorRule[] = [
@@ -443,6 +472,8 @@ export const RULES: AdvisorRule[] = [
   ruleBitnodeExit,
   ruleGangTerritory,
   ruleGangAscension,
+  ruleDarknetCharisma,
+  ruleDarknetInstallAug,
 ];
 
 // === SCORING ENGINE ===

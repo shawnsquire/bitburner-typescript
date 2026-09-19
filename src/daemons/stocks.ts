@@ -473,14 +473,18 @@ async function daemon(ns: NS, maxTier: number, tierName: string, allocatedRam: n
       commissionRead = true;
     }
 
-    // On first tick, snapshot inherited unrealized P&L so the session starts at $0
+    // On first tick, snapshot inherited unrealized P&L so the session starts at $0,
+    // valued the same way as every later tick (bid for longs, ask for shorts, less
+    // the exit commission) when the tier has the quotes.
     if (tickCount === 1) {
       let inheritedPnL = 0;
       for (const sym of ns.stock.getSymbols()) {
         const [longShares, longAvg, shortShares, shortAvg] = ns.stock.getPosition(sym);
         const price = ns.stock.getPrice(sym);
-        if (longShares > 0) inheritedPnL += longShares * (price - longAvg);
-        if (shortShares > 0) inheritedPnL += shortShares * (shortAvg - price);
+        const bid = maxTier >= 2 ? ns.stock.getBidPrice(sym) : price;
+        const ask = maxTier >= 2 ? ns.stock.getAskPrice(sym) : price;
+        if (longShares > 0) inheritedPnL += longExitProfit(longShares, longAvg, bid, commission);
+        if (shortShares > 0) inheritedPnL += shortExitProfit(shortShares, shortAvg, ask, commission);
       }
       sessionStartOffset = inheritedPnL;
       if (Math.abs(sessionStartOffset) > 0) {
@@ -748,18 +752,24 @@ async function daemon(ns: NS, maxTier: number, tierName: string, allocatedRam: n
           : ns.stock.buyShort(order.symbol, order.shares);
         if (fill <= 0) continue;
         const key = `${order.symbol}-${order.direction}`;
-        if (!positionTracking.has(key)) {
+        const after = ns.stock.getPosition(order.symbol);
+        const avgAfter = order.direction === "long" ? after[1] : after[3];
+        const existing = positionTracking.get(key);
+        if (existing) {
+          // Top-up of a held position: the game's average price is the new entry.
+          existing.entryPrice = avgAfter;
+        } else {
           positionTracking.set(key, {
-            entryPrice: fill,
+            entryPrice: avgAfter,
             ticksHeld: 0,
             direction: order.direction,
             forecastAtEntry: allForecasts.get(order.symbol),
           });
+          if (order.direction === "long") longCount++; else shortCount++;
         }
         notifyPurchase(ns, "stocks", fill * order.shares + commission, `Buy ${order.symbol} ${order.direction.toUpperCase()}`);
         ns.print(`  ${order.direction === "long" ? C.green + "BUY LONG" : C.cyan + "BUY SHORT"}${C.reset} ${order.symbol}: ${ns.format.number(order.shares, 0)} @ ${ns.format.number(fill)}`);
-        previousPositions.set(order.symbol, ns.stock.getPosition(order.symbol));
-        if (order.direction === "long") longCount++; else shortCount++;
+        previousPositions.set(order.symbol, after);
       }
     }
 

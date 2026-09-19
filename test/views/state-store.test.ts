@@ -5,6 +5,8 @@ import {
   setActiveTab,
   getPluginUIState,
   setPluginUIState,
+  conflictingSleeveKeys,
+  sleeveHolderKey,
 } from "/views/dashboard/state-store";
 
 describe("parseStartupConfig", () => {
@@ -101,5 +103,35 @@ describe("active tab state", () => {
   it("round-trips a value written with setActiveTab", () => {
     setActiveTab({ group: 2, sub: 3 });
     expect(getActiveTab()).toEqual({ group: 2, sub: 3 });
+  });
+});
+
+describe("sleeve holder config keys", () => {
+  it("uses the bare key for all sleeves and a per-index key otherwise", () => {
+    expect(sleeveHolderKey()).toBe("sleeveHolder");
+    expect(sleeveHolderKey(0)).toBe("sleeveHolder.0");
+    expect(sleeveHolderKey(7)).toBe("sleeveHolder.7");
+  });
+
+  it("finds the bare fallback and every per-index key pointing at a daemon", () => {
+    const config = new Map<string, string>([
+      ["holder", "rep"],
+      ["sleeveHolder", "rep"],
+      ["sleeveHolder.0", "work"],
+      ["sleeveHolder.1", "rep"],
+      ["sleeveHolder.2", "none"],
+    ]);
+    expect(conflictingSleeveKeys(config, "rep")).toEqual(["sleeveHolder", "sleeveHolder.1"]);
+    expect(conflictingSleeveKeys(config, "work")).toEqual(["sleeveHolder.0"]);
+    expect(conflictingSleeveKeys(config, "blade")).toEqual([]);
+  });
+
+  it("ignores non-sleeve keys with the same value", () => {
+    const config = new Map<string, string>([
+      ["holder", "work"],
+      ["default", "work"],
+      ["sleeveHolderX", "work"],
+    ]);
+    expect(conflictingSleeveKeys(config, "work")).toEqual([]);
   });
 });

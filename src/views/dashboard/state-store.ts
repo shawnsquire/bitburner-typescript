@@ -9,7 +9,7 @@
  */
 import { NetscriptPort, NS } from "@ns";
 import { peekStatus } from "/lib/ports";
-import { setConfigValue, getConfigString, getConfigBool } from "/lib/config";
+import { setConfigValue, getConfigString, getConfigBool, readConfig } from "/lib/config";
 import {
   ToolName,
   DashboardState,
@@ -176,12 +176,40 @@ export function claimFocus(target: "work" | "rep" | "blade" | "none"): void {
 }
 
 /**
- * Claim sleeve focus for a daemon, letting it run actions via a sleeve
- * in parallel with the primary focus holder.
+ * `Command` plus the sleeve index for claim-sleeve-focus. Lives here rather
+ * than in `Command` (types/ports.ts) so this change stays inside the focus
+ * types; fold `focusSleeveIndex` into `Command` when that file is next edited.
  */
-export function claimSleeveFocus(target: "work" | "rep" | "blade" | "none"): void {
+type FocusSleeveCommand = Command & { focusSleeveIndex?: number };
+
+/**
+ * Claim sleeve focus for a daemon, letting it run actions via a sleeve
+ * in parallel with the primary focus holder. Omit `sleeveIndex` to assign
+ * every sleeve (the daemon then writes the bare `sleeveHolder` fallback).
+ */
+export function claimSleeveFocus(target: "work" | "rep" | "blade" | "none", sleeveIndex?: number): void {
   if (!commandPort) return;
-  commandPort.write(JSON.stringify({ tool: "focus", action: "claim-sleeve-focus", focusSleeveTarget: target }));
+  const cmd: FocusSleeveCommand = { tool: "focus", action: "claim-sleeve-focus", focusSleeveTarget: target, focusSleeveIndex: sleeveIndex };
+  commandPort.write(JSON.stringify(cmd));
+}
+
+/**
+ * Focus config keys that direct a sleeve to `daemon`: the bare `sleeveHolder`
+ * fallback and every per-index `sleeveHolder.<i>`. Pure; used when a daemon
+ * takes primary focus or is stopped, so no sleeve keeps pointing at it.
+ */
+export function conflictingSleeveKeys(config: Map<string, string>, daemon: string): string[] {
+  const keys: string[] = [];
+  for (const [key, value] of config) {
+    if (value !== daemon) continue;
+    if (key === "sleeveHolder" || key.startsWith("sleeveHolder.")) keys.push(key);
+  }
+  return keys;
+}
+
+/** Config key for one sleeve's daemon; the bare key when no index is given (all sleeves). */
+export function sleeveHolderKey(sleeveIndex?: number): string {
+  return sleeveIndex === undefined ? "sleeveHolder" : `sleeveHolder.${sleeveIndex}`;
 }
 
 /**
@@ -811,9 +839,8 @@ function executeCommand(ns: NS, cmd: Command): void {
         } else {
           // Fallback: write config directly when focus daemon not running
           setConfigValue(ns, "focus", "holder", cmd.focusTarget);
-          const currentSleeve = getConfigString(ns, "focus", "sleeveHolder", "");
-          if (currentSleeve && currentSleeve === cmd.focusTarget) {
-            setConfigValue(ns, "focus", "sleeveHolder", "none");
+          for (const key of conflictingSleeveKeys(readConfig(ns, "focus"), cmd.focusTarget)) {
+            setConfigValue(ns, "focus", key, "none");
           }
         }
         if (cmd.focusTarget === "none") {
@@ -825,12 +852,14 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "claim-sleeve-focus":
       if (cmd.focusSleeveTarget !== undefined) {
+        const sleeveIndex = (cmd as FocusSleeveCommand).focusSleeveIndex;
+        const sleeveLabel = sleeveIndex === undefined ? "All sleeves" : `Sleeve #${sleeveIndex}`;
         if (cachedData.pids.focus > 0) {
-          // Forward to focus daemon via control port
+          // Forward to focus daemon via control port (no index = every sleeve)
           const focusCtrl = ns.getPortHandle(FOCUS_CONTROL_PORT);
           focusCtrl.write(JSON.stringify({
             action: "set-sleeve",
-            sleeveIndex: 0,
+            sleeveIndex,
             sleeveDaemon: cmd.focusSleeveTarget,
           } as FocusControlMessage));
         } else {
@@ -840,12 +869,12 @@ function executeCommand(ns: NS, cmd: Command): void {
             ns.toast(`${cmd.focusSleeveTarget} already holds primary focus`, "warning", 2000);
             break;
           }
-          setConfigValue(ns, "focus", "sleeveHolder", cmd.focusSleeveTarget);
+          setConfigValue(ns, "focus", sleeveHolderKey(sleeveIndex), cmd.focusSleeveTarget);
         }
         if (cmd.focusSleeveTarget === "none") {
-          ns.toast("Sleeve focus disabled", "info", 2000);
+          ns.toast(`${sleeveLabel}: focus disabled`, "info", 2000);
         } else {
-          ns.toast(`Sleeve focus: ${cmd.focusSleeveTarget} daemon`, "success", 2000);
+          ns.toast(`${sleeveLabel}: ${cmd.focusSleeveTarget} daemon`, "success", 2000);
         }
       }
       break;
@@ -1659,9 +1688,8 @@ function stopTool(ns: NS, tool: ToolName): void {
       if (currentHolder === tool) {
         setConfigValue(ns, "focus", "holder", "");
       }
-      const currentSleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "");
-      if (currentSleeveHolder === tool) {
-        setConfigValue(ns, "focus", "sleeveHolder", "none");
+      for (const key of conflictingSleeveKeys(readConfig(ns, "focus"), tool)) {
+        setConfigValue(ns, "focus", key, "none");
       }
     }
     ns.toast(`Stopped ${tool}`, "warning", 2000);

@@ -83,13 +83,14 @@ export type FocusDaemon = "work" | "rep" | "blade" | "none";
 
 export interface SleeveAssignment {
   sleeveIndex: number;
+  /** Daemon directing this sleeve; "none" when unassigned */
   daemon: FocusDaemon;
 }
 
 export interface FocusStatus {
   /** Primary focus holder */
   holder: FocusDaemon;
-  /** Sleeve assignments (one per daemon, initially just sleeve 0) */
+  /** One entry per sleeve (index 0..numSleeves-1), unassigned sleeves included */
   sleeves: SleeveAssignment[];
   /** Whether Simulacrum augmentation is detected */
   simulacrum: boolean;
@@ -102,8 +103,10 @@ export interface FocusStatus {
 }
 
 export interface FocusControlMessage {
+  /** refresh re-runs the Simulacrum check (actions/check-simulacrum.js) */
   action: "set-holder" | "set-sleeve" | "refresh";
   holder?: FocusDaemon;
+  /** set-sleeve target; omit to assign every sleeve (writes the bare sleeveHolder fallback) */
   sleeveIndex?: number;
   sleeveDaemon?: FocusDaemon;
 }

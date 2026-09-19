@@ -8,10 +8,13 @@
  * (which faction, which gym exercise, etc.) to assign to the sleeve.
  *
  * Usage:
- *   run actions/assign-sleeve.js --sleeve 0 --daemon rep
- *   run actions/assign-sleeve.js --sleeve 0 --daemon work
- *   run actions/assign-sleeve.js --sleeve 0 --daemon blade
- *   run actions/assign-sleeve.js --sleeve 0 --daemon none
+ *   run actions/assign-sleeve.js --sleeve <index> --daemon rep
+ *   run actions/assign-sleeve.js --sleeve <index> --daemon work
+ *   run actions/assign-sleeve.js --sleeve <index> --daemon blade
+ *   run actions/assign-sleeve.js --sleeve <index> --daemon none
+ *
+ * The focus daemon runs this once per sleeve it assigns (any index from
+ * 0 to ns.sleeve.getNumSleeves() - 1).
  */
 import { NS, FactionName, UniversityLocationName, GymLocationName } from "@ns";
 import { peekStatus } from "/lib/ports";
@@ -24,11 +27,11 @@ export async function main(ns: NS): Promise<void> {
     ["daemon", "none"],
   ]);
 
-  const sleeveIndex = flags.sleeve as number;
+  const sleeveIndex = Math.trunc(Number(flags.sleeve));
   const daemon = flags.daemon as string;
 
   const numSleeves = ns.sleeve.getNumSleeves();
-  if (sleeveIndex >= numSleeves) {
+  if (!Number.isFinite(sleeveIndex) || sleeveIndex < 0 || sleeveIndex >= numSleeves) {
     ns.tprint(`ERROR: Sleeve index ${sleeveIndex} out of range (${numSleeves} sleeves available)`);
     return;
   }

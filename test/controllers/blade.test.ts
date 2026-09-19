@@ -227,17 +227,63 @@ describe("recommendSkillUpgrade", () => {
     expect(recommendSkillUpgrade([], 1000)).toBeNull();
   });
 
-  it("never recommends a skill outside the priority list (documents a real gap)", () => {
-    // Tracer, Datamancer, Cyber's Edge and Hands of Midas are real, useful
-    // Bladeburner skills that are simply absent from SKILL_PRIORITY — this
-    // test documents that gap rather than asserting desired behavior.
-    const onlyOmitted: SkillData[] = [
-      { name: "Tracer", level: 0, upgradeCost: 1 },
-      { name: "Datamancer", level: 0, upgradeCost: 1 },
-      { name: "Cyber's Edge", level: 0, upgradeCost: 1 },
-      { name: "Hands of Midas", level: 0, upgradeCost: 1 },
+  describe("formerly omitted skills (Tracer, Datamancer, Cyber's Edge, Hands of Midas)", () => {
+    // All four were absent from SKILL_PRIORITY until the 2026-09-19 audit.
+    // Datamancer and Hands of Midas sit in the mid group (with Cloak and
+    // Short-Circuit); Tracer and Cyber's Edge form the lowest group, capped.
+    const onlyFormerlyOmitted = (levels: Partial<Record<string, number>> = {}, cost = 1): SkillData[] => [
+      { name: "Tracer", level: levels["Tracer"] ?? 0, upgradeCost: cost },
+      { name: "Datamancer", level: levels["Datamancer"] ?? 0, upgradeCost: cost },
+      { name: "Cyber's Edge", level: levels["Cyber's Edge"] ?? 0, upgradeCost: cost },
+      { name: "Hands of Midas", level: levels["Hands of Midas"] ?? 0, upgradeCost: cost },
     ];
-    expect(recommendSkillUpgrade(onlyOmitted, 1_000_000)).toBeNull();
+
+    it("recommends Datamancer first: mid group, and it is listed before Hands of Midas at equal level", () => {
+      // Ties within a group go to the first-listed name (strict < comparison).
+      expect(recommendSkillUpgrade(onlyFormerlyOmitted(), 1_000_000)?.name).toBe("Datamancer");
+    });
+
+    it("alternates to Hands of Midas once Datamancer is the higher level", () => {
+      expect(recommendSkillUpgrade(onlyFormerlyOmitted({ Datamancer: 1 }), 1_000_000)?.name).toBe("Hands of Midas");
+    });
+
+    it("ranks the mid group below Cloak's group-mates only by level, not name", () => {
+      const withCloak: SkillData[] = [
+        { name: "Cloak", level: 3, upgradeCost: 1 },
+        ...onlyFormerlyOmitted({ Datamancer: 5, "Hands of Midas": 5 }),
+      ];
+      expect(recommendSkillUpgrade(withCloak, 1_000_000)?.name).toBe("Cloak");
+    });
+
+    it("recommends Tracer before Cyber's Edge once the mid group is unaffordable", () => {
+      const skills: SkillData[] = [
+        { name: "Datamancer", level: 10, upgradeCost: 500 },
+        { name: "Hands of Midas", level: 10, upgradeCost: 500 },
+        { name: "Hyperdrive", level: 10, upgradeCost: 500 },
+        { name: "Tracer", level: 0, upgradeCost: 2 },
+        { name: "Cyber's Edge", level: 0, upgradeCost: 1 },
+      ];
+      expect(recommendSkillUpgrade(skills, 100)?.name).toBe("Tracer");
+    });
+
+    it("Hyperdrive outranks Tracer and Cyber's Edge (they are the lowest group)", () => {
+      const skills: SkillData[] = [
+        { name: "Hyperdrive", level: 50, upgradeCost: 1 },
+        { name: "Tracer", level: 0, upgradeCost: 1 },
+        { name: "Cyber's Edge", level: 0, upgradeCost: 1 },
+      ];
+      expect(recommendSkillUpgrade(skills, 100)?.name).toBe("Hyperdrive");
+    });
+
+    it("stops buying Tracer and Cyber's Edge at the level-25 cap", () => {
+      const capped: SkillData[] = [
+        { name: "Tracer", level: 25, upgradeCost: 1 },
+        { name: "Cyber's Edge", level: 25, upgradeCost: 1 },
+      ];
+      expect(recommendSkillUpgrade(capped, 1_000_000)).toBeNull();
+      // One level under the cap is still bought.
+      expect(recommendSkillUpgrade([{ name: "Cyber's Edge", level: 24, upgradeCost: 1 }], 100)?.name).toBe("Cyber's Edge");
+    });
   });
 });
 

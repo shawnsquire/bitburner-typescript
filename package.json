@@ -13,6 +13,7 @@
     "sim": "node sim/stocks/stocksim/validate.ts",
     "ram:sync": "node tools/gen-ram-table.mjs",
     "test:contracts": "node tools/test-contracts.mjs",
+    "test:darknet": "node tools/test-darknet.mjs",
     "build": "tsc",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint src test --ext .ts,.tsx",

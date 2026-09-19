@@ -17,10 +17,10 @@
  * (see CLAUDE.md for how that checkout is kept on the game version you play).
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { homedir } from "node:os";
-import ts from "typescript";
+import { createLoader } from "./lib/ts-loader.mjs";
 
 const REPO = resolve(dirname(new URL(import.meta.url).pathname), "..");
 const GAME = process.env.BITBURNER_SRC ?? join(homedir(), "documents/apps/games/bitburner");
@@ -40,7 +40,6 @@ if (!existsSync(join(CONTRACT_DIR, "ContractTypes.ts"))) {
 // Transpiles each TS file to CommonJS and evaluates it with a custom require so
 // we can load game modules without their React/UI dependency tree.
 
-const cache = new Map();
 const stubs = {
   "@nsdefs": {}, // type-only import in ContractTypes.ts
   exceptionAlert: { exceptionAlert: (e) => console.error("game exceptionAlert:", e) },
@@ -56,20 +55,7 @@ function resolveSpecifier(spec, fromFile) {
   return p;
 }
 
-function loadTs(file) {
-  if (stubs[file]) return stubs[file];
-  if (cache.has(file)) return cache.get(file).exports;
-  const source = readFileSync(file, "utf8");
-  const { outputText } = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
-    fileName: file,
-  });
-  const module = { exports: {} };
-  cache.set(file, module); // register before evaluating so import cycles resolve
-  const req = (spec) => loadTs(resolveSpecifier(spec, file));
-  new Function("require", "module", "exports", outputText)(req, module, module.exports);
-  return module.exports;
-}
+const loadTs = createLoader({ resolve: resolveSpecifier, stubs });
 
 // ─── Load both sides ───────────────────────────────────────────────────────
 

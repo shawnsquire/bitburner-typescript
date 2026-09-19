@@ -54,10 +54,13 @@ const MAX_CONSECUTIVE_TIMEOUTS = 5;
 async function agentLoop(ns: NS): Promise<void> {
   const self = ns.args[0] as string;
   let backlog: ReportEvent[] = [];
-  // Guards unleashStormSeed() to fire at most once per process lifetime: the
-  // coordinator only sets workers[self].storm when it has decided to trigger
-  // one, and a script only lives until this host restarts or is deleted, so
-  // "once per seed" and "once per agent process" coincide in practice.
+  // Guards unleashStormSeed() to fire at most once per process lifetime,
+  // latched only on a successful call (see below) so a STORM_SEED.exe that
+  // doesn't exist here yet gets retried on a later tick instead of being
+  // given up on permanently. The coordinator only sets workers[self].storm
+  // when it has decided to trigger one, and a script only lives until this
+  // host restarts or is deleted, so "once per seed" and "once per agent
+  // process" coincide in practice.
   let stormFired = false;
 
   for (;;) {
@@ -96,9 +99,16 @@ async function agentLoop(ns: NS): Promise<void> {
 
     const flags = policy.workers[self];
     if (flags && flags.storm && !stormFired) {
-      stormFired = true;
       try {
-        ns.dnet.unleashStormSeed();
+        const result = ns.dnet.unleashStormSeed();
+        if (result.success) {
+          stormFired = true;
+        } else {
+          // Not latched: e.g. no STORM_SEED.exe here yet -- retry next tick
+          // once the coordinator's harvest reports one, rather than
+          // permanently giving up on a storm this process could still fire.
+          events.push({ t: "error", host: self, op: "unleashStormSeed", code: result.code, message: result.message });
+        }
       } catch {
         // No STORM_SEED.exe on this host; nothing to report.
       }
@@ -183,6 +193,14 @@ async function crackNeighbour(
 ): Promise<void> {
   const solver = solverFor(details.modelId);
   if (!solver) return; // no solver registered for this model yet
+
+  // Design section 2: a neighbour whose requiredCharismaSkill exceeds the
+  // player's is reported as `gap` and skipped for heartbleed. Reported once
+  // per tick here rather than per attempt inside driveSolver.
+  if (!solver.blind && policy.heartbleed && policy.charisma < details.requiredCharismaSkill) {
+    events.push({ t: "gap", host, required: details.requiredCharismaSkill });
+  }
+
   await driveSolver(ns, self, host, details, policy, events, solver);
 }
 
@@ -217,12 +235,28 @@ async function driveSolver<S>(
   let feedback: ParsedFeedback | null = null;
   let attempts = 0;
   let consecutiveTimeouts = 0;
+  // Set on a RequestTimeOut so the next iteration re-sends the SAME attempt
+  // instead of asking the solver for a new one: the request never reached
+  // getAuthResult (the game rolls the timeout before checking the
+  // password -- see authenticate() in NetscriptFunctions/Darknet.ts), so no
+  // password verdict was ever produced for it. Treating a timeout as a
+  // failed guess would feed feedback solvers a verdict they never got --
+  // e.g. AccountsManager_4.2 would read "no data" and fall back to
+  // counting from 0, NIL would read "no position answered yes" and drop
+  // live candidates.
+  let pendingAttempt: string | null = null;
 
   for (;;) {
-    const decision: AttemptDecision<S> = chooseAttempt(solver, state, feedback, attempts, policy.maxAttempts, details.modelId);
-    if (decision.kind === "giveUp") return;
-    state = decision.state;
-    const attempt: string = decision.attempt;
+    let attempt: string;
+    if (pendingAttempt !== null) {
+      attempt = pendingAttempt;
+      pendingAttempt = null;
+    } else {
+      const decision: AttemptDecision<S> = chooseAttempt(solver, state, feedback, attempts, policy.maxAttempts, details.modelId);
+      if (decision.kind === "giveUp") return;
+      state = decision.state;
+      attempt = decision.attempt;
+    }
 
     const t0 = Date.now();
     const res = await ns.dnet.authenticate(host, attempt);
@@ -234,15 +268,19 @@ async function driveSolver<S>(
       return;
     }
 
-    if (res.code === CODE.ServiceUnavailable) return; // never retry a vanished neighbour this tick
+    // Never retry this tick: the neighbour vanished (503), or it moved and
+    // is no longer directly connected (351) -- a fresh `seen` next tick
+    // will tell us if/where it's still reachable from.
+    if (res.code === CODE.ServiceUnavailable || res.code === CODE.DirectConnectionRequired) return;
 
     if (res.code === CODE.RequestTimeOut) {
       consecutiveTimeouts++;
       if (consecutiveTimeouts > MAX_CONSECUTIVE_TIMEOUTS) return; // give up on this neighbour for the tick
-      await ns.sleep(Math.min(500 * 2 ** consecutiveTimeouts, 5000)); // back off before the next attempt
-    } else {
-      consecutiveTimeouts = 0;
+      await ns.sleep(Math.min(500 * 2 ** consecutiveTimeouts, 5000)); // back off, then re-send the same attempt
+      pendingAttempt = attempt;
+      continue;
     }
+    consecutiveTimeouts = 0;
 
     if (!solver.blind && policy.heartbleed && policy.charisma >= details.requiredCharismaSkill) {
       const hb = await ns.dnet.heartbleed(host, { peek: true, logsToCapture: 10 });

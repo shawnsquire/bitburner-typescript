@@ -527,7 +527,7 @@ export interface WorkStatus {
 
 // === HACK STRATEGY ===
 
-export type HackStrategy = "money" | "xp" | "drain" | "stocks";
+export type HackStrategy = "money" | "xp" | "drain";
 
 // === HACKNET SPEND STRATEGY ===
 
@@ -618,7 +618,7 @@ export interface HackStatus {
   needHigherLevel: { count: number; nextLevel: number } | null;
 
   // Mode fields
-  mode?: "legacy" | "batch" | "stocks";
+  mode?: "legacy" | "batch";
   maxBatches?: number;
   incomePerSec?: number;
   incomePerSecFormatted?: string;

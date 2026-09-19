@@ -36,12 +36,10 @@ import {
   HackStrategy,
   ShareStatus,
   FleetAllocation,
-  StocksStatus,
   TargetAssignment as FormattedTarget,
   BatchTargetState,
   BatchTargetStatus,
 } from "/types/ports";
-import { getServerForSymbol } from "/controllers/stocks";
 import { COLORS, HackAction } from "/lib/utils";
 import { getCachedServers } from "/lib/server-cache";
 import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
@@ -750,192 +748,10 @@ export async function main(ns: NS): Promise<void> {
     await runDrainMode(ns);
   } else if (cfg.strategy === "xp") {
     await runXpMode(ns);
-  } else if (cfg.strategy === "stocks") {
-    await runStocksMode(ns);
   } else if (resolvedBatches > 0) {
     await runBatchMode(ns);
   } else {
     await runLegacyMode(ns);
-  }
-}
-
-// === STOCKS MODE ===
-
-/**
- * Stock manipulation mode: grow servers for long positions, hack for short positions.
- * Reads stock positions from the stocks daemon status port and distributes fleet
- * to push stock prices in the desired direction using {stock: true} flag.
- */
-async function runStocksMode(ns: NS): Promise<void> {
-  const C = COLORS;
-  const GROW_SCRIPT = "/scripts/hack/stock-grow.js";
-  const HACK_SCRIPT = "/scripts/hack/stock-hack.js";
-  const GROW_RAM = ns.getScriptRam(GROW_SCRIPT);
-  const HACK_RAM = ns.getScriptRam(HACK_SCRIPT);
-
-  ns.print(`${C.cyan}Stocks manipulation mode started${C.reset}`);
-
-  // Track deployed workers to avoid re-deploying every cycle
-  const deployedWorkers: Map<string, { server: string; pid: number; target: string; action: string }> = new Map();
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const cfg = readHackConfig(ns);
-    if (cfg.strategy !== "stocks") {
-      ns.print(`${C.yellow}Strategy changed from stocks, exiting${C.reset}`);
-      return;
-    }
-
-    // Read stock positions from stocks daemon
-    const stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, 30_000);
-
-    // Build target list from stock positions
-    interface StockTarget {
-      server: string;
-      symbol: string;
-      action: "grow" | "hack";
-      priority: number;
-    }
-    const targets: StockTarget[] = [];
-
-    if (stocksStatus && stocksStatus.positions) {
-      for (const pos of stocksStatus.positions) {
-        const server = getServerForSymbol(pos.symbol);
-        if (!server) continue;
-        if (!ns.hasRootAccess(server)) continue;
-
-        targets.push({
-          server,
-          symbol: pos.symbol,
-          action: pos.direction === "long" ? "grow" : "hack",
-          priority: pos.shares * Math.abs(pos.confidence),
-        });
-      }
-    }
-
-    // Sort by priority (largest positions first)
-    targets.sort((a, b) => b.priority - a.priority);
-
-    // Get fleet servers
-    const fleetServers = getUsableServers(ns, cfg.homeReserve, cfg.excludeHacknet);
-    const sharePercent = getSharePercentFromPort(ns);
-    const allocation = computeFleetAllocation(fleetServers, "stocks", sharePercent);
-    publishStatus(ns, STATUS_PORTS.fleet, allocation);
-
-    // Deploy stock-manipulation workers to the fleet. These aren't part of
-    // the standard HWGW worker set that deployWorkers() copies, so without
-    // this every ns.exec() below silently fails (pid 0) on any non-home
-    // server, leaving stocks mode running on home's RAM only.
-    for (const hostname of allocation.hackServers) {
-      if (hostname === "home") continue;
-      if (!ns.fileExists(GROW_SCRIPT, hostname) || !ns.fileExists(HACK_SCRIPT, hostname)) {
-        await ns.scp([GROW_SCRIPT, HACK_SCRIPT], hostname, "home");
-      }
-    }
-
-    // Kill stale workers (targets changed or removed)
-    const currentTargetKeys = new Set(targets.map(t => `${t.server}-${t.action}`));
-    for (const [key, worker] of deployedWorkers.entries()) {
-      if (!currentTargetKeys.has(key)) {
-        ns.kill(worker.pid);
-        deployedWorkers.delete(key);
-      }
-    }
-
-    // Distribute fleet RAM across targets
-    if (targets.length > 0) {
-      const totalPriority = targets.reduce((sum, t) => sum + t.priority, 0);
-      if (totalPriority <= 0) { await ns.sleep(cfg.interval); continue; }
-
-      for (const target of targets) {
-        const key = `${target.server}-${target.action}`;
-        if (deployedWorkers.has(key)) {
-          // Check if worker is still running
-          const worker = deployedWorkers.get(key)!;
-          if (ns.isRunning(worker.pid)) continue;
-          deployedWorkers.delete(key);
-        }
-
-        const script = target.action === "grow" ? GROW_SCRIPT : HACK_SCRIPT;
-        const scriptRam = target.action === "grow" ? GROW_RAM : HACK_RAM;
-        const targetRamShare = (target.priority / totalPriority) * allocation.hackFleetRam;
-        const desiredThreads = Math.floor(targetRamShare / scriptRam);
-        if (desiredThreads <= 0) continue;
-
-        // Find a fleet server with enough RAM
-        for (const fleetHost of allocation.hackServers) {
-          const available = ns.getServerMaxRam(fleetHost) - ns.getServerUsedRam(fleetHost);
-          const threads = Math.min(desiredThreads, Math.floor(available / scriptRam));
-          if (threads <= 0) continue;
-
-          const pid = ns.exec(script, fleetHost, threads, target.server);
-          if (pid > 0) {
-            deployedWorkers.set(key, {
-              server: fleetHost,
-              pid,
-              target: target.server,
-              action: target.action,
-            });
-            break;
-          }
-        }
-      }
-    }
-
-    // Build and publish status
-    const hackStatus: HackStatus = {
-      mode: "stocks",
-      strategy: "stocks",
-      totalRam: ns.format.ram(allocation.totalFleetRam),
-      serverCount: allocation.hackServers.length,
-      totalThreads: String(deployedWorkers.size),
-      activeTargets: targets.length,
-      totalTargets: targets.length,
-      saturationPercent: 0,
-      shortestWait: "—",
-      longestWait: "—",
-      hackingCount: targets.filter(t => t.action === "hack").length,
-      growingCount: targets.filter(t => t.action === "grow").length,
-      weakeningCount: 0,
-      targets: targets.map((t, i) => ({
-        rank: i + 1,
-        hostname: t.server,
-        action: t.action as HackAction,
-        assignedThreads: deployedWorkers.has(`${t.server}-${t.action}`) ? 1 : 0,
-        optimalThreads: 1,
-        threadsSaturated: false,
-        moneyPercent: 0,
-        moneyDisplay: t.symbol,
-        securityDelta: "—",
-        securityClean: true,
-        eta: "—",
-        expectedMoney: 0,
-        expectedMoneyFormatted: "—",
-        totalThreads: 0,
-        completionEta: null,
-        hackThreads: t.action === "hack" ? 1 : 0,
-        growThreads: t.action === "grow" ? 1 : 0,
-        weakenThreads: 0,
-      })),
-      totalExpectedMoney: 0,
-      totalExpectedMoneyFormatted: "—",
-      needHigherLevel: null,
-      sharePercent: allocation.sharePercent,
-    };
-    publishStatus(ns, STATUS_PORTS.hack, hackStatus);
-
-    ns.print(
-      `${C.cyan}=== Stocks Manipulation ===${C.reset} ` +
-      `Targets: ${targets.length} | ` +
-      `Workers: ${deployedWorkers.size} | ` +
-      `Fleet: ${allocation.hackServers.length} servers`
-    );
-    for (const t of targets) {
-      const deployed = deployedWorkers.has(`${t.server}-${t.action}`) ? `${C.green}ACTIVE${C.reset}` : `${C.dim}pending${C.reset}`;
-      ns.print(`  ${t.symbol} (${t.server}): ${t.action.toUpperCase()} [${deployed}]`);
-    }
-
-    await ns.sleep(10_000); // Re-evaluate every 10 seconds
   }
 }
 

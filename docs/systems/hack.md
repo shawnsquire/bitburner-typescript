@@ -18,7 +18,7 @@ this for you).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `strategy` | `money` | `money`, `xp`, `drain`, or `stocks` (see below). |
+| `strategy` | `money` | `money`, `xp`, or `drain` (see below). |
 | `homeReserve` | `32` | GB of home RAM never used for workers. |
 | `maxTargets` | `100` | Upper bound on simultaneous targets. |
 | `maxBatches` | `0` | HWGW batches per target. `0` = auto: fleets of 256 GB or more get batch mode capped at 256 batches per target, smaller fleets use legacy parallel mode. Any positive value forces batch mode with that cap. |
@@ -39,10 +39,13 @@ whether hacknet servers may host workers.
   weaken/grow/hack loop. Targets are scored by money per second per thread.
 - **xp**: all threads weaken a single high-XP target.
 - **drain**: hack without regrowing, for emptying a server before a reset.
-- **stocks**: grow or hack servers whose stock you hold, with the `stock`
-  flag set, to push prices. Reads positions from the stocks daemon's status port.
-  Uses `scripts/hack/stock-grow.js` and `stock-hack.js`, which the daemon copies
-  to the fleet.
+
+There is no stock-manipulation strategy. The 2026-09-19 analysis
+(`sim/stocks/exp-manip`) found that stock-flagged hacks cannot hold a megacap's
+forecast against the market's 45%-per-75-tick flip at any sustained rate, and
+that the only stocks that respond (small, low-forecast ones) are exactly the ones
+the stocks daemon never holds. Workers never pass the `stock` flag, so normal
+hacking has no effect on stock prices.
 
 ## Ports
 
@@ -50,7 +53,6 @@ whether hacknet servers may host workers.
 |---|---|---|
 | `STATUS_PORTS.hack` | publishes | `HackStatus`: mode, strategy, targets, batch state, income per second, XP target. |
 | `STATUS_PORTS.fleet` | publishes | `FleetAllocation`: which servers are hacking versus sharing. |
-| `STATUS_PORTS.stocks` | consumes | Positions, for the stocks strategy. |
 | `STATUS_PORTS.share` | consumes | Share target percent, to carve fleet RAM out for share workers. |
 
 ## Dashboard

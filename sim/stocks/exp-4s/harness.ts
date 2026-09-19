@@ -1,276 +1,234 @@
 /**
- * Faithful replay of the repo's real 4S-mode stocks daemon tick loop
- * (src/daemons/stocks.ts `daemon()`), driving the stocksim `Market` instead of `ns`,
- * and calling the exact same pure controller functions the real daemon calls
- * (src/controllers/stocks.ts). See results.md for fidelity notes/caveats.
+ * Faithful replay of the repo's real stocks daemon tick loop (src/daemons/stocks.ts
+ * `daemon()`), driving the stocksim `Market` instead of `ns`, and calling the exact
+ * same pure controller functions the real daemon calls (src/controllers/stocks.ts).
+ * See results-v2.md for fidelity notes/caveats.
  *
- * Deliberately NOT replicated (out of scope per the task brief):
- *   - smartMode / hack-daemon awareness (no hack daemon exists in the sim; smart mode
- *     is documented elsewhere as inert/wrong)
- *   - pre4S / scraped-forecast paths, tickWindow price history, MA trend detection
- *     (this harness always has 4S access, tick 1)
+ * Per-tick order mirrors daemon.ts exactly:
+ *   1. tradingCapital read once (daemon.ts:530-534, `getBudgetBalance`)
+ *   2. per symbol: sells first (shouldSell on the forecast, daemon.ts:633-667), then
+ *      re-read position, then held-position bookkeeping (portfolioValue, ticksHeld;
+ *      daemon.ts:669-702), then entry candidates (daemon.ts:704-718)
+ *   3. after the symbol loop: one shared cash pool via planPurchases, executed with
+ *      buyStock/buyShort (daemon.ts:736-764)
+ *
+ * Deliberately NOT replicated (out of scope per the task brief, same as the old
+ * harness this replaces):
+ *   - smartMode / hack-daemon awareness (no hack daemon exists in the sim)
  *   - TIX/4S API purchase flow and the wse-access budget carve-out (assumed already
- *     owned - the task brief doesn't ask for this)
+ *     owned in "true4s" mode; "estimated" mode assumes tier 2 with no 4S at all)
  *   - external-position-change detection (previousPositions) - nothing else trades
  *     against the same market in a backtest
  *   - tier RAM selection / respawn logic (not part of the trading behavior)
+ *   - scraped-forecast mode (DOM scraper fallback) - "true4s" mode covers both real
+ *     4S and scraped since the daemon treats them identically (both `exactForecast`)
  */
 import { Market } from "../stocksim/market.ts";
 import {
+  createPriceHistory,
+  addPrice,
+  estimateForecast,
+  estimateVolatility,
   forecastSignal,
+  spreadFromQuotes,
+  planPurchases,
   shouldSell,
-  shouldStopLoss,
-  updatePeakPrice,
-  calcWeightedBudget,
-  calculatePositionSize,
-  meetsCommissionThreshold,
-  TRADING_PROFILES,
+  type PriceHistory,
   type PositionTracking,
-  type StopLossParams,
+  type PurchaseCandidate,
+  type Direction,
 } from "../../../src/controllers/stocks.ts";
 import { COMMISSION, HORIZON, MetricsTracker, computeTradingCapital, type CapitalParams, type RunMetrics } from "./common.ts";
 
-export interface DaemonParamOverrides {
-  minForecastDeviation?: number;
-  sellForecastDeviation?: number;
-  hardStopPercent?: number;
-  trailingStopPercent?: number;
-  maxHoldTicks?: number;
-  maxPositions?: number;
-  sellCooldownTicks?: number;
-  commissionPerTrade?: number;
-}
+/** Signal source: "true4s" reads market.getForecast/getVolatility directly (models
+ *  both real 4S and the scraped-forecast fallback, which the daemon treats identically
+ *  as `exactForecast`); "estimated" derives forecast/volatility from price history via
+ *  estimateForecast/estimateVolatility only, and never calls getForecast/getVolatility -
+ *  models tier-2 (pre-4S) operation. */
+export type SignalMode = "true4s" | "estimated";
 
 export interface DaemonConfig {
-  profile: "aggressive" | "moderate" | "conservative";
-  overrides?: DaemonParamOverrides;
+  mode: SignalMode;
+  /** Entry gate for exactForecast signals (4S/scraped). Daemon config default: 0.05. */
+  minForecastDeviation: number;
+  /** Entry gate for estimated signals - wider because the estimate is noisier. Daemon
+   *  config default: 0.10. Unused in "true4s" mode. */
+  preMinForecastDeviation?: number;
+  /** Price-history window for the pre-4S estimator. Daemon config default: 40. */
+  tickWindow?: number;
+  /** Round-trip hurdle horizon passed to planPurchases. Daemon config default: 50. */
+  holdHorizonTicks?: number;
+  /** Cash held back from the pool every tick regardless of capital mode. Daemon config
+   *  default: 10. */
+  cashReservePercent?: number;
   capital: CapitalParams;
   startCash: number;
   canShort: boolean;
   horizon?: number;
-  /** Bonus ablation: use bid/ask (the price you'd actually get) instead of mid for the
-   *  ongoing peak-tracking/stop-loss check on an already-open position, instead of the
-   *  daemon's actual `ns.stock.getPrice(sym)` (mid). Entry price/peak are ALWAYS the
-   *  fill price regardless of this flag - that's the daemon's real behavior, not a variant. */
-  useFillPriceForStops?: boolean;
 }
 
-const PRE_THRESHOLD = 0.03; // writeDefaultConfig default; irrelevant in 4S mode (maRatio always null)
-
-function resolveParams(cfg: DaemonConfig) {
-  const base = TRADING_PROFILES[cfg.profile];
-  return {
-    minForecastDeviation: base.minForecastDeviation,
-    sellForecastDeviation: base.sellForecastDeviation,
-    hardStopPercent: base.stopLossPercent,
-    trailingStopPercent: base.trailingStopPercent,
-    maxHoldTicks: base.maxHoldTicks,
-    maxPositions: base.maxPositions,
-    sellCooldownTicks: 3,
-    commissionPerTrade: COMMISSION,
-    ...cfg.overrides,
-  };
-}
-
-interface Candidate {
-  sym: string;
-  dir: "long" | "short";
-  strength: number;
-  price: number;
-  expectedReturn: number;
-  forecast: number;
+/**
+ * tradingCapital per daemon.ts:530-534 + src/controllers/budget.ts computeAllowances:
+ * allowance = max(0, weight*netWorth - portfolioValue), netWorth = cash + portfolioValue
+ * (no corp holdings modeled here). portfolioValue is the daemon's own definition (mark
+ * long at bid, short at cost basis, daemon.ts:673-692) - NOT the sim's `market.netWorth()`
+ * liquidation-value method, which subtracts commission per leg and marks shorts to their
+ * current buy-back cost instead of cost basis. The old exp-4s harness/canonical.ts used
+ * `market.netWorth()` for this formula's netWorth term as a documented approximation;
+ * this harness uses the budget controller's actual netWorth definition instead, since the
+ * task brief spells out the allowance formula precisely. The difference is small in
+ * practice (idle-cash fractions observed here run 60-95%, so portfolioValue is a small
+ * share of netWorth either way) but the two are not identical formulas - see results-v2.md.
+ */
+function tradingCapitalForTick(capital: CapitalParams, cash: number, portfolioValue: number): number {
+  const netWorth = cash + portfolioValue;
+  return computeTradingCapital(capital, netWorth, portfolioValue, cash);
 }
 
 export function runDaemon(seed: number, cfg: DaemonConfig): RunMetrics {
   const horizon = cfg.horizon ?? HORIZON;
   const market = new Market(seed, { cash: cfg.startCash });
   const symbols = market.symbols();
-  const params = resolveParams(cfg);
-  const stopParams: StopLossParams = {
-    hardStopPercent: params.hardStopPercent,
-    trailingStopPercent: params.trailingStopPercent,
-    maxHoldTicks: params.maxHoldTicks,
-  };
+  const commission = COMMISSION;
+  const holdHorizonTicks = cfg.holdHorizonTicks ?? 50;
+  const cashReservePercent = cfg.cashReservePercent ?? 10;
+  const preMinForecastDeviation = cfg.preMinForecastDeviation ?? 0.10;
+  const tickWindow = cfg.tickWindow ?? 40;
+  const reserveFraction = Math.min(Math.max(cashReservePercent, 0), 100) / 100;
 
   const tracker = new MetricsTracker(seed, market.netWorth());
   const positionTracking = new Map<string, PositionTracking>();
-  const sellCooldowns = new Map<string, number>();
-  let tickCount = 0;
+  const priceHistories = new Map<string, PriceHistory>();
 
   for (let t = 0; t < horizon; t++) {
     market.tick();
-    tickCount++;
 
-    // --- Budget: tradingCapital read once before the per-symbol loop, exactly like
-    // the real daemon reading getBudgetBalance() before its symbol loop. portfolioValue
-    // uses the daemon's own definition (mark-to-mid longs, cost-basis shorts), NOT the
-    // sim's netWorth() liquidation value - see docs/systems/budget.md + daemon lines
-    // ~719/792.
+    // --- tradingCapital: read once before the per-symbol loop (daemon.ts:530-534),
+    // from portfolioValue as of the END of the previous tick (the daemon's actual
+    // ordering: getBudgetBalance() is called before this tick has touched anything).
     let portfolioValue = 0;
     for (const sym of symbols) {
       const [longShares, , shortShares, shortAvg] = market.getPosition(sym);
-      if (longShares > 0) portfolioValue += longShares * market.getPrice(sym);
+      if (longShares > 0) portfolioValue += longShares * market.getBidPrice(sym);
       if (shortShares > 0) portfolioValue += shortShares * shortAvg;
     }
-    const netWorthNow = market.netWorth();
-    const tradingCapital = computeTradingCapital(cfg.capital, netWorthNow, portfolioValue, market.getCash());
+    const tradingCapital = tradingCapitalForTick(cfg.capital, market.getCash(), portfolioValue);
 
-    const buyCandidates: Candidate[] = [];
-    let longCount = 0;
-    let shortCount = 0;
+    const candidates: PurchaseCandidate[] = [];
 
     for (const sym of symbols) {
-      const price = market.getPrice(sym);
-      const [longShares, , shortShares, shortAvg] = market.getPosition(sym);
-      const forecast = market.getForecast(sym);
-      const volatility = market.getVolatility(sym);
-      const sig = forecastSignal(forecast, volatility, params.minForecastDeviation);
+      const ask = market.getAskPrice(sym);
+      const bid = market.getBidPrice(sym);
+      const spread = spreadFromQuotes(ask, bid);
+      let [longShares, longAvg, shortShares, shortAvg] = market.getPosition(sym);
 
-      if (longShares > 0) {
-        longCount++;
+      // Price history bookkeeping - always updated, exactly like daemon.ts:589-594
+      // (used for the pre-4S estimate; harmless bookkeeping otherwise).
+      if (!priceHistories.has(sym)) priceHistories.set(sym, createPriceHistory(tickWindow));
+      const history = priceHistories.get(sym)!;
+      addPrice(history, market.getPrice(sym));
+
+      // --- Forecast + volatility (daemon.ts:596-616)
+      let forecast: number | null;
+      let volatility: number | null;
+      if (cfg.mode === "true4s") {
+        forecast = market.getForecast(sym);
+        volatility = market.getVolatility(sym);
+      } else {
+        forecast = estimateForecast(history);
+        volatility = estimateVolatility(history);
+      }
+
+      const minDeviation = cfg.mode === "true4s" ? cfg.minForecastDeviation : preMinForecastDeviation;
+      const sig = forecast !== null && volatility !== null && volatility > 0
+        ? forecastSignal(forecast, volatility, minDeviation)
+        : null;
+      const signalDir: Direction | "neutral" = sig ? sig.direction : "neutral";
+      const expectedReturn = sig ? sig.expectedReturn : 0;
+
+      // === EXITS (daemon.ts:632-667): sell first, then re-read position ===
+      if (longShares > 0 && shouldSell("long", forecast)) {
         const longKey = `${sym}-long`;
-        let tracking = positionTracking.get(longKey);
-        if (!tracking) {
-          // Inherited/untracked position (shouldn't happen from a clean start, but
-          // mirrors the daemon's defensive init-on-first-sight for parity).
-          tracking = { entryPrice: price, peakPrice: price, ticksHeld: 0, direction: "long" };
-          positionTracking.set(longKey, tracking);
-        }
-        tracking.ticksHeld++;
-        const checkPrice = cfg.useFillPriceForStops ? market.getBidPrice(sym) : price;
-        tracking.peakPrice = updatePeakPrice(checkPrice, tracking);
-
-        let sold = false;
-        const stopCheck = shouldStopLoss(checkPrice, tracking, stopParams);
-        if (stopCheck.shouldExit) {
-          const before = market.getStockState(sym).otlkMag;
-          const fill = market.sellStock(sym, longShares);
-          if (fill > 0) {
-            const after = market.getStockState(sym).otlkMag;
-            tracker.recordErosion(before, after);
-            tracker.recordTradeCost(fill, price, longShares, params.commissionPerTrade);
-            tracker.recordExit(stopCheck.reason);
-            positionTracking.delete(longKey);
-            sellCooldowns.set(sym, tickCount);
-            sold = true;
-          }
-        }
-        if (!sold) {
-          const shouldSellLong = shouldSell("long", forecast, null, params.sellForecastDeviation, PRE_THRESHOLD);
-          if (shouldSellLong) {
-            const before = market.getStockState(sym).otlkMag;
-            const fill = market.sellStock(sym, longShares);
-            if (fill > 0) {
-              const after = market.getStockState(sym).otlkMag;
-              tracker.recordErosion(before, after);
-              tracker.recordTradeCost(fill, price, longShares, params.commissionPerTrade);
-              tracker.recordExit("signal");
-              positionTracking.delete(longKey);
-              sellCooldowns.set(sym, tickCount);
-            }
-          }
+        const before = market.getStockState(sym).otlkMag;
+        const fill = market.sellStock(sym, longShares);
+        if (fill > 0) {
+          const after = market.getStockState(sym).otlkMag;
+          tracker.recordErosion(before, after);
+          tracker.recordTradeCost(fill, market.getPrice(sym), longShares, commission);
+          tracker.recordExit("signal");
+          positionTracking.delete(longKey);
+          [longShares, longAvg, shortShares, shortAvg] = market.getPosition(sym);
         }
       }
-
-      if (shortShares > 0) {
-        shortCount++;
+      if (shortShares > 0 && shouldSell("short", forecast)) {
         const shortKey = `${sym}-short`;
-        let tracking = positionTracking.get(shortKey);
-        if (!tracking) {
-          tracking = { entryPrice: price, peakPrice: price, ticksHeld: 0, direction: "short" };
-          positionTracking.set(shortKey, tracking);
-        }
-        tracking.ticksHeld++;
-        const checkPrice = cfg.useFillPriceForStops ? market.getAskPrice(sym) : price;
-        tracking.peakPrice = updatePeakPrice(checkPrice, tracking);
-
-        let sold = false;
-        const stopCheck = shouldStopLoss(checkPrice, tracking, stopParams);
-        if (stopCheck.shouldExit) {
-          const before = market.getStockState(sym).otlkMag;
-          const fill = market.sellShort(sym, shortShares);
-          if (fill > 0) {
-            const after = market.getStockState(sym).otlkMag;
-            tracker.recordErosion(before, after);
-            tracker.recordTradeCost(fill, price, shortShares, params.commissionPerTrade);
-            tracker.recordExit(stopCheck.reason);
-            positionTracking.delete(shortKey);
-            sellCooldowns.set(sym, tickCount);
-            sold = true;
-          }
-        }
-        if (!sold) {
-          const shouldSellShortFlag = shouldSell("short", forecast, null, params.sellForecastDeviation, PRE_THRESHOLD);
-          if (shouldSellShortFlag) {
-            const before = market.getStockState(sym).otlkMag;
-            const fill = market.sellShort(sym, shortShares);
-            if (fill > 0) {
-              const after = market.getStockState(sym).otlkMag;
-              tracker.recordErosion(before, after);
-              tracker.recordTradeCost(fill, price, shortShares, params.commissionPerTrade);
-              tracker.recordExit("signal");
-              positionTracking.delete(shortKey);
-              sellCooldowns.set(sym, tickCount);
-            }
-          }
+        const before = market.getStockState(sym).otlkMag;
+        const fill = market.sellShort(sym, shortShares);
+        if (fill > 0) {
+          const after = market.getStockState(sym).otlkMag;
+          tracker.recordErosion(before, after);
+          tracker.recordTradeCost(fill, market.getPrice(sym), shortShares, commission);
+          tracker.recordExit("signal");
+          positionTracking.delete(shortKey);
+          [longShares, longAvg, shortShares, shortAvg] = market.getPosition(sym);
         }
       }
 
-      if (sig.direction !== "neutral" && sig.strength > 0) {
-        if (sig.direction === "long" && longShares === 0) {
-          buyCandidates.push({ sym, dir: "long", strength: sig.strength, price, expectedReturn: sig.expectedReturn, forecast });
-        } else if (sig.direction === "short" && shortShares === 0 && cfg.canShort) {
-          buyCandidates.push({ sym, dir: "short", strength: sig.strength, price, expectedReturn: sig.expectedReturn, forecast });
+      // === HELD POSITIONS (daemon.ts:669-702): bookkeeping at post-exit shares ===
+      if (longShares > 0) {
+        const longKey = `${sym}-long`;
+        if (!positionTracking.has(longKey)) {
+          positionTracking.set(longKey, { entryPrice: longAvg, ticksHeld: 0, direction: "long" });
+        }
+        positionTracking.get(longKey)!.ticksHeld++;
+      }
+      if (shortShares > 0) {
+        const shortKey = `${sym}-short`;
+        if (!positionTracking.has(shortKey)) {
+          positionTracking.set(shortKey, { entryPrice: shortAvg, ticksHeld: 0, direction: "short" });
+        }
+        positionTracking.get(shortKey)!.ticksHeld++;
+      }
+
+      // === ENTRY CANDIDATES (daemon.ts:704-718) ===
+      if (signalDir !== "neutral" && (signalDir === "long" || cfg.canShort)) {
+        const opposite = signalDir === "long" ? shortShares : longShares;
+        if (opposite === 0) {
+          const sharesRoom = market.getMaxShares(sym) - longShares - shortShares;
+          candidates.push({
+            symbol: sym,
+            direction: signalDir,
+            expectedReturn,
+            fillPrice: signalDir === "long" ? ask : bid,
+            spread,
+            sharesRoom,
+          });
         }
       }
     }
 
-    // --- Buys, sorted by strength desc; weighted allocation; diversification cap.
-    buyCandidates.sort((a, b) => b.strength - a.strength);
-    const totalCandidateStrength = buyCandidates.reduce((sum, c) => sum + c.strength, 0);
-    const currentPositionCount = longCount + shortCount;
-    let newPositions = 0;
-    for (const cand of buyCandidates) {
-      if (params.maxPositions > 0 && currentPositionCount + newPositions >= params.maxPositions) break;
-
-      if (params.sellCooldownTicks > 0) {
-        const lastSoldTick = sellCooldowns.get(cand.sym);
-        if (lastSoldTick !== undefined && tickCount - lastSoldTick < params.sellCooldownTicks) continue;
-      }
-
-      const maxShares = market.getMaxShares(cand.sym);
-      const playerCash = market.getCash();
-      const perStockBudget = calcWeightedBudget(tradingCapital, params.maxPositions, cand.strength, totalCandidateStrength);
-      const availCash = Math.min(perStockBudget, playerCash * 0.9, tradingCapital);
-      const sharesToBuy = calculatePositionSize(availCash, maxShares, cand.price);
-      if (sharesToBuy <= 0) continue;
-
-      if (!meetsCommissionThreshold(sharesToBuy, cand.price, cand.expectedReturn, params.commissionPerTrade)) {
-        continue;
-      }
-
-      if (cand.dir === "long") {
-        const before = market.getStockState(cand.sym).otlkMag;
-        const fill = market.buyStock(cand.sym, sharesToBuy);
-        if (fill > 0) {
-          const after = market.getStockState(cand.sym).otlkMag;
-          tracker.recordErosion(before, after);
-          tracker.recordTradeCost(fill, cand.price, sharesToBuy, params.commissionPerTrade);
-          tracker.recordBuyCapacity(sharesToBuy, maxShares);
-          positionTracking.set(`${cand.sym}-long`, { entryPrice: fill, peakPrice: fill, ticksHeld: 0, direction: "long", forecastAtEntry: cand.forecast });
-          newPositions++;
+    // === BUY (daemon.ts:736-764): one shared pool, ranked by |expectedReturn| ===
+    if (candidates.length > 0) {
+      const cashPool = Math.min(tradingCapital, market.getCash() * (1 - reserveFraction));
+      const orders = planPurchases(candidates, cashPool, {
+        commission,
+        horizonTicks: holdHorizonTicks,
+        minOrderNotional: commission * 100,
+      });
+      for (const order of orders) {
+        const before = market.getStockState(order.symbol).otlkMag;
+        const fill = order.direction === "long"
+          ? market.buyStock(order.symbol, order.shares)
+          : market.buyShort(order.symbol, order.shares);
+        if (fill <= 0) continue;
+        const after = market.getStockState(order.symbol).otlkMag;
+        tracker.recordErosion(before, after);
+        const key = `${order.symbol}-${order.direction}`;
+        if (!positionTracking.has(key)) {
+          positionTracking.set(key, { entryPrice: fill, ticksHeld: 0, direction: order.direction });
         }
-      } else {
-        const before = market.getStockState(cand.sym).otlkMag;
-        const fill = market.buyShort(cand.sym, sharesToBuy);
-        if (fill > 0) {
-          const after = market.getStockState(cand.sym).otlkMag;
-          tracker.recordErosion(before, after);
-          tracker.recordTradeCost(fill, cand.price, sharesToBuy, params.commissionPerTrade);
-          tracker.recordBuyCapacity(sharesToBuy, maxShares);
-          positionTracking.set(`${cand.sym}-short`, { entryPrice: fill, peakPrice: fill, ticksHeld: 0, direction: "short", forecastAtEntry: cand.forecast });
-          newPositions++;
-        }
+        tracker.recordTradeCost(fill, market.getPrice(order.symbol), order.shares, commission);
+        tracker.recordBuyCapacity(order.shares, market.getMaxShares(order.symbol));
       }
     }
 

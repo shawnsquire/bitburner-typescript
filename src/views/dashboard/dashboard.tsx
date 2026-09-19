@@ -37,6 +37,7 @@ import { sharePlugin } from "views/dashboard/tools/share";
 import { repPlugin } from "views/dashboard/tools/rep";
 import { hackPlugin } from "views/dashboard/tools/hack";
 import { darkwebPlugin } from "views/dashboard/tools/darkweb";
+import { darknetPlugin } from "views/dashboard/tools/darknet";
 import { workPlugin } from "views/dashboard/tools/work";
 import { factionPlugin } from "views/dashboard/tools/faction";
 import { infiltrationPlugin } from "views/dashboard/tools/infiltration";
@@ -79,6 +80,7 @@ const PLUGIN_REGISTRY: PluginEntry[] = [
   { toolId: "hack",         plugin: hackPlugin,         tabLabel: "Hack",       getStatus: pick("hackStatus"),         getError: () => null },
   { toolId: "pserv",        plugin: pservPlugin,        tabLabel: "PServ",      getStatus: pick("pservStatus"),        getError: () => null },
   { toolId: "darkweb",      plugin: darkwebPlugin,      tabLabel: "Darkweb",    getStatus: pick("darkwebStatus"),      getError: pick("darkwebError") as (s: DashboardState) => string | null },
+  { toolId: "darknet",      plugin: darknetPlugin,      tabLabel: "Darknet",    getStatus: pick("darknetStatus"),      getError: () => null },
   { toolId: "faction",      plugin: factionPlugin,      tabLabel: "Faction",    getStatus: pick("factionStatus"),      getError: pick("factionError") as (s: DashboardState) => string | null },
   { toolId: "rep",          plugin: repPlugin,          tabLabel: "Rep",        getStatus: pick("repStatus"),          getError: pick("repError") as (s: DashboardState) => string | null },
   { toolId: "share",        plugin: sharePlugin,        tabLabel: "Share",      getStatus: pick("shareStatus"),        getError: () => null },
@@ -113,7 +115,7 @@ interface TabGroupDef {
 const FOCUS_GROUP_INDEX = 1;
 
 const TAB_GROUPS: TabGroupDef[] = [
-  { label: "Servers",  entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb")] },
+  { label: "Servers",  entries: [findEntry("home"), findEntry("nuke"), findEntry("hack"), findEntry("pserv"), findEntry("darkweb"), findEntry("darknet")] },
   { label: "Focus",    entries: [findEntry("focus"), findEntry("work"), findEntry("rep"), findEntry("blade")] },
   { label: "Factions", entries: [findEntry("faction"), findEntry("share"), findEntry("augments")] },
   { label: "Money",    entries: [findEntry("budget"), findEntry("stocks"), findEntry("hacknet"), findEntry("gang"), findEntry("corp")] },

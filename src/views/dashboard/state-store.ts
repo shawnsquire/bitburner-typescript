@@ -25,6 +25,7 @@ import {
   CORP_CONTROL_PORT,
   STOCKS_CONTROL_PORT,
   FOCUS_CONTROL_PORT,
+  DARKNET_CONTROL_PORT,
   NukeStatus,
   PservStatus,
   ShareStatus,
@@ -328,6 +329,59 @@ export function configureInfiltration(rewardMode?: "rep" | "money" | "manual"): 
     tool: "infiltration",
     action: "configure-infiltration",
     infiltrationRewardMode: rewardMode,
+  }));
+}
+
+/**
+ * Set a darknet config key via the command port (forwarded to the darknet
+ * control port by executeCommand).
+ */
+export function sendDarknetSetConfig(key: string, value: string): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "darknet",
+    action: "darknet-control",
+    darknetControlAction: "set",
+    darknetConfigKey: key,
+    darknetConfigValue: value,
+  }));
+}
+
+/**
+ * Pin or unpin a host to darknet stasis.
+ */
+export function sendDarknetStasis(host: string, link: boolean): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "darknet",
+    action: "darknet-control",
+    darknetControlAction: "stasis",
+    darknetHost: host,
+    darknetLink: link,
+  }));
+}
+
+/**
+ * Manually trigger a darknet storm.
+ */
+export function sendDarknetStorm(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "darknet",
+    action: "darknet-control",
+    darknetControlAction: "storm",
+  }));
+}
+
+/**
+ * Force the darknet vault to reseed. Not yet wired to a UI control.
+ */
+export function sendDarknetReseed(): void {
+  if (!commandPort) return;
+  commandPort.write(JSON.stringify({
+    tool: "darknet",
+    action: "darknet-control",
+    darknetControlAction: "reseed",
   }));
 }
 
@@ -1163,6 +1217,18 @@ function executeCommand(ns: NS, cmd: Command): void {
     case "reset-start-config":
       resetStartupConfig(ns);
       ns.toast("Startup config reset to defaults", "success", 3000);
+      break;
+    case "darknet-control":
+      {
+        const darknetCtrl = ns.getPortHandle(DARKNET_CONTROL_PORT);
+        darknetCtrl.write(JSON.stringify({
+          action: cmd.darknetControlAction,
+          key: cmd.darknetConfigKey,
+          value: cmd.darknetConfigValue,
+          host: cmd.darknetHost,
+          link: cmd.darknetLink,
+        }));
+      }
       break;
   }
 }

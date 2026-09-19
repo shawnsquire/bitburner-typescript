@@ -98,6 +98,33 @@ export const INVESTMENT_THRESHOLDS: Record<number, number> = {
 
 export const CORP_CREATION_COST = 150e9;
 
+// === OFFICE SIZE DATA ===
+
+/** Seats added per office upgrade (the game's own increment). */
+export const OFFICE_UPGRADE_STEP = 3;
+
+/** Default cap on office size; config key `officeMaxSize`. */
+export const DEFAULT_OFFICE_MAX_SIZE = 30;
+
+/** Default funds-to-cost ratio required before upgrading; config key `officeUpgradeReserveMult`. */
+export const DEFAULT_OFFICE_UPGRADE_RESERVE_MULT = 10;
+
+/** Game constant `corpConstants.officeInitialCost` (Constants.ts). */
+const OFFICE_INITIAL_COST = 4e9;
+
+/**
+ * Cost to add `increase` seats to an office of `currentSize`.
+ * Replicates `calculateOfficeSizeUpgradeCost` in the game's Corporation/helpers.ts.
+ */
+export function officeSizeUpgradeCost(currentSize: number, increase: number): number {
+  if (increase <= 0) return 0;
+  const baseCostDivisor = 0.09;
+  const baseCostMultiplier = 1 + baseCostDivisor;
+  const currentSizeFactor = baseCostMultiplier ** (currentSize / 3);
+  const sizeIncreaseFactor = baseCostMultiplier ** (increase / 3) - 1;
+  return (OFFICE_INITIAL_COST / baseCostDivisor) * currentSizeFactor * sizeIncreaseFactor;
+}
+
 // === UPGRADE DATA ===
 
 export interface UpgradeInfo {
@@ -191,6 +218,12 @@ export interface ProductSnapshot {
   developmentCity: string;
 }
 
+export interface OfficeSnapshot {
+  city: string;
+  size: number;
+  employees: number;
+}
+
 export interface DivisionSnapshot {
   name: string;
   type: string;
@@ -202,6 +235,8 @@ export interface DivisionSnapshot {
   research: number;
   products: ProductSnapshot[];
   warehouses: WarehouseSnapshot[];
+  /** One entry per city the division has an office in. */
+  offices: OfficeSnapshot[];
   maxProducts: number;
   hasResearch: (name: string) => boolean;
 }
@@ -248,6 +283,23 @@ export interface InvestmentEvaluation {
 
 export interface MaterialTargets {
   [material: string]: number;
+}
+
+export interface OfficeUpgradePolicy {
+  /** Upgrade only when funds >= reserveMult * cost. */
+  reserveMult: number;
+  /** Never grow an office past this many seats. */
+  maxSize: number;
+  /** Seats added per upgrade; the last step is clipped to maxSize. */
+  step: number;
+}
+
+export interface OfficeUpgradePlan {
+  division: string;
+  city: string;
+  currentSize: number;
+  increase: number;
+  cost: number;
 }
 
 // === DIRECTIVE EVALUATION ===
@@ -530,6 +582,46 @@ export function calculateEmployeeDistribution(
     Management: assignment["Management"] ?? 0,
     "Research & Development": assignment["Research & Development"] ?? 0,
   };
+}
+
+// === OFFICE SIZE ===
+
+/**
+ * Pick the next office to grow, or null if none qualifies.
+ *
+ * Candidates are offices below `policy.maxSize`, ordered by current size
+ * ascending (ties keep division then city order), so the smallest office
+ * always goes first. Because the game's cost formula is monotonic in current
+ * size, that office is also the cheapest. The plan is returned only when
+ * `funds >= policy.reserveMult * cost`; otherwise nothing is affordable and
+ * the result is null. Office upgrades spend corporation funds, never the
+ * player budget.
+ */
+export function selectOfficeUpgrade(
+  snapshot: Pick<CorpStateSnapshot, "funds" | "divisions">,
+  policy: OfficeUpgradePolicy,
+): OfficeUpgradePlan | null {
+  const step = Math.max(1, Math.floor(policy.step));
+  const maxSize = Math.floor(policy.maxSize);
+  const reserveMult = Math.max(0, policy.reserveMult);
+
+  let best: { division: string; city: string; size: number } | null = null;
+  for (const div of snapshot.divisions) {
+    for (const office of div.offices) {
+      if (office.size >= maxSize) continue;
+      if (!best || office.size < best.size) {
+        best = { division: div.name, city: office.city, size: office.size };
+      }
+    }
+  }
+  if (!best) return null;
+
+  const increase = Math.min(step, maxSize - best.size);
+  if (increase <= 0) return null;
+  const cost = officeSizeUpgradeCost(best.size, increase);
+  if (snapshot.funds < reserveMult * cost) return null;
+
+  return { division: best.division, city: best.city, currentSize: best.size, increase, cost };
 }
 
 // === PRODUCT MANAGEMENT ===

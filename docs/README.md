@@ -7,6 +7,7 @@ and config keys it describes so claims can be checked against `src/`.
 - [Architecture](architecture.md): layers, ports, queue, config, budget, focus, tiered daemons.
 - [Development](development.md): build, test, RAM checks, updating for a new game version.
 - [Audit 2026-09-19](audit-2026-09-19.md): findings from the full code audit, what was fixed, what was left as a judgment call.
+- [Design notes](design/): agreed designs with the rationale behind them, e.g. the [budget savings goal](design/2026-09-19-budget-savings-goal.md).
 
 ## Systems
 

@@ -1,6 +1,6 @@
 # Budget: savings goal and hacknet payback ceiling
 
-Design agreed 2026-09-19. Status: not yet implemented.
+Design agreed 2026-09-19. Implemented in commits e5905d6..3e29c7d (budget core, dashboard, consumers, hacknet ceiling).
 
 ## Problem
 

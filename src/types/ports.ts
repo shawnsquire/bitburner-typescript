@@ -1037,6 +1037,23 @@ export interface BucketState {
   frozen: boolean;
   cap: number | null;
   capFormatted: string | null;
+  /** Price of the consumer's next purchase (reportNext), 0 when none is pending. */
+  nextCost: number;
+  nextCostFormatted: string | null;
+  nextLabel: string | null;
+}
+
+/** The savings goal the budget daemon is reserving cash toward (see docs/systems/budget.md). */
+export interface BudgetGoal {
+  bucket: string;
+  label: string;
+  cost: number;
+  costFormatted: string;
+  reserved: number;
+  reservedFormatted: string;
+  /** reserved / cost, clamped to 0..1 */
+  progress: number;
+  granted: boolean;
 }
 
 export interface BudgetStatus {
@@ -1050,10 +1067,13 @@ export interface BudgetStatus {
   corpFundsFormatted: string;
   buckets: Record<string, BucketState>;
   rushBucket: string | null;
+  goal: BudgetGoal | null;
+  /** Max seconds an upgrade may take to pay for itself (config paybackHorizon); 0 = disabled. */
+  paybackHorizon: number;
   lastUpdated: number;
 }
 
-export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate" | "freeze" | "unfreeze";
+export type BudgetControlAction = "purchased" | "done" | "report-cap" | "report-next" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate" | "freeze" | "unfreeze";
 
 export interface BudgetControlMessage {
   action: BudgetControlAction;

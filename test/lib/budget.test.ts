@@ -7,12 +7,18 @@ import {
   reactivateBucket,
   setBudgetWeight,
   reportCap,
+  reportNext,
+  getPaybackHorizon,
 } from "/lib/budget";
 import { STATUS_PORTS, BUDGET_CONTROL_PORT, BudgetStatus, BudgetControlMessage } from "/types/ports";
 import { mockNS } from "../helpers/mock-ns";
 
-function seedBudgetStatus(ns: ReturnType<typeof mockNS>, buckets: BudgetStatus["buckets"]): void {
-  const status: Partial<BudgetStatus> = { buckets };
+function seedBudgetStatus(
+  ns: ReturnType<typeof mockNS>,
+  buckets: BudgetStatus["buckets"],
+  extra: Partial<BudgetStatus> = {},
+): void {
+  const status: Partial<BudgetStatus> = { buckets, ...extra };
   ns.getPortHandle(STATUS_PORTS.budget).write(JSON.stringify({ ...status, _publishedAt: Date.now() }));
 }
 
@@ -120,5 +126,42 @@ describe("reportCap", () => {
     const ns = mockNS();
     reportCap(ns, "hacknet", 42_000);
     expect(readControlMessages(ns)).toEqual([{ action: "report-cap", bucket: "hacknet", cap: 42_000 }]);
+  });
+});
+
+describe("reportNext", () => {
+  it("writes a report-next control message with the cost and label", () => {
+    const ns = mockNS();
+    reportNext(ns, "programs", 250_000_000, "SQLInject.exe");
+    expect(readControlMessages(ns)).toEqual([
+      { action: "report-next", bucket: "programs", amount: 250_000_000, reason: "SQLInject.exe" },
+    ]);
+  });
+
+  it("writes a zero amount to clear the item", () => {
+    const ns = mockNS();
+    reportNext(ns, "programs", 0, "");
+    expect(readControlMessages(ns)).toEqual([{ action: "report-next", bucket: "programs", amount: 0, reason: "" }]);
+  });
+});
+
+describe("getPaybackHorizon", () => {
+  it("is Infinity when the budget daemon is absent", () => {
+    expect(getPaybackHorizon(mockNS())).toBe(Infinity);
+  });
+
+  it("is Infinity when the field is missing or disabled", () => {
+    const ns = mockNS();
+    seedBudgetStatus(ns, {});
+    expect(getPaybackHorizon(ns)).toBe(Infinity);
+    const ns2 = mockNS();
+    seedBudgetStatus(ns2, {}, { paybackHorizon: 0 });
+    expect(getPaybackHorizon(ns2)).toBe(Infinity);
+  });
+
+  it("returns the published horizon when set", () => {
+    const ns = mockNS();
+    seedBudgetStatus(ns, {}, { paybackHorizon: 3600 });
+    expect(getPaybackHorizon(ns)).toBe(3600);
   });
 });

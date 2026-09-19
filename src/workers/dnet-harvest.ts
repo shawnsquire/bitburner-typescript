@@ -47,6 +47,7 @@ async function harvestLoop(ns: NS): Promise<void> {
     // vanishing out from under this script (ServiceUnavailable) -- report
     // and give up on that rather than spinning against a host that's gone.
     let rounds = 0;
+    let prevRemaining = Infinity;
     for (;;) {
       const res = await ns.dnet.memoryReallocation();
       const remaining = ns.dnet.getBlockedRam();
@@ -62,6 +63,24 @@ async function harvestLoop(ns: NS): Promise<void> {
         ]);
         return;
       }
+
+      if (remaining >= prevRemaining) {
+        // getRamBlockRemoved rounds to 0.00 GB per call when charisma is too
+        // low relative to this host's difficulty -- a "success" round that
+        // freed nothing. Looping forever would hold this worker's slot
+        // without ever finishing; report and give up instead.
+        sendReport(ns, self, [
+          {
+            t: "error",
+            host: self,
+            op: "memoryReallocation",
+            code: res.code,
+            message: `no progress: ${remaining} GB still blocked`,
+          },
+        ]);
+        return;
+      }
+      prevRemaining = remaining;
 
       rounds++;
       if (rounds % RAMFREED_REPORT_INTERVAL === 0) {

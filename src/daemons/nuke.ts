@@ -10,7 +10,7 @@
  *   run daemons/nuke.js --interval 60000
  */
 import { NS } from "@ns";
-import { analyzeNukableServers, countAvailableTools, getNukeStatus } from "/controllers/nuke";
+import { analyzeNukableServers, getNukeStatus } from "/controllers/nuke";
 import { COLORS } from "/lib/utils";
 import { getCachedServers, invalidateServerCache } from "/lib/server-cache";
 import { publishStatus } from "/lib/ports";
@@ -30,8 +30,14 @@ function computeNukeStatus(ns: NS): NukeStatus {
   const needHacking: NukeStatus["needHacking"] = [];
   const needPorts: NukeStatus["needPorts"] = [];
   const rooted: string[] = [];
+  // Purchased servers are always rooted and were never "nuke" targets;
+  // exclude them so rootedCount/totalServers match the controller's
+  // analyzeNukableServers/getNukeStatus (which already skip them) instead of
+  // being inflated by however many personal servers are purchased.
+  let nukableServerCount = 0;
 
-  // Fleet RAM aggregation
+  // Fleet RAM aggregation (this intentionally DOES include purchased
+  // servers — they're real hacking capacity, unlike the nuke-progress count).
   let fleetMaxRam = 0;
   let fleetUsedRam = 0;
   let fleetServerCount = 0;
@@ -40,7 +46,10 @@ function computeNukeStatus(ns: NS): NukeStatus {
     const server = ns.getServer(hostname);
 
     if (server.hasAdminRights) {
-      rooted.push(hostname);
+      if (!server.purchasedByPlayer) {
+        rooted.push(hostname);
+        nukableServerCount++;
+      }
 
       // Aggregate fleet RAM for rooted servers with RAM
       if (server.maxRam > 0) {
@@ -51,6 +60,9 @@ function computeNukeStatus(ns: NS): NukeStatus {
 
       continue;
     }
+
+    if (server.purchasedByPlayer) continue;
+    nukableServerCount++;
 
     const requiredPorts = server.numOpenPortsRequired ?? 0;
     const requiredHacking = server.requiredHackingSkill ?? 0;
@@ -73,7 +85,7 @@ function computeNukeStatus(ns: NS): NukeStatus {
 
   return {
     rootedCount: rooted.length,
-    totalServers: allServers.length,
+    totalServers: nukableServerCount,
     toolCount: raw.toolCount,
     ready,
     needHacking,

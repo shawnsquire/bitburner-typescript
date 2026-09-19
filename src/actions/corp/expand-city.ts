@@ -5,7 +5,7 @@
  *
  * Usage: run actions/corp/expand-city.js --division "Pony Agriculture" --city Aevum
  */
-import { NS } from "@ns";
+import { NS, CityName } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -21,7 +21,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   try {
-    ns.corporation.expandCity(flags.division, flags.city as any);
+    ns.corporation.expandCity(flags.division, flags.city as CityName);
     ns.tprint(`SUCCESS: Expanded "${flags.division}" to ${flags.city}`);
   } catch (e) {
     ns.tprint(`ERROR expanding city: ${e}`);
@@ -29,7 +29,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   try {
-    ns.corporation.purchaseWarehouse(flags.division, flags.city as any);
+    ns.corporation.purchaseWarehouse(flags.division, flags.city as CityName);
     ns.tprint(`SUCCESS: Purchased warehouse in ${flags.city}`);
   } catch (e) {
     ns.tprint(`WARN: Could not purchase warehouse: ${e}`);

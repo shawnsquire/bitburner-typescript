@@ -13,7 +13,6 @@ import { peekStatus, publishStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber } from "/lib/config";
 import {
   STATUS_PORTS,
-  AdvisorCategory,
   AdvisorStatus,
   Recommendation,
   NukeStatus,
@@ -35,7 +34,7 @@ const C = COLORS;
 
 // === ADVISOR CONTEXT ===
 
-interface AdvisorContext {
+export interface AdvisorContext {
   nuke: NukeStatus | null;
   hack: HackStatus | null;
   pserv: PservStatus | null;
@@ -69,11 +68,11 @@ function gatherContext(ns: NS): AdvisorContext {
 
 // === RULE TYPE ===
 
-type AdvisorRule = (ctx: AdvisorContext) => Recommendation | null;
+export type AdvisorRule = (ctx: AdvisorContext) => Recommendation | null;
 
 // === RULES ===
 
-function ruleBuyTor(ctx: AdvisorContext): Recommendation | null {
+export function ruleBuyTor(ctx: AdvisorContext): Recommendation | null {
   const dw = ctx.darkweb;
   const w = ctx.work;
   if (!dw || dw.hasTorRouter) return null;
@@ -89,7 +88,7 @@ function ruleBuyTor(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleBuyProgram(ctx: AdvisorContext): Recommendation | null {
+export function ruleBuyProgram(ctx: AdvisorContext): Recommendation | null {
   const dw = ctx.darkweb;
   if (!dw || !dw.hasTorRouter || dw.allOwned || !dw.nextProgram) return null;
   return {
@@ -103,48 +102,48 @@ function ruleBuyProgram(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleRootServers(ctx: AdvisorContext): Recommendation | null {
-  const nuke = ctx.nuke;
-  if (!nuke || nuke.ready.length === 0) return null;
+export function ruleRootServers(ctx: AdvisorContext): Recommendation | null {
+  const nukeStatus = ctx.nuke;
+  if (!nukeStatus || nukeStatus.ready.length === 0) return null;
   return {
     id: "root-servers",
-    title: `Root ${nuke.ready.length} Server${nuke.ready.length > 1 ? "s" : ""}`,
-    reason: `${nuke.ready.length} server(s) ready to nuke — will expand your fleet`,
+    title: `Root ${nukeStatus.ready.length} Server${nukeStatus.ready.length > 1 ? "s" : ""}`,
+    reason: `${nukeStatus.ready.length} server(s) ready to nuke — will expand your fleet`,
     category: "infrastructure",
     score: 70,
   };
 }
 
-function ruleBuyPserv(ctx: AdvisorContext): Recommendation | null {
-  const ps = ctx.pserv;
-  if (!ps || ps.serverCount >= ps.serverCap) return null;
+export function ruleBuyPserv(ctx: AdvisorContext): Recommendation | null {
+  const pservStatus = ctx.pserv;
+  if (!pservStatus || pservStatus.serverCount >= pservStatus.serverCap) return null;
   return {
     id: "buy-pserv",
     title: "Buy Personal Server",
-    reason: `${ps.serverCount}/${ps.serverCap} slots used — more servers increase hacking income`,
+    reason: `${pservStatus.serverCount}/${pservStatus.serverCap} slots used — more servers increase hacking income`,
     category: "infrastructure",
-    score: ps.serverCount < 5 ? 60 : 45,
+    score: pservStatus.serverCount < 5 ? 60 : 45,
   };
 }
 
-function ruleUpgradePserv(ctx: AdvisorContext): Recommendation | null {
-  const ps = ctx.pserv;
-  if (!ps || ps.allMaxed || !ps.nextUpgrade) return null;
+export function ruleUpgradePserv(ctx: AdvisorContext): Recommendation | null {
+  const pservStatus = ctx.pserv;
+  if (!pservStatus || pservStatus.allMaxed || !pservStatus.nextUpgrade) return null;
   return {
     id: "upgrade-pserv",
     title: "Upgrade Personal Server",
-    reason: ps.nextUpgrade.canAfford
-      ? `${ps.nextUpgrade.hostname}: ${ps.nextUpgrade.currentRam} → ${ps.nextUpgrade.nextRam} (${ps.nextUpgrade.costFormatted})`
-      : `Next upgrade: ${ps.nextUpgrade.costFormatted} for ${ps.nextUpgrade.hostname}`,
+    reason: pservStatus.nextUpgrade.canAfford
+      ? `${pservStatus.nextUpgrade.hostname}: ${pservStatus.nextUpgrade.currentRam} → ${pservStatus.nextUpgrade.nextRam} (${pservStatus.nextUpgrade.costFormatted})`
+      : `Next upgrade: ${pservStatus.nextUpgrade.costFormatted} for ${pservStatus.nextUpgrade.hostname}`,
     category: "infrastructure",
-    score: ps.nextUpgrade.canAfford ? 55 : 40,
+    score: pservStatus.nextUpgrade.canAfford ? 55 : 40,
   };
 }
 
-function ruleTrainHackingForNuke(ctx: AdvisorContext): Recommendation | null {
-  const nuke = ctx.nuke;
-  if (!nuke || nuke.needHacking.length === 0) return null;
-  const closest = nuke.needHacking[0];
+export function ruleTrainHackingForNuke(ctx: AdvisorContext): Recommendation | null {
+  const nukeStatus = ctx.nuke;
+  if (!nukeStatus || nukeStatus.needHacking.length === 0) return null;
+  const closest = nukeStatus.needHacking[0];
   const gap = closest.required - closest.current;
   if (gap <= 0) return null;
   return {
@@ -156,19 +155,19 @@ function ruleTrainHackingForNuke(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleTrainHackingForTargets(ctx: AdvisorContext): Recommendation | null {
-  const hack = ctx.hack;
-  if (!hack || !hack.needHigherLevel) return null;
+export function ruleTrainHackingForTargets(ctx: AdvisorContext): Recommendation | null {
+  const hackStatus = ctx.hack;
+  if (!hackStatus || !hackStatus.needHigherLevel) return null;
   return {
     id: "train-hack-targets",
     title: "Train Hacking (Targets)",
-    reason: `${hack.needHigherLevel.count} hack target(s) need level ${hack.needHigherLevel.nextLevel}`,
+    reason: `${hackStatus.needHigherLevel.count} hack target(s) need level ${hackStatus.needHigherLevel.nextLevel}`,
     category: "skills",
     score: 65,
   };
 }
 
-function ruleBalanceCombat(ctx: AdvisorContext): Recommendation | null {
+export function ruleBalanceCombat(ctx: AdvisorContext): Recommendation | null {
   const w = ctx.work;
   if (!w) return null;
   if (w.combatBalance >= 0.9) return null;
@@ -181,7 +180,7 @@ function ruleBalanceCombat(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleJoinFaction(ctx: AdvisorContext): Recommendation | null {
+export function ruleJoinFaction(ctx: AdvisorContext): Recommendation | null {
   const f = ctx.faction;
   if (!f || !f.pendingInvitations || f.pendingInvitations.length === 0) return null;
 
@@ -205,7 +204,7 @@ function ruleJoinFaction(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleBackdoorServers(ctx: AdvisorContext): Recommendation | null {
+export function ruleBackdoorServers(ctx: AdvisorContext): Recommendation | null {
   const f = ctx.faction;
   if (!f || !f.pendingBackdoors) return null;
   const ready = f.pendingBackdoors.filter(b => b.rooted && b.haveHacking);
@@ -219,12 +218,15 @@ function ruleBackdoorServers(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleStartFactionWork(ctx: AdvisorContext): Recommendation | null {
+export function ruleStartFactionWork(ctx: AdvisorContext): Recommendation | null {
   const rep = ctx.rep;
   if (!rep) return null;
   if (rep.isWorkingForFaction) return null;
   if (!rep.targetFaction || !rep.nextAugName) return null;
-  if (rep.repGapPositive) return null; // already have enough rep
+  // repGapPositive is true while a rep DEFICIT remains (repGap = max(0, required - current) > 0,
+  // see computeTierNStatus in daemons/rep.ts) — i.e. it means "still need more rep", not
+  // "already have enough". Skip only once the gap has closed (repGapPositive is false).
+  if (!rep.repGapPositive) return null; // already have enough rep
   return {
     id: "faction-work",
     title: `Work for ${rep.targetFaction}`,
@@ -234,12 +236,16 @@ function ruleStartFactionWork(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleStartShare(ctx: AdvisorContext): Recommendation | null {
-  const share = ctx.share;
+export function ruleStartShare(ctx: AdvisorContext): Recommendation | null {
+  const shareStatus = ctx.share;
   const rep = ctx.rep;
   if (!rep || !rep.targetFaction) return null;
-  if (rep.repGapPositive) return null;
-  if (share && Number(share.totalThreads) > 0) return null; // already sharing
+  // See ruleStartFactionWork: repGapPositive true means a rep deficit remains.
+  if (!rep.repGapPositive) return null; // already have enough rep
+  // totalThreads/cycleStatus come from daemons/share.ts: totalThreads is formatted with
+  // toLocaleString() (e.g. "1,234"), which Number() cannot parse back (=> NaN) once threads
+  // reach four digits. cycleStatus is the reliable "is share currently running" signal instead.
+  if (shareStatus && (shareStatus.cycleStatus === "active" || shareStatus.cycleStatus === "cycle")) return null; // already sharing
   return {
     id: "start-share",
     title: "Start Sharing for Rep Boost",
@@ -249,7 +255,7 @@ function ruleStartShare(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function rulePurchaseAugs(ctx: AdvisorContext): Recommendation | null {
+export function rulePurchaseAugs(ctx: AdvisorContext): Recommendation | null {
   const aug = ctx.augments;
   if (!aug || aug.available.length === 0) return null;
   const affordable = aug.available.filter(a => a.adjustedCost <= aug.playerMoney);
@@ -263,7 +269,7 @@ function rulePurchaseAugs(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleInstallAugs(ctx: AdvisorContext): Recommendation | null {
+export function ruleInstallAugs(ctx: AdvisorContext): Recommendation | null {
   const aug = ctx.augments;
   if (!aug || aug.pendingAugs === 0) return null;
   // Higher score if many pending or no affordable left
@@ -280,12 +286,12 @@ function ruleInstallAugs(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function findDaedalus(ctx: AdvisorContext): FactionInfo | null {
+export function findDaedalus(ctx: AdvisorContext): FactionInfo | null {
   if (!ctx.faction) return null;
   return ctx.faction.factions.find(f => f.name === "Daedalus") ?? null;
 }
 
-function ruleDaedalusApproaching(ctx: AdvisorContext): Recommendation | null {
+export function ruleDaedalusApproaching(ctx: AdvisorContext): Recommendation | null {
   const bn = ctx.bitnode;
   if (!bn || bn.allComplete) return null;
 
@@ -315,7 +321,7 @@ function ruleDaedalusApproaching(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleDaedalusReady(ctx: AdvisorContext): Recommendation | null {
+export function ruleDaedalusReady(ctx: AdvisorContext): Recommendation | null {
   const bn = ctx.bitnode;
   if (!bn || !bn.allComplete) return null;
 
@@ -336,7 +342,7 @@ function ruleDaedalusReady(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleDaedalusWork(ctx: AdvisorContext): Recommendation | null {
+export function ruleDaedalusWork(ctx: AdvisorContext): Recommendation | null {
   const daedalus = findDaedalus(ctx);
   if (!daedalus || daedalus.status !== "joined") return null;
 
@@ -344,8 +350,8 @@ function ruleDaedalusWork(ctx: AdvisorContext): Recommendation | null {
   const rep = ctx.rep;
   if (rep?.targetFaction === "Daedalus") return null;
 
-  // If we already have enough rep (repGapPositive for Daedalus), skip
-  // We can't check directly, but if bitnode allComplete + Daedalus joined, defer to ruleBitnodeExit
+  // If we already have enough rep for Daedalus (repGapPositive false, i.e. no gap remains), skip.
+  // We can't check directly here, but if bitnode allComplete + Daedalus joined, defer to ruleBitnodeExit
   const bn = ctx.bitnode;
   if (bn?.allComplete) return null;
 
@@ -358,17 +364,18 @@ function ruleDaedalusWork(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
+export function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
   const bn = ctx.bitnode;
   if (!bn || !bn.allComplete) return null;
 
   const daedalus = findDaedalus(ctx);
   if (!daedalus || daedalus.status !== "joined") return null;
 
-  // Evidence of sufficient rep: rep daemon targeting Daedalus with positive gap,
-  // or rep daemon no longer targeting Daedalus (implies TRP already purchased)
+  // Evidence of sufficient rep: rep daemon targeting Daedalus with the gap closed
+  // (repGapPositive false), or rep daemon no longer targeting Daedalus (implies TRP already
+  // purchased). Default to "not enough" when unknown so we don't recommend exiting prematurely.
   const rep = ctx.rep;
-  const hasEnoughRep = rep?.targetFaction === "Daedalus" ? (rep?.repGapPositive ?? false) : true;
+  const hasEnoughRep = rep?.targetFaction === "Daedalus" ? !(rep?.repGapPositive ?? true) : true;
   if (!hasEnoughRep) return null;
 
   return {
@@ -380,7 +387,7 @@ function ruleBitnodeExit(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleGangTerritory(ctx: AdvisorContext): Recommendation | null {
+export function ruleGangTerritory(ctx: AdvisorContext): Recommendation | null {
   const g = ctx.gang;
   const gt = ctx.gangTerritory;
   if (!g || !g.inGang || !gt) return null;
@@ -397,7 +404,7 @@ function ruleGangTerritory(ctx: AdvisorContext): Recommendation | null {
   };
 }
 
-function ruleGangAscension(ctx: AdvisorContext): Recommendation | null {
+export function ruleGangAscension(ctx: AdvisorContext): Recommendation | null {
   const g = ctx.gang;
   if (!g || !g.inGang || !g.ascensionAlerts || g.ascensionAlerts.length === 0) return null;
   const best = g.ascensionAlerts[0];
@@ -412,7 +419,7 @@ function ruleGangAscension(ctx: AdvisorContext): Recommendation | null {
 
 // === RULE REGISTRY ===
 
-const RULES: AdvisorRule[] = [
+export const RULES: AdvisorRule[] = [
   ruleBuyTor,
   ruleBuyProgram,
   ruleRootServers,
@@ -439,7 +446,7 @@ const RULES: AdvisorRule[] = [
 
 const MAX_RECOMMENDATIONS = 20;
 
-function evaluate(ctx: AdvisorContext): AdvisorStatus {
+export function evaluate(ctx: AdvisorContext): AdvisorStatus {
   const start = Date.now();
   const recommendations: Recommendation[] = [];
 

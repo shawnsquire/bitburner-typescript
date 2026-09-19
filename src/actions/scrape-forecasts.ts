@@ -262,7 +262,8 @@ function extractStockFromElement(
  *   symbol: string    — e.g. "ECP"
  *   otlkMag: number   — outlook magnitude (deviation from 50%, in % points ~1-50)
  *   b: boolean         — true = trending up (bullish)
- *   mv: number         — volatility (e.g. 0.0045)
+ *   mv: number         — raw volatility magnitude (~0.1-1); ns.stock.getVolatility()
+ *                        returns this divided by 100 (~0.001-0.01) — divide here too
  *   price: number      — current price
  *   maxShares: number  — max purchasable shares
  */
@@ -287,7 +288,10 @@ function searchObjectForStockData(
     return {
       symbol: typeof symbol === "string" && SYMBOL_SET.has(symbol) ? symbol : null,
       forecast: Math.max(0, Math.min(1, forecast)),
-      volatility: typeof mv === "number" ? mv : null,
+      // Raw internal Stock.mv is ~0.1-1 magnitude; ns.stock.getVolatility() returns
+      // mv * darknetMult / 100 (~0.001-0.01). Divide by 100 so scraped volatility matches
+      // the API's scale — without this, expected-return math is inflated ~100x.
+      volatility: typeof mv === "number" ? mv / 100 : null,
     };
   }
 
@@ -302,7 +306,7 @@ function searchObjectForStockData(
     return {
       symbol,
       forecast,
-      volatility: typeof mv === "number" ? mv : null,
+      volatility: typeof mv === "number" ? mv / 100 : null,
     };
   }
 

@@ -5,7 +5,6 @@
  * Reads status from the gang status port.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
@@ -40,10 +39,6 @@ function formatNumber(n: number): string {
 
 function formatPct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
-}
-
-function formatInactive(_ns: NS): GangStatus | null {
-  return null;
 }
 
 // === CONTROL STYLES ===
@@ -387,10 +382,10 @@ function GangDetailPanel({ status, running, toolId, pid }: DetailPanelProps<Gang
     );
   }
 
-  // Gather task names from member status or fallback
-  const taskNames = status.members && status.members.length > 0
-    ? FALLBACK_TASK_NAMES
-    : FALLBACK_TASK_NAMES;
+  // GangStatus does not carry the live task name list, so the task
+  // dropdown always uses the known-task fallback (both ternary branches
+  // below previously resolved to the same value).
+  const taskNames = FALLBACK_TASK_NAMES;
 
   return (
     <div style={styles.panel}>
@@ -720,7 +715,6 @@ export const gangPlugin: ToolPlugin<GangStatus> = {
   name: "GANG",
   id: "gang",
   script: "daemons/gang.js",
-  getFormattedStatus: formatInactive,
   OverviewCard: GangOverviewCard,
   DetailPanel: GangDetailPanel,
 };

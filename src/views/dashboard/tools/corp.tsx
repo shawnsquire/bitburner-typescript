@@ -13,8 +13,6 @@ import {
 } from "views/dashboard/types";
 import {
   CorpStatus,
-  CorpDivisionStatus,
-  CorpProductStatus,
   CorpPendingAction,
   CorpDirective,
 } from "/types/ports";
@@ -555,13 +553,10 @@ function CorpDetailPanel({
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null { return null; }
-
 export const corpPlugin: ToolPlugin<FormattedCorpStatus> = {
   name: "CORP",
   id: "corp",
   script: "daemons/corp.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: CorpOverviewCard,
   DetailPanel: CorpDetailPanel,
 };

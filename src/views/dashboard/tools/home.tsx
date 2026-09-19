@@ -201,15 +201,10 @@ function HomeDetailPanel({
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const homePlugin: ToolPlugin<FormattedHomeStatus> = {
   name: "HOME",
   id: "home",
   script: "daemons/home.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: HomeOverviewCard,
   DetailPanel: HomeDetailPanel,
 };

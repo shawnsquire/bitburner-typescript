@@ -44,6 +44,12 @@ export interface CrimeAnalysis {
 
 /**
  * Analyze a single crime and return expected values per minute
+ *
+ * Per src/Work/CrimeWork.ts (commit()): money, kills, and intelligence exp are only
+ * awarded on a successful attempt, but stat exp (hacking/str/def/dex/agi/cha) and karma
+ * are applied on EVERY attempt — a failed attempt still yields 25% of the exp and 25%
+ * of the karma loss. The expected value per attempt for those is therefore
+ * `full * (chance + 0.25 * (1 - chance))`, not `full * chance`.
  */
 export function analyzeCrime(ns: NS, crime: CrimeName): CrimeAnalysis {
   const stats = ns.singularity.getCrimeStats(crime);
@@ -53,19 +59,22 @@ export function analyzeCrime(ns: NS, crime: CrimeName): CrimeAnalysis {
   const timeSec = timeMs / 1000;
   const attemptsPerMin = 60 / timeSec;
 
+  // Applies to stat exp and karma, which are paid out (at 25%) even on failure.
+  const successOrFailFraction = chance + 0.25 * (1 - chance);
+
   return {
     crime,
     chance,
     timeSec,
     money: stats.money,
     moneyPerMin: chance * stats.money * attemptsPerMin,
-    hackExpPerMin: chance * stats.hacking_exp * attemptsPerMin,
-    strExpPerMin: chance * stats.strength_exp * attemptsPerMin,
-    defExpPerMin: chance * stats.defense_exp * attemptsPerMin,
-    dexExpPerMin: chance * stats.dexterity_exp * attemptsPerMin,
-    agiExpPerMin: chance * stats.agility_exp * attemptsPerMin,
-    chaExpPerMin: chance * stats.charisma_exp * attemptsPerMin,
-    karmaPerMin: chance * stats.karma * attemptsPerMin,
+    hackExpPerMin: successOrFailFraction * stats.hacking_exp * attemptsPerMin,
+    strExpPerMin: successOrFailFraction * stats.strength_exp * attemptsPerMin,
+    defExpPerMin: successOrFailFraction * stats.defense_exp * attemptsPerMin,
+    dexExpPerMin: successOrFailFraction * stats.dexterity_exp * attemptsPerMin,
+    agiExpPerMin: successOrFailFraction * stats.agility_exp * attemptsPerMin,
+    chaExpPerMin: successOrFailFraction * stats.charisma_exp * attemptsPerMin,
+    karmaPerMin: successOrFailFraction * stats.karma * attemptsPerMin,
     killsPerMin: chance * stats.kills * attemptsPerMin,
   };
 }

@@ -6,18 +6,11 @@
  * 2. Start blackjack automation
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { CasinoStatus } from "/types/ports";
 import { runScript } from "views/dashboard/state-store";
-
-// === STATUS FORMATTING ===
-
-function formatCasinoStatus(_ns: NS): CasinoStatus | null {
-  return null;
-}
 
 // === BUTTON STYLE ===
 
@@ -87,7 +80,6 @@ export const casinoPlugin: ToolPlugin<CasinoStatus> = {
   name: "CASINO",
   id: "casino",
   script: "casino.js",
-  getFormattedStatus: formatCasinoStatus,
   OverviewCard: CasinoOverviewCard,
   DetailPanel: CasinoDetailPanel,
 };

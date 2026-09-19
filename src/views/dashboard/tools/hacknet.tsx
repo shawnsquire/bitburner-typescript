@@ -293,15 +293,10 @@ function HacknetDetailPanel({
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const hacknetPlugin: ToolPlugin<FormattedHacknetStatus> = {
   name: "HACKNET",
   id: "hacknet",
   script: "daemons/hacknet.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: HacknetOverviewCard,
   DetailPanel: HacknetDetailPanel,
 };

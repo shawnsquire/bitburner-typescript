@@ -15,21 +15,45 @@ import {
   STATUS_PORTS,
   INFILTRATION_CONTROL_PORT,
   GANG_CONTROL_PORT,
+  CONTRACTS_CONTROL_PORT,
+  BUDGET_CONTROL_PORT,
+  STOCKS_CONTROL_PORT,
+  CORP_CONTROL_PORT,
+  FOCUS_CONTROL_PORT,
   QUEUE_PORT,
   COMMAND_PORT,
 } from "/types/ports";
+
+// Control / special ports not covered by STATUS_PORTS. Kept as a name->number
+// map (rather than a hardcoded number range) so adding a new control port to
+// types/ports.ts is enough to make it show up here too.
+const CONTROL_PORTS: Record<string, number> = {
+  "infiltration-ctrl": INFILTRATION_CONTROL_PORT,
+  "gang-ctrl": GANG_CONTROL_PORT,
+  "contracts-ctrl": CONTRACTS_CONTROL_PORT,
+  "budget-ctrl": BUDGET_CONTROL_PORT,
+  "stocks-ctrl": STOCKS_CONTROL_PORT,
+  "corp-ctrl": CORP_CONTROL_PORT,
+  "focus-ctrl": FOCUS_CONTROL_PORT,
+  "queue": QUEUE_PORT,
+  "command": COMMAND_PORT,
+};
 
 const PORT_NAMES: Record<number, string> = {
   // Build from STATUS_PORTS (the source of truth)
   ...Object.fromEntries(
     Object.entries(STATUS_PORTS).map(([name, port]) => [port, name]),
   ),
-  // Control / special ports
-  [INFILTRATION_CONTROL_PORT]: "infiltration-ctrl",
-  [GANG_CONTROL_PORT]: "gang-ctrl",
-  [QUEUE_PORT]: "queue",
-  [COMMAND_PORT]: "command",
+  ...Object.fromEntries(
+    Object.entries(CONTROL_PORTS).map(([name, port]) => [port, name]),
+  ),
 };
+
+// Derive the valid port range from every port number actually assigned in
+// types/ports.ts, instead of a hardcoded (and easily stale) upper bound.
+const ALL_PORT_NUMBERS = Object.keys(PORT_NAMES).map(Number);
+const MIN_PORT = Math.min(...ALL_PORT_NUMBERS);
+const MAX_PORT = Math.max(...ALL_PORT_NUMBERS);
 
 function peekRaw(ns: NS, port: number): string | null {
   const handle = ns.getPortHandle(port);
@@ -94,8 +118,8 @@ export async function main(ns: NS): Promise<void> {
 
   if (args.length > 0) {
     const port = Number(args[0]);
-    if (isNaN(port) || port < 1 || port > 20) {
-      ns.tprint("ERROR: Port must be a number between 1 and 20");
+    if (isNaN(port) || port < MIN_PORT || port > MAX_PORT) {
+      ns.tprint(`ERROR: Port must be a number between ${MIN_PORT} and ${MAX_PORT}`);
       return;
     }
     printPortDetail(ns, port);
@@ -112,9 +136,9 @@ export async function main(ns: NS): Promise<void> {
 
   ns.tprint("");
   ns.tprint(`  \x1b[36m--- Control / Special Ports ---\x1b[0m`);
-  printPortSummary(ns, INFILTRATION_CONTROL_PORT);
-  printPortSummary(ns, GANG_CONTROL_PORT);
-  printPortSummary(ns, QUEUE_PORT);
-  printPortSummary(ns, COMMAND_PORT);
+  const controlPortNums = Object.values(CONTROL_PORTS).sort((a, b) => a - b);
+  for (const port of controlPortNums) {
+    printPortSummary(ns, port);
+  }
   ns.tprint("");
 }

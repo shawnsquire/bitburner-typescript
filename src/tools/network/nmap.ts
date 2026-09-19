@@ -62,6 +62,7 @@ export async function main(ns: NS): Promise<void> {
     pad("$ (A/M)", 22),
     pad("SEC(C/M)", 13),
     pad("GROW", 6),
+    "PATH",
   ].join("  ");
 
   ns.tprint(header);
@@ -152,6 +153,7 @@ function renderRow(r: ServerRow): string {
     pad(moneyStr, 22),
     pad(secStr, 13),
     pad(String(Math.round(r.growth || 0)), 6),
+    r.path,
   ].join("  ");
 }
 

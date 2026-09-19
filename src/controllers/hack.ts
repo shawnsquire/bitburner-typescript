@@ -19,6 +19,7 @@ import {
   calculateBatchThreads,
   calculateBatchDelays,
   isTargetPrepped,
+  getWorkerRamCosts,
   BATCH_WINDOW,
   type TargetScore,
   type BatchOp,
@@ -455,7 +456,7 @@ export function planBatchCycle(
   const newBatches: { target: string; ops: BatchOp[]; expectedEnd: number }[] = [];
   const abortTargets: string[] = [];
 
-  const scriptRam = ns.getScriptRam("/workers/hack.js");
+  const ramCosts = getWorkerRamCosts(ns);
 
   // Sort targets by score descending so top-value targets get first crack at RAM
   const sortedTargets = [...targetStates.entries()]
@@ -514,7 +515,7 @@ export function planBatchCycle(
     const hackTime = ns.getHackTime(hostname);
     const growTime = ns.getGrowTime(hostname);
     const weakenTime = ns.getWeakenTime(hostname);
-    const bt = calculateBatchThreads(ns, hostname, state.hackPercent, scriptRam);
+    const bt = calculateBatchThreads(ns, hostname, state.hackPercent, ramCosts);
 
     // Cap at theoretical max: how many batches fit in one weaken cycle
     const maxTheoreticalBatches = Math.max(1, Math.floor(weakenTime / BATCH_WINDOW));
@@ -540,7 +541,7 @@ export function planBatchCycle(
     }
   }
 
-  return { prepOps, newBatches, abortTargets, scriptRam };
+  return { prepOps, newBatches, abortTargets, ramCosts };
 }
 
 // === BATCH MODE: SERVER ALLOCATION ===
@@ -560,16 +561,21 @@ export function allocateServersToBatchOps(
   plan: CyclePlan,
 ): AllocatedOp[] {
   const allocated: AllocatedOp[] = [];
-  const scriptRam = plan.scriptRam;
+  // Each op type launches a different worker script with a different RAM
+  // cost (hack.js/grow.js/weaken.js are not interchangeable) — always look
+  // up the cost for the specific op being allocated, never a shared value.
+  const ramFor = (op: BatchOp): number => plan.ramCosts[op.type];
 
   // Dynamic prep budget: 100% when no batches need RAM, 50% when batches compete
   const totalFleetRam = servers.reduce((s, srv) => s + srv.availableRam, 0);
   const hasBatchOps = plan.newBatches.length > 0;
   const prepBudget = hasBatchOps ? totalFleetRam * 0.5 : totalFleetRam;
+  const smallestRamCost = Math.min(plan.ramCosts.hack, plan.ramCosts.grow, plan.ramCosts.weaken);
   let prepRamUsed = 0;
 
   // Helper: try to allocate ALL threads for an op (all-or-nothing, for batch ops)
   function tryAllocate(op: BatchOp): AllocatedOp[] | null {
+    const scriptRam = ramFor(op);
     let remaining = op.threads;
     const result: AllocatedOp[] = [];
 
@@ -602,6 +608,7 @@ export function allocateServersToBatchOps(
 
   // Helper: allocate as many threads as possible (partial is OK, for prep ops)
   function tryAllocatePartial(op: BatchOp, ramBudget: number): { ops: AllocatedOp[]; ramUsed: number } {
+    const scriptRam = ramFor(op);
     let remaining = op.threads;
     let budgetLeft = ramBudget;
     const result: AllocatedOp[] = [];
@@ -630,7 +637,7 @@ export function allocateServersToBatchOps(
   // 1. Allocate prep ops (capped at prepBudget, partial allocation OK)
   for (const op of plan.prepOps) {
     const budgetRemaining = prepBudget - prepRamUsed;
-    if (budgetRemaining < scriptRam) break;
+    if (budgetRemaining < smallestRamCost) break;
     const { ops, ramUsed } = tryAllocatePartial(op, budgetRemaining);
     prepRamUsed += ramUsed;
     allocated.push(...ops);
@@ -656,7 +663,7 @@ export function allocateServersToBatchOps(
       // Rollback entire batch allocation
       for (const alloc of batchAllocations) {
         const srv = servers.find(s => s.hostname === alloc.server);
-        if (srv) srv.availableRam += alloc.threads * scriptRam;
+        if (srv) srv.availableRam += alloc.threads * ramFor(alloc);
       }
     }
   }

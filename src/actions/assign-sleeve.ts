@@ -74,8 +74,15 @@ function assignRep(ns: NS, index: number): void {
   }
 
   try {
-    ns.sleeve.setToFactionWork(index, faction as FactionName, "hacking");
-    ns.toast(`Sleeve ${index}: ${faction} faction work`, "success", 2000);
+    // setToFactionWork returns false (or undefined) rather than throwing for most
+    // failures (e.g. insufficient reputation/standing) — the boolean must be checked.
+    const started = ns.sleeve.setToFactionWork(index, faction as FactionName, "hacking");
+    if (started) {
+      ns.toast(`Sleeve ${index}: ${faction} faction work`, "success", 2000);
+    } else {
+      ns.toast(`Sleeve ${index}: could not start faction work for ${faction}`, "warning", 2000);
+      assignIdle(ns, index);
+    }
   } catch {
     ns.toast(`Sleeve ${index}: failed to set faction work for ${faction}`, "error", 2000);
     assignIdle(ns, index);
@@ -85,29 +92,42 @@ function assignRep(ns: NS, index: number): void {
 function assignWork(ns: NS, index: number): void {
   const status = peekStatus<WorkStatus>(ns, STATUS_PORTS.work, 30_000);
   const focus = status?.currentFocus || "strength";
+  // Sleeves have their own city, independent of the player's — use the sleeve's
+  // location (not status.playerCity) to pick a local gym/university, since
+  // ns.sleeve.setToGymWorkout/setToUniversityCourse silently return false if the
+  // sleeve isn't already in that location's city.
+  const sleeveCity = ns.sleeve.getSleeve(index).city as string;
 
   // Map work daemon focus to sleeve activity
   if (focus === "hacking" || focus === "charisma") {
     // University courses
-    const city = status?.playerCity || "Sector-12";
     const course = focus === "hacking" ? "Algorithms" : "Leadership";
     try {
-      ns.sleeve.setToUniversityCourse(index, getUniversity(city) as UniversityLocationName, course);
-      ns.toast(`Sleeve ${index}: ${course} at university`, "success", 2000);
+      const started = ns.sleeve.setToUniversityCourse(index, getUniversity(sleeveCity) as UniversityLocationName, course);
+      if (started) {
+        ns.toast(`Sleeve ${index}: ${course} at university`, "success", 2000);
+      } else {
+        ns.toast(`Sleeve ${index}: could not start university course`, "warning", 2000);
+        assignIdle(ns, index);
+      }
     } catch {
       ns.toast(`Sleeve ${index}: failed to set university course`, "error", 2000);
       assignIdle(ns, index);
     }
   } else if (["strength", "defense", "dexterity", "agility"].includes(focus)) {
     // Gym workout — GymType uses short form: str, def, dex, agi
-    const city = status?.playerCity || "Sector-12";
     const gymStatMap: Record<string, string> = {
       strength: "str", defense: "def", dexterity: "dex", agility: "agi",
     };
     const stat = (gymStatMap[focus] || "str") as "str" | "def" | "dex" | "agi";
     try {
-      ns.sleeve.setToGymWorkout(index, getGym(city) as GymLocationName, stat);
-      ns.toast(`Sleeve ${index}: ${stat} at gym`, "success", 2000);
+      const started = ns.sleeve.setToGymWorkout(index, getGym(sleeveCity) as GymLocationName, stat);
+      if (started) {
+        ns.toast(`Sleeve ${index}: ${stat} at gym`, "success", 2000);
+      } else {
+        ns.toast(`Sleeve ${index}: could not start gym workout`, "warning", 2000);
+        assignIdle(ns, index);
+      }
     } catch {
       ns.toast(`Sleeve ${index}: failed to set gym workout`, "error", 2000);
       assignIdle(ns, index);
@@ -115,8 +135,13 @@ function assignWork(ns: NS, index: number): void {
   } else if (focus.startsWith("crime")) {
     // Crime
     try {
-      ns.sleeve.setToCommitCrime(index, "Homicide");
-      ns.toast(`Sleeve ${index}: committing crime`, "success", 2000);
+      const started = ns.sleeve.setToCommitCrime(index, "Homicide");
+      if (started) {
+        ns.toast(`Sleeve ${index}: committing crime`, "success", 2000);
+      } else {
+        ns.toast(`Sleeve ${index}: could not start crime`, "warning", 2000);
+        assignIdle(ns, index);
+      }
     } catch {
       ns.toast(`Sleeve ${index}: failed to set crime`, "error", 2000);
       assignIdle(ns, index);
@@ -129,8 +154,13 @@ function assignWork(ns: NS, index: number): void {
 function assignBlade(ns: NS, index: number): void {
   // Default to Diplomacy (reduces chaos without risking failure)
   try {
-    ns.sleeve.setToBladeburnerAction(index, "Diplomacy");
-    ns.toast(`Sleeve ${index}: BB Diplomacy`, "success", 2000);
+    const started = ns.sleeve.setToBladeburnerAction(index, "Diplomacy");
+    if (started) {
+      ns.toast(`Sleeve ${index}: BB Diplomacy`, "success", 2000);
+    } else {
+      ns.toast(`Sleeve ${index}: could not start BB action (need Simulacrum?)`, "warning", 2000);
+      assignIdle(ns, index);
+    }
   } catch {
     // Bladeburner sleeve action may not be available
     ns.toast(`Sleeve ${index}: failed to set BB action (need Simulacrum?)`, "error", 2000);

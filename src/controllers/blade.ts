@@ -42,11 +42,11 @@ export interface BladeConfig {
   contractThreshold: number;    // min success % for contracts (default 60)
   staminaMinPercent: number;    // % below which to start resting (default 50)
   staminaRestoreTo: number;     // % to restore stamina to before resuming ops (default 95)
-  staminaTrainMax: number;      // max stamina threshold for training (default 400)
+  staminaTrainMax: number;      // train when max stamina is below this (default 0 = training disabled)
   chaosMax: number;             // chaos level that triggers diplomacy (default 50)
   chaosTarget: number;          // chaos level to reduce to (default 40)
-  successSpreadMax: number;     // max success spread before field analysis (default 4)
-  populationMin: number;        // min population before city switch (default 1_000_000)
+  successSpreadMax: number;     // max success spread before field analysis (default 4) — NOT YET USED by selectAction
+  populationMin: number;        // min population before city switch (default 1e9) — NOT YET USED by selectBestCity
 }
 
 export const DEFAULT_BLADE_CONFIG: BladeConfig = {
@@ -94,6 +94,8 @@ export const BLADEBURNER_CITIES = [
 ] as const;
 
 /** Skill upgrade priority groups (earlier = higher priority, pick lowest-level within group) */
+// Skills outside this list (Tracer, Datamancer, Cyber's Edge, Hands of Midas) are never
+// auto-bought; use the buySkill config key or the dashboard. Deliberate, see docs/systems/blade.md.
 const SKILL_PRIORITY: { names: string[]; maxLevel?: number; maxLevels?: Record<string, number> }[] = [
   { names: ["Blade's Intuition", "Digital Observer", "Overclock"], maxLevels: { "Overclock": 90 } },
   { names: ["Reaper", "Evasive System"] },

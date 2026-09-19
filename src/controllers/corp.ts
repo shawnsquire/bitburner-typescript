@@ -53,7 +53,7 @@ export const EMPLOYEE_JOBS = [
 /** Production material factors per industry — determines production multiplier. */
 export const INDUSTRY_FACTORS: Record<string, Record<string, number>> = {
   Agriculture: { Hardware: 0.20, Robots: 0.30, "AI Cores": 0.30, "Real Estate": 0.72 },
-  Chemical:    { Hardware: 0.20, Robots: 0.25, "AI Cores": 0.20, "Real Estate": 0.05 },
+  Chemical:    { Hardware: 0.20, Robots: 0.25, "AI Cores": 0.20, "Real Estate": 0.25 },
   Tobacco:     { Hardware: 0.15, Robots: 0.20, "AI Cores": 0.15, "Real Estate": 0.15 },
 };
 
@@ -77,13 +77,15 @@ export const EXPORT_FORMULA = "(IPROD+IINV/10)*(-1)";
 
 /**
  * Export routes: [fromDivType, toDivType, material]
- * These define the full supply chain.
+ * These define the full supply chain. Only routes for materials the
+ * destination industry actually requires belong here — verified against
+ * IndustryData.ts requiredMaterials: Agriculture needs Water+Chemicals,
+ * Chemical needs Plants+Water, Tobacco needs Plants only (no Chemicals).
  */
 export const EXPORT_ROUTES: [string, string, string][] = [
   ["Agriculture", "Tobacco", "Plants"],
   ["Agriculture", "Chemical", "Plants"],
   ["Chemical", "Agriculture", "Chemicals"],
-  ["Chemical", "Tobacco", "Chemicals"],
 ];
 
 // === INVESTMENT THRESHOLDS ===
@@ -119,12 +121,14 @@ export const UPGRADES: UpgradeInfo[] = [
 
 /** One-time unlocks in priority order. */
 export const UNLOCK_PRIORITY: { name: string; cost: number }[] = [
-  { name: "Smart Supply",           cost: 25e9 },
-  { name: "Export",                 cost: 20e9 },
-  { name: "Warehouse API",          cost: 50e9 },
-  { name: "Office API",             cost: 50e9 },
-  { name: "Shady Accounting",       cost: 500e12 },
-  { name: "Government Partnership", cost: 2e15 },
+  { name: "Smart Supply",              cost: 25e9 },
+  { name: "Market Research - Demand",  cost: 5e9 },
+  { name: "Market Data - Competition", cost: 5e9 },
+  { name: "Export",                    cost: 20e9 },
+  { name: "Warehouse API",             cost: 50e9 },
+  { name: "Office API",                cost: 50e9 },
+  { name: "Shady Accounting",          cost: 500e12 },
+  { name: "Government Partnership",    cost: 2e15 },
 ];
 
 // === RESEARCH DATA ===
@@ -171,6 +175,7 @@ export interface WarehouseSnapshot {
   size: number;
   used: number;
   materials: MaterialState[];
+  employees: number;
 }
 
 export interface ProductSnapshot {
@@ -212,6 +217,7 @@ export interface CorpStateSnapshot {
   currentOffer: number;
   sharePrice: number;
   dividendRate: number;
+  dividendIncome: number;
   ownedShares: number;
   issuedShares: number;
   divisions: DivisionSnapshot[];
@@ -220,7 +226,6 @@ export interface CorpStateSnapshot {
   unlocks: Record<string, boolean>;
   playerMoney: number;
   wilsonLevel: number;
-  adVertCount: number;
 }
 
 // === OUTPUT TYPES ===
@@ -316,7 +321,7 @@ export function shouldAdvanceDirective(
 export function calculateOptimalMaterials(
   industry: string,
   warehouseSize: number,
-  reservePercent: number = 0.2,
+  reservePercent = 0.2,
 ): MaterialTargets {
   const factors = INDUSTRY_FACTORS[industry];
   if (!factors) return {};
@@ -359,7 +364,9 @@ export function scoreUpgrade(
   currentLevel: number,
   cost: number,
   corpProfit: number,
-  wilsonLevel: number,
+  // Reserved for a future ad-synergy scaling factor (see scoreAdVert, which
+  // does scale with wilsonLevel) — not yet wired into non-Wilson scoring.
+  _wilsonLevel: number,
 ): number {
   if (cost <= 0 || corpProfit <= 0) return 0;
 
@@ -498,16 +505,22 @@ export function calculateEmployeeDistribution(
     remainder = 0;
   }
 
-  // If we over-assigned (from min-1 guarantees), take from lowest priority
+  // If we over-assigned (from min-1 guarantees), take from lowest priority.
+  // With 5 roles, the min-1 floor alone can already exceed `count` (e.g.
+  // count=4 forces 5 total). Allow roles to drop to 0 — requiring `> 1`
+  // here left small counts with no role to take from and spun forever.
   while (assigned > count) {
+    let reduced = false;
     for (let i = ratios.length - 1; i >= 0; i--) {
       const role = ratios[i][0];
-      if (assignment[role] > 1) {
+      if (assignment[role] > 0) {
         assignment[role]--;
         assigned--;
+        reduced = true;
         if (assigned <= count) break;
       }
     }
+    if (!reduced) break; // safety net: nothing left to take from
   }
 
   return {

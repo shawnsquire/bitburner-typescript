@@ -31,7 +31,12 @@ import { largestRectangle } from "/lib/contracts/solvers/largest-rectangle";
 
 // === SOLVER REGISTRY ===
 
-export const SOLVERS: Record<string, (data: any) => any> = {
+// `never` as the param type is deliberate: it is the only parameter type a value of every
+// concrete solver signature (string, number[], number[][], ...) can be assigned to, since
+// `never` is assignable to everything. This keeps the registry heterogeneous without `any`.
+type ContractSolver = (data: never) => unknown;
+
+export const SOLVERS: Record<string, ContractSolver> = {
   "Find Largest Prime Factor": findLargestPrimeFactor,
   "Subarray with Maximum Sum": subarrayMaxSum,
   "Total Ways to Sum": totalWaysToSum,
@@ -68,15 +73,15 @@ export const SOLVERS: Record<string, (data: any) => any> = {
 
 export interface SolveResult {
   solved: boolean;
-  answer: any;
+  answer: unknown;
 }
 
-export function solve(type: string, data: any): SolveResult {
+export function solve(type: string, data: unknown): SolveResult {
   const solver = SOLVERS[type];
   if (!solver) return { solved: false, answer: null };
 
   try {
-    const answer = solver(data);
+    const answer = solver(data as never);
     return { solved: true, answer };
   } catch {
     return { solved: false, answer: null };

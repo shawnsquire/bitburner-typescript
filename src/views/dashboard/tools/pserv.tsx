@@ -4,71 +4,10 @@
  * Displays purchased server status with 5x5 visual grid.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, FormattedPservStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { togglePservAutoBuy, setPservMaxRam } from "views/dashboard/state-store";
-import { getPservStatus } from "/controllers/pserv";
-
-// === STATUS FORMATTING ===
-
-function formatPservStatus(ns: NS): FormattedPservStatus {
-  const raw = getPservStatus(ns);
-
-  // Calculate maxed count
-  const servers = raw.servers.map(hostname => {
-    const ram = ns.getServerMaxRam(hostname);
-    return {
-      hostname,
-      ram,
-      ramFormatted: ns.format.ram(ram),
-    };
-  });
-
-  const maxedCount = servers.filter(s => s.ram >= raw.maxPossibleRam).length;
-  const upgradeProgress = raw.serverCount > 0
-    ? `${maxedCount}/${raw.serverCount} at max`
-    : "No servers";
-
-  // Calculate next upgrade info
-  let nextUpgrade: FormattedPservStatus["nextUpgrade"] = null;
-  if (!raw.allMaxed && raw.serverCount > 0) {
-    // Find smallest server
-    const smallest = servers.reduce((min, s) => s.ram < min.ram ? s : min);
-    if (smallest.ram < raw.maxPossibleRam) {
-      const nextRam = smallest.ram * 2;
-      const cost = ns.cloud.getServerUpgradeCost(smallest.hostname, nextRam);
-      const playerMoney = ns.getServerMoneyAvailable("home");
-      nextUpgrade = {
-        hostname: smallest.hostname,
-        currentRam: ns.format.ram(smallest.ram),
-        nextRam: ns.format.ram(nextRam),
-        cost,
-        costFormatted: ns.format.number(cost),
-        canAfford: playerMoney >= cost,
-      };
-    }
-  }
-
-  return {
-    serverCount: raw.serverCount,
-    serverCap: raw.serverCap,
-    totalRam: ns.format.ram(raw.totalRam),
-    minRam: ns.format.ram(raw.minRam),
-    maxRam: ns.format.ram(raw.maxRam),
-    maxPossibleRam: ns.format.ram(raw.maxPossibleRam),
-    allMaxed: raw.allMaxed,
-    autoBuy: true,
-    maxPossibleRamNum: raw.maxPossibleRam,
-    maxRamCap: 0,
-    maxRamCapFormatted: "Game Max",
-    effectiveMaxRam: raw.maxPossibleRam,
-    servers,
-    upgradeProgress,
-    nextUpgrade,
-  };
-}
 
 const controlSelectStyle: React.CSSProperties = {
   backgroundColor: "#1a1a1a",
@@ -326,7 +265,6 @@ export const pservPlugin: ToolPlugin<FormattedPservStatus> = {
   name: "PSERV",
   id: "pserv",
   script: "daemons/pserv.js",
-  getFormattedStatus: formatPservStatus,
   OverviewCard: PservOverviewCard,
   DetailPanel: PservDetailPanel,
 };

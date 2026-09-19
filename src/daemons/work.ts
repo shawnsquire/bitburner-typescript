@@ -29,12 +29,13 @@ import {
   WorkFocus,
   TRAVEL_COST,
   readWorkConfig,
+  GYM_STATS,
 } from "/controllers/work";
 import { analyzeCrime, CrimeName } from "/controllers/crime";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, WorkStatus, WorkTierName } from "/types/ports";
-import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool, setConfigValue } from "/lib/config";
+import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
 
 // === TIER DEFINITIONS ===
 
@@ -53,7 +54,11 @@ const BASE_FUNCTIONS = [
   "getScriptRam",
   "getPlayer",
   "getPortHandle",
-  "fileExists",
+  // Called unconditionally during tier selection/upgrade (main(), runMonitorMode,
+  // runTrainingMode) regardless of which tier ends up selected, so they must be
+  // priced into every tier's RAM budget rather than a specific tier's list.
+  "spawn",
+  "kill",
 ];
 
 const WORK_TIERS: WorkTierConfig[] = [
@@ -179,8 +184,6 @@ function computeWorkStatus(
   currentTierName: WorkTierName,
   currentRam: number,
   focusYielding = false,
-  focusHolder = "",
-  sleeveHolder = "",
 ): WorkStatus {
   const rawStatus = getWorkStatus(ns);
 
@@ -205,7 +208,10 @@ function computeWorkStatus(
   if (rawStatus.currentWork) {
     if (rawStatus.currentWork.type === "class") {
       const stat = rawStatus.currentWork.stat ?? "";
-      if (stat.toLowerCase().includes("gym")) {
+      // classType from ns.singularity.getCurrentWork() is the raw GymType/UniversityClassType
+      // value ("str"/"def"/"dex"/"agi" for gyms, e.g. "Algorithms" for university) — it never
+      // contains the substring "gym", so detect gym work by membership in GYM_STATS instead.
+      if ((GYM_STATS as readonly string[]).includes(stat)) {
         activityType = "gym";
         activityDisplay = `Gym: ${stat}`;
       } else {
@@ -540,7 +546,7 @@ async function runMonitorMode(
     // At tier 0 we can't train — just display status
     ns.print(`${C.yellow}Monitor mode (insufficient RAM for training)${C.reset}`);
 
-    const workStatus = computeWorkStatus(ns, 0, "monitor", currentRam, focusYielding, focusHolder, sleeveHolder);
+    const workStatus = computeWorkStatus(ns, 0, "monitor", currentRam, focusYielding);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -608,7 +614,7 @@ async function runTrainingMode(
       }
     }
 
-    const workStatus = computeWorkStatus(ns, 1, "training", currentRam, focusYielding, focusHolder, sleeveHolder);
+    const workStatus = computeWorkStatus(ns, 1, "training", currentRam, focusYielding);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -648,7 +654,7 @@ async function runCrimeMode(
       }
     }
 
-    const workStatus = computeWorkStatus(ns, 2, "crime", currentRam, focusYielding, focusHolder, sleeveHolder);
+    const workStatus = computeWorkStatus(ns, 2, "crime", currentRam, focusYielding);
     publishStatus(ns, STATUS_PORTS.work, workStatus);
     printStatus(ns, workStatus);
 
@@ -715,8 +721,13 @@ export async function main(ns: NS): Promise<void> {
     freeRamForTarget(ns, requiredRam);
   }
 
-  // Upgrade RAM allocation
-  if (selectedTier.tier > 0) {
+  // Set static RAM allocation to match the selected tier's actual needs. This must
+  // run even for tier 0: BASE_FUNCTIONS (which every tier's cost includes) contains
+  // "spawn" and "kill", so tier 0's real cost can exceed the initial ramOverride(5)
+  // placeholder, especially with the singularity SF4 RAM multiplier applied to
+  // getCurrentWork/isFocused. Skipping this for tier 0 risked a dynamic-RAM kill
+  // the first time monitor mode called ns.spawn to self-upgrade.
+  {
     const actual = ns.ramOverride(requiredRam);
     if (actual < requiredRam) {
       ns.tprint(`WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM for work daemon`);

@@ -2,48 +2,11 @@
  * Bitnode Completion Status Component
  *
  * Displays fl1ght.exe requirements: augmentations, money, and hacking skill.
+ * Status data is computed and published by daemons/rep.ts (computeBitnodeStatus)
+ * to STATUS_PORTS.bitnode; this component only renders it.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { BitnodeStatus } from "views/dashboard/types";
-
-// === CONSTANTS ===
-
-const BITNODE_REQUIREMENTS = {
-  augmentations: 30,
-  money: 100_000_000_000, // $100b
-  hacking: 2500,
-};
-
-// === STATUS FORMATTING ===
-
-export function getBitnodeStatus(ns: NS): BitnodeStatus | null {
-  try {
-    const player = ns.getPlayer();
-    const installedAugs = ns.singularity.getOwnedAugmentations(false).length;
-
-    const augsComplete = installedAugs >= BITNODE_REQUIREMENTS.augmentations;
-    const moneyComplete = player.money >= BITNODE_REQUIREMENTS.money;
-    const hackingComplete = player.skills.hacking >= BITNODE_REQUIREMENTS.hacking;
-
-    return {
-      augmentations: installedAugs,
-      augmentationsRequired: BITNODE_REQUIREMENTS.augmentations,
-      money: player.money,
-      moneyRequired: BITNODE_REQUIREMENTS.money,
-      moneyFormatted: ns.format.number(player.money),
-      moneyRequiredFormatted: ns.format.number(BITNODE_REQUIREMENTS.money),
-      hacking: player.skills.hacking,
-      hackingRequired: BITNODE_REQUIREMENTS.hacking,
-      augsComplete,
-      moneyComplete,
-      hackingComplete,
-      allComplete: augsComplete && moneyComplete && hackingComplete,
-    };
-  } catch {
-    return null;
-  }
-}
 
 // === COMPONENT ===
 

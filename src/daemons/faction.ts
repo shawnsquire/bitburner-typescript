@@ -55,6 +55,8 @@ const BASE_FUNCTIONS = [
   "getScriptRam",
   "getPlayer",
   "getPortHandle",
+  "kill", // via lib/ram-utils freeRamForTarget, called unconditionally when RAM is short
+  "spawn", // self-respawn on tier upgrade, runs regardless of current tier
 ];
 
 const FACTION_TIERS: FactionTierConfig[] = [

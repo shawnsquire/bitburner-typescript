@@ -4,73 +4,10 @@
  * Displays server rooting status with sortable table view.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, FormattedNukeStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { getPluginUIState, setPluginUIState } from "views/dashboard/state-store";
-import { getNukeStatus } from "/controllers/nuke";
-import { getAllServers } from "lib/utils";
-
-// === STATUS FORMATTING ===
-
-function formatNukeStatus(ns: NS): FormattedNukeStatus {
-  const raw = getNukeStatus(ns);
-  const player = ns.getPlayer();
-  const allServers = getAllServers(ns);
-
-  const ready: FormattedNukeStatus["ready"] = [];
-  const needHacking: FormattedNukeStatus["needHacking"] = [];
-  const needPorts: FormattedNukeStatus["needPorts"] = [];
-  const rooted: string[] = [];
-
-  for (const hostname of allServers) {
-    const server = ns.getServer(hostname);
-
-    if (server.hasAdminRights) {
-      rooted.push(hostname);
-      continue;
-    }
-
-    const requiredPorts = server.numOpenPortsRequired ?? 0;
-    const requiredHacking = server.requiredHackingSkill ?? 0;
-
-    if (requiredHacking > player.skills.hacking) {
-      needHacking.push({
-        hostname,
-        required: requiredHacking,
-        current: player.skills.hacking,
-      });
-    } else if (requiredPorts > raw.toolCount) {
-      needPorts.push({
-        hostname,
-        required: requiredPorts,
-        current: raw.toolCount,
-      });
-    } else {
-      ready.push({
-        hostname,
-        requiredHacking,
-        requiredPorts,
-      });
-    }
-  }
-
-  // Sort by requirements
-  ready.sort((a, b) => a.requiredHacking - b.requiredHacking);
-  needHacking.sort((a, b) => a.required - b.required);
-  needPorts.sort((a, b) => a.required - b.required);
-
-  return {
-    rootedCount: raw.rootedCount,
-    totalServers: raw.totalServers,
-    toolCount: raw.toolCount,
-    ready,
-    needHacking,
-    needPorts,
-    rooted,
-  };
-}
 
 // === COMPONENTS ===
 
@@ -225,7 +162,6 @@ export const nukePlugin: ToolPlugin<FormattedNukeStatus> = {
   name: "NUKE",
   id: "nuke",
   script: "daemons/nuke.js",
-  getFormattedStatus: formatNukeStatus,
   OverviewCard: NukeOverviewCard,
   DetailPanel: NukeDetailPanel,
 };

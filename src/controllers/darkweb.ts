@@ -161,7 +161,12 @@ export function getDarkwebStatus(ns: NS): ProgramPurchaseResult {
  */
 export function purchaseTorRouter(ns: NS, budgetCheck?: (cost: number, name: string) => boolean): boolean {
   if (budgetCheck && !budgetCheck(200_000, "TOR Router")) return false;
-  return ns.singularity.purchaseTor();
+  // ns.singularity.* throws when Source-File 4 isn't available; treat that as "can't buy it".
+  try {
+    return ns.singularity.purchaseTor();
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -30,11 +30,17 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  const success = ns.singularity.purchaseProgram(programName as ProgramName);
+  // ns.singularity.purchaseProgram() throws if Source-File 4 isn't available.
+  let success = false;
+  try {
+    success = ns.singularity.purchaseProgram(programName as ProgramName);
+  } catch {
+    success = false;
+  }
 
   if (success) {
     ns.tprint(`SUCCESS: Purchased ${programName}`);
   } else {
-    ns.tprint(`FAILED: Could not purchase ${programName} (not enough money or invalid name)`);
+    ns.tprint(`FAILED: Could not purchase ${programName} (not enough money, invalid name, or missing Source-File 4)`);
   }
 }

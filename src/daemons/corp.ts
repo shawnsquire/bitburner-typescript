@@ -28,7 +28,6 @@ import {
 } from "/types/ports";
 import { getBudgetBalance, notifyPurchase, signalDone } from "/lib/budget";
 import {
-  evaluateDirective,
   shouldAdvanceDirective,
   calculateOptimalMaterials,
   calculateEmployeeDistribution,
@@ -65,9 +64,6 @@ import type {
 
 const C = COLORS;
 
-/** Cast string to CityName for NS API calls. */
-const asCity = (s: string) => s as CityName;
-
 /** Cast string to CorpIndustryName for NS API calls. */
 const asIndustry = (s: string) => s as CorpIndustryName;
 
@@ -85,6 +81,9 @@ interface TierConfig {
 
 /** Tier 0: read-only monitoring. */
 const TIER_0_FUNCTIONS = [
+  "getServerMaxRam",
+  "getServerUsedRam",
+  "getPlayer",
   "corporation.getCorporation",
   "corporation.getDivision",
   "corporation.getOffice",
@@ -239,14 +238,13 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     const pinned = getConfigBool(ns, "corp", "pinDirective", false);
     const autoTea = getConfigBool(ns, "corp", "autoTea", true);
     const dividendRate = getConfigNumber(ns, "corp", "dividendRate", 0.1);
-    const productInvestPct = getConfigNumber(ns, "corp", "productInvestPct", 0.1);
     const countdownSec = getConfigNumber(ns, "corp", "countdownSeconds", 60);
 
     // Process control messages
     processControlMessages(ns, maxTier);
 
     // Build snapshot
-    const snapshot = buildSnapshot(ns, maxTier);
+    const snapshot = buildSnapshot(ns);
 
     // Evaluate directive auto-advance
     let activeDirective = directive;
@@ -268,10 +266,10 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     if (maxTier >= 2) {
       autoCreateCorp(ns, snapshot);
       autoBuyUnlocks(ns, snapshot);
-      autoExpandDivisions(ns, snapshot, activeDirective);
+      autoExpandDivisions(ns, snapshot);
       autoSetupExports(ns, snapshot);
-      autoAcceptInvestment(ns, snapshot, activeDirective, countdownSec);
-      autoGoPublic(ns, snapshot, activeDirective, countdownSec);
+      autoAcceptInvestment(ns, snapshot, countdownSec);
+      autoGoPublic(ns, snapshot, countdownSec);
     }
 
     if (maxTier >= 1) {
@@ -281,7 +279,6 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       if (autoTea) autoTeaParty(ns, snapshot);
       autoProducts(ns, snapshot);
       autoResearch(ns, snapshot);
-      autoExports(ns, snapshot);
 
       const frozen = shouldFreezeSpending(snapshot);
       if (!frozen) {
@@ -417,7 +414,7 @@ function queuePendingAction(
 
 // === SNAPSHOT BUILDING ===
 
-function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
+function buildSnapshot(ns: NS): CorpStateSnapshot {
   const hasCorp = ns.corporation.hasCorporation();
   if (!hasCorp) {
     return {
@@ -431,6 +428,7 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
       currentOffer: 0,
       sharePrice: 0,
       dividendRate: 0,
+      dividendIncome: 0,
       ownedShares: 0,
       issuedShares: 0,
       divisions: [],
@@ -439,7 +437,6 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
       unlocks: {},
       playerMoney: ns.getPlayer().money,
       wilsonLevel: 0,
-      adVertCount: 0,
     };
   }
 
@@ -467,6 +464,7 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
           size: wh.size,
           used: wh.sizeUsed,
           materials,
+          employees: office.numEmployees,
         });
       } catch { /* no warehouse yet */ }
     }
@@ -544,6 +542,7 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
     currentOffer,
     sharePrice: corp.sharePrice,
     dividendRate: corp.dividendRate,
+    dividendIncome: corp.dividendEarnings,
     ownedShares: corp.numShares,
     issuedShares: corp.issuedShares,
     divisions,
@@ -552,7 +551,6 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
     unlocks,
     playerMoney: ns.getPlayer().money,
     wilsonLevel: upgradeLevels["Wilson Analytics"] ?? 0,
-    adVertCount: 0,  // Not directly queryable; inferred from getHireAdVertCost
   };
 }
 
@@ -617,7 +615,7 @@ function autoBuyUnlocks(ns: NS, snapshot: CorpStateSnapshot): void {
   }
 }
 
-function autoExpandDivisions(ns: NS, snapshot: CorpStateSnapshot, directive: CorpDirective): void {
+function autoExpandDivisions(ns: NS, snapshot: CorpStateSnapshot): void {
   if (!snapshot.hasCorp) return;
 
   // Division creation/expansion order
@@ -682,7 +680,7 @@ function autoSetupExports(ns: NS, snapshot: CorpStateSnapshot): void {
   }
 }
 
-function autoAcceptInvestment(ns: NS, snapshot: CorpStateSnapshot, directive: CorpDirective, countdownSec: number): void {
+function autoAcceptInvestment(ns: NS, snapshot: CorpStateSnapshot, countdownSec: number): void {
   if (!snapshot.hasCorp || snapshot.isPublic) return;
   if (snapshot.investmentRound >= 4) return;  // No more investment rounds
 
@@ -701,7 +699,7 @@ function autoAcceptInvestment(ns: NS, snapshot: CorpStateSnapshot, directive: Co
   }
 }
 
-function autoGoPublic(ns: NS, snapshot: CorpStateSnapshot, directive: CorpDirective, countdownSec: number): void {
+function autoGoPublic(ns: NS, snapshot: CorpStateSnapshot, countdownSec: number): void {
   if (!snapshot.hasCorp || snapshot.isPublic) return;
   if (snapshot.investmentRound < 4) return;  // Need round 3 accepted first
 
@@ -958,11 +956,6 @@ function autoMaterials(ns: NS, snapshot: CorpStateSnapshot): void {
   }
 }
 
-function autoExports(ns: NS, snapshot: CorpStateSnapshot): void {
-  // Exports are set once in autoSetupExports (tier 2)
-  // This function could adjust amounts dynamically in the future
-}
-
 function autoDividends(ns: NS, snapshot: CorpStateSnapshot, directive: CorpDirective, configRate: number): void {
   if (!snapshot.hasCorp || !snapshot.isPublic) return;
 
@@ -1072,7 +1065,7 @@ function buildStatus(
       size: wh.size,
       used: wh.used,
       usedPercent: wh.size > 0 ? Math.round((wh.used / wh.size) * 100) : 0,
-      employees: getOffice(ns, div.name, wh.city)?.numEmployees ?? 0,
+      employees: wh.employees,
     })),
   }));
 
@@ -1143,8 +1136,8 @@ function buildStatus(
     dividendRate: snapshot.dividendRate,
     ownedShares: snapshot.ownedShares,
     issuedShares: snapshot.issuedShares,
-    dividendIncome: 0,  // Calculated from dividendRate * profit * ownership
-    dividendIncomeFormatted: "$0",
+    dividendIncome: snapshot.dividendIncome,
+    dividendIncomeFormatted: ns.format.number(snapshot.dividendIncome),
     divisions,
     products,
     upgrades,

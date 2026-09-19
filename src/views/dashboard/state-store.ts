@@ -589,8 +589,24 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "start-training":
       {
-        // Queue a training start through the work daemon or action
-        const pid = ns.exec("actions/start-gym.js", "home", 1, "--stat", "str");
+        // Use the work daemon's published recommendation (gym stat,
+        // university course/location, or crime name) instead of always
+        // training strength — the daemon derives this from the configured
+        // work focus (/data/work-config.json via /config/work.txt "focus").
+        const rec = cachedData.workStatus?.recommendation;
+        let pid: number;
+        if (rec && rec.type === "university") {
+          const course = rec.skill === "hacking" ? "Algorithms" : "Leadership";
+          pid = ns.exec("actions/start-university.js", "home", 1, "--uni", rec.location, "--course", course);
+        } else if (rec && rec.type === "gym") {
+          pid = ns.exec("actions/start-gym.js", "home", 1, "--gym", rec.location, "--stat", rec.skill);
+        } else if (rec && rec.type === "crime") {
+          // For crime focus, recommendation.location holds the crime name.
+          pid = ns.exec("actions/commit-crime.js", "home", 1, "--crime", rec.location);
+        } else {
+          // No recommendation available yet (e.g. work daemon not running).
+          pid = ns.exec("actions/start-gym.js", "home", 1, "--stat", "str");
+        }
         if (pid > 0) {
           ns.toast("Training started", "success", 2000);
         } else {
@@ -939,9 +955,9 @@ function executeCommand(ns: NS, cmd: Command): void {
           ns.kill(currentGangPid);
           cachedData.pids.gang = 0;
         }
-        const gangArgs: string[] = [];
-        if (cmd.gangStrategy) gangArgs.push("--strategy", cmd.gangStrategy);
-        const gangPid = ns.exec("daemons/gang.js", "home", 1, ...gangArgs);
+        // gang.ts reads strategy from config (not CLI args) — persist before restart.
+        if (cmd.gangStrategy) setConfigValue(ns, "gang", "strategy", cmd.gangStrategy);
+        const gangPid = ns.exec("daemons/gang.js", "home", 1);
         if (gangPid > 0) {
           cachedData.pids.gang = gangPid;
           ns.toast(cmd.gangStrategy ? `Gang daemon: ${cmd.gangStrategy} strategy` : "Gang daemon restarted", "success", 2000);
@@ -1432,8 +1448,11 @@ export function readStatusPorts(ns: NS): void {
 
 const START_CONFIG_PATH = "/config/start.txt";
 
-function readStartupConfig(ns: NS): StartupConfigEntry[] {
-  const raw = ns.read(START_CONFIG_PATH);
+/**
+ * Parse the text contents of /config/start.txt into structured entries.
+ * Pure (no ns access) so it can be unit tested directly.
+ */
+export function parseStartupConfig(raw: string): StartupConfigEntry[] {
   if (!raw) return [];
 
   const entries: StartupConfigEntry[] = [];
@@ -1462,6 +1481,11 @@ function readStartupConfig(ns: NS): StartupConfigEntry[] {
   }
 
   return entries;
+}
+
+function readStartupConfig(ns: NS): StartupConfigEntry[] {
+  const raw = ns.read(START_CONFIG_PATH);
+  return parseStartupConfig(raw);
 }
 
 export function resetStartupConfig(ns: NS): void {
@@ -1606,11 +1630,11 @@ function startTool(ns: NS, tool: ToolName): void {
     setConfigValue(ns, "infiltration", "rewardMode", rewardMode);
     pid = ns.exec(script, "home");
   } else if (tool === "gang") {
+    // gang.ts reads strategy from config (not CLI args).
     const gangState = uiState.pluginUIState.gang;
     const strategy = (gangState.strategy as string) || "";
-    const args: string[] = [];
-    if (strategy) args.push("--strategy", strategy);
-    pid = ns.exec(script, "home", 1, ...args);
+    if (strategy) setConfigValue(ns, "gang", "strategy", strategy);
+    pid = ns.exec(script, "home", 1);
   } else {
     pid = ns.exec(script, "home");
   }

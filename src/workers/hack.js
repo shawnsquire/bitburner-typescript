@@ -5,7 +5,7 @@
  * JavaScript (not TypeScript) to minimize RAM cost — TS compilation adds
  * import overhead that multiplies across hundreds of fleet instances.
  *
- * RAM: 1.70 GB (ns.hack) + 0.05 GB base = 1.75 GB
+ * RAM: 1.60 GB base + 0.10 GB (ns.hack) = 1.70 GB
  *
  * Args:
  *   [0] target   - Hostname to hack (string)

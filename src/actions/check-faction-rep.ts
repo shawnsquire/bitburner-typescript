@@ -72,7 +72,7 @@ export async function main(ns: NS): Promise<void> {
     nextAugCostFormatted: "-",
     canAffordNextAug: false,
     favor: bestFavor,
-    favorToUnlock: 150,
+    favorToUnlock: ns.getFavorToDonate(),
     pendingBackdoors: [],
     nonWorkableFactions: [],
     isWorkingForFaction: false,

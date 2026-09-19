@@ -153,7 +153,7 @@ export function addPrice(history: PriceHistory, price: number): void {
  * Returns the fraction of up-ticks, which directly estimates P(up) = (50 + otlkMag)/100.
  * Requires at least 10 ticks for a reasonable estimate.
  */
-export function estimateForecast(history: PriceHistory, minTicks: number = 10): number | null {
+export function estimateForecast(history: PriceHistory, minTicks = 10): number | null {
   if (history.tickDirections.length < minTicks) return null;
   const upTicks = history.tickDirections.filter(d => d).length;
   return upTicks / history.tickDirections.length;
@@ -202,7 +202,7 @@ export interface TrendSignal {
 export function detectTrend(
   history: PriceHistory,
   threshold: number,
-  minForecastDeviation: number = 0.10,
+  minForecastDeviation = 0.10,
 ): TrendSignal {
   const ma = getMovingAverage(history);
   const currentPrice = history.prices.length > 0 ? history.prices[history.prices.length - 1] : 0;
@@ -299,18 +299,6 @@ export function forecastSignal(
 // === POSITION SIZING ===
 
 /**
- * Calculate the per-stock budget based on diversification cap.
- * Divides the trading capital (budget allowance) evenly across maxPositions.
- */
-export function calcDiversifiedBudget(
-  tradingCapital: number,
-  maxPositions: number,
-): number {
-  if (maxPositions <= 0) return tradingCapital;
-  return tradingCapital / maxPositions;
-}
-
-/**
  * Calculate per-stock budget weighted by signal strength.
  * Stronger signals get more capital, capped at 2x the equal share.
  */
@@ -354,8 +342,8 @@ export function meetsCommissionThreshold(
   pricePerShare: number,
   expectedReturnPerTick: number,
   commissionPerTrade: number,
-  minHoldTicks: number = 10,
-  safetyMultiple: number = 1.5,
+  minHoldTicks = 10,
+  safetyMultiple = 1.5,
 ): boolean {
   if (shares <= 0 || pricePerShare <= 0) return false;
   const expectedProfit = shares * pricePerShare * Math.abs(expectedReturnPerTick) * minHoldTicks;

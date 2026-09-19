@@ -2,11 +2,11 @@
  * RAM-Aware Launcher
  *
  * Frees RAM by killing low-priority processes before launching a script.
- * Kill tiers defined in types/ports.ts (single source of truth):
+ * Kill tiers are KILL_TIERS in types/ports.ts (single source of truth):
  *   Tier 1: Ephemeral workers (share, hack, grow, weaken)
  *   Tier 2: daemons/share
- *   Tier 3: daemons/hack
- *   Tier 4: dashboard (last resort, relaunches after)
+ *   Tier 3: dashboard (last resort; the queue daemon relaunches what it killed)
+ * daemons/hack.js is deliberately never killed for RAM.
  *
  * NS functions used: getScriptRam, getServerMaxRam, getServerUsedRam, ps, kill, exec
  * Estimated RAM cost: ~3.8 GB (2.2 GB API + 1.6 GB base)

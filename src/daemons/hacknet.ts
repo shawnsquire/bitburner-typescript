@@ -239,7 +239,10 @@ export async function main(ns: NS): Promise<void> {
   });
 
   const tierRamCosts = HACKNET_TIERS.map((_, i) => calculateTierRam(ns, i));
-  const currentScriptRam = 5;
+  // Must match the literal ns.ramOverride(8) call above — that's what the game's static
+  // analyzer actually reserved for this script at launch (see the syntactic-override rule:
+  // a literal ns.ramOverride() as the first statement of main() pins the launch RAM cost).
+  const currentScriptRam = 8;
   let { tier, ramCost } = selectBestTier(
     ns.getServerMaxRam("home") - ns.getServerUsedRam("home") + currentScriptRam,
     tierRamCosts,
@@ -435,13 +438,18 @@ export async function main(ns: NS): Promise<void> {
       const currentH = ns.hacknet.numHashes(); // Re-read after potential purchases
       const shouldSpend = spendStrategy === "money" || currentH / hashCapacity >= spendThreshold;
       if (shouldSpend) {
-        const hashCost = ns.hacknet.hashCost(hashUpgradeName);
+        // Most upgrades (all but "Sell for Money") scale in cost with each purchase
+        // (costPerLevel), so hashCost must be re-read after every successful spend —
+        // otherwise hashesSpentTotal undercounts and the loop's own affordability check
+        // goes stale.
+        let hashCost = ns.hacknet.hashCost(hashUpgradeName);
         while (ns.hacknet.numHashes() >= hashCost + reserveHashes) {
           if (ns.hacknet.spendHashes(hashUpgradeName)) {
             hashesSpentTotal += hashCost;
             if (spendStrategy === "money") {
               moneyEarnedFromHashes += HASH_SELL_MONEY;
             }
+            hashCost = ns.hacknet.hashCost(hashUpgradeName);
           } else {
             break;
           }

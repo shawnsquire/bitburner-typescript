@@ -5,188 +5,12 @@
  * Supports tiered display based on daemon operating tier.
  */
 import React from "lib/react";
-import { NS } from "@ns";
-import { ToolPlugin, FormattedRepStatus, OverviewCardProps, DetailPanelProps, PluginContext } from "views/dashboard/types";
+import { ToolPlugin, FormattedRepStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { ProgressBar } from "views/dashboard/components/ProgressBar";
-import { getRepStatus, findNextWorkableAugmentation, getNonWorkableFactionProgress, getFactionWorkStatus, getGangFaction } from "/controllers/factions";
-import { formatTime } from "lib/utils";
 import { startFactionWork, runBackdoors, restartRepDaemon, claimFocus } from "views/dashboard/state-store";
-import { peekStatus } from "lib/ports";
-import { STATUS_PORTS, RepStatus } from "types/ports";
 import { TierFooter } from "views/dashboard/components/TierFooter";
-
-// === REP TRACKING STATE (module-level) ===
-
-let lastRep = 0;
-let lastRepTime = Date.now();
-let repGainRate = 0;
-let lastTargetFaction = "";
-
-// === FACTION BACKDOOR SERVERS ===
-
-const FACTION_BACKDOOR_SERVERS: Record<string, string> = {
-  "CyberSec": "CSEC",
-  "NiteSec": "avmnite-02h",
-  "The Black Hand": "I.I.I.I",
-  "BitRunners": "run4theh111z",
-};
-
-/**
- * Get list of faction servers that need backdoors installed
- */
-function getPendingBackdoors(ns: NS): string[] {
-  const pending: string[] = [];
-  for (const [faction, server] of Object.entries(FACTION_BACKDOOR_SERVERS)) {
-    try {
-      const serverObj = ns.getServer(server);
-      if (serverObj.hasAdminRights && !serverObj.backdoorInstalled) {
-        pending.push(faction);
-      }
-    } catch {
-      // Server might not exist or not be accessible
-    }
-  }
-  return pending;
-}
-
-// === STATUS FORMATTING ===
-
-function formatRepStatus(ns: NS, extra?: PluginContext): FormattedRepStatus | null {
-  // First, try to read from port (the daemon publishes tiered status)
-  const portStatus = peekStatus<RepStatus>(ns, STATUS_PORTS.rep);
-
-  if (portStatus && portStatus.tier !== undefined) {
-    // Return port status directly - it already has tier info
-    return portStatus;
-  }
-
-  // Fallback: compute status directly (full mode only)
-  try {
-    const player = ns.getPlayer();
-    const raw = getRepStatus(ns, player);
-
-    // Detect gang faction to exclude from auto-targeting
-    const gangFaction = getGangFaction(ns);
-    const gangExclude = gangFaction ? new Set([gangFaction]) : undefined;
-
-    // Use workable faction target instead of any faction (excluding gang)
-    const target = findNextWorkableAugmentation(raw.factionData, gangExclude);
-
-    // Get non-workable faction progress (include gang faction)
-    const nonWorkableProgress = getNonWorkableFactionProgress(raw.factionData, gangExclude);
-
-    let targetFaction: string;
-    let targetFactionData: { currentRep: number; favor: number } | null = null;
-
-    if (target) {
-      targetFaction = target.faction.name;
-      targetFactionData = { currentRep: target.faction.currentRep, favor: target.faction.favor };
-    } else {
-      // Fall back to highest-rep faction (skip gang faction)
-      const best = raw.factionData
-        .filter(f => !gangExclude || !gangExclude.has(f.name))
-        .sort((a, b) => b.currentRep - a.currentRep)[0];
-      if (best) {
-        targetFaction = best.name;
-        targetFactionData = { currentRep: best.currentRep, favor: best.favor };
-      } else {
-        targetFaction = "None";
-      }
-    }
-
-    const repRequired = target?.aug?.repReq ?? 0;
-    const currentRep = target?.faction?.currentRep ?? targetFactionData?.currentRep ?? 0;
-    const repGap = Math.max(0, repRequired - currentRep);
-    const repProgress = repRequired > 0 ? Math.min(1, currentRep / repRequired) : 0;
-
-    const favorToUnlock = extra?.favorToUnlock ?? 150;
-
-    // Update rep gain rate tracking internally
-    const now = Date.now();
-
-    if (targetFaction !== "None") {
-      if (lastRep > 0 && lastTargetFaction === targetFaction) {
-        const timeDelta = (now - lastRepTime) / 1000;
-        if (timeDelta > 0) {
-          const repDelta = currentRep - lastRep;
-          repGainRate = repGainRate * 0.7 + (repDelta / timeDelta) * 0.3;
-        }
-      }
-      lastRep = currentRep;
-      lastRepTime = now;
-      lastTargetFaction = targetFaction;
-    }
-
-    // Calculate ETA
-    let eta = "???";
-    if (repGap > 0 && repGainRate > 0) {
-      eta = formatTime(repGap / repGainRate);
-    } else if (repGap <= 0) {
-      eta = "Ready";
-    }
-
-    const nextAugCost = target?.aug?.basePrice ?? 0;
-
-    // Get pending backdoors
-    const pendingBackdoors = getPendingBackdoors(ns);
-
-    // Get work status for target faction
-    const workStatus = targetFaction !== "None"
-      ? getFactionWorkStatus(ns, player, targetFaction)
-      : { isWorkingForFaction: false, isOptimalWork: false, bestWorkType: "hacking" as const, currentWorkType: null, isWorkable: false };
-
-    return {
-      tier: 6,
-      tierName: "auto-work",
-      availableFeatures: ["cached-display", "live-rep", "all-factions", "target-tracking", "eta", "aug-cost", "faction-augs", "auto-recommend", "purchase-plan", "owned-filter", "prereq-order", "nfg-tracking", "auto-work", "work-status"],
-      unavailableFeatures: [],
-      currentRamUsage: 0,
-      nextTierRam: null,
-      canUpgrade: false,
-      allFactions: raw.factionData.map(f => ({
-        name: f.name,
-        currentRep: f.currentRep,
-        currentRepFormatted: ns.format.number(f.currentRep),
-        favor: f.favor,
-      })),
-      targetFaction,
-      nextAugName: target?.aug?.name ?? null,
-      repRequired,
-      repRequiredFormatted: ns.format.number(repRequired),
-      currentRep,
-      currentRepFormatted: ns.format.number(currentRep),
-      repGap,
-      repGapFormatted: ns.format.number(repGap),
-      repGapPositive: repGap > 0,
-      repProgress,
-      installedAugs: raw.installedAugs.length,
-      repGainRate,
-      eta,
-      nextAugCost,
-      nextAugCostFormatted: ns.format.number(nextAugCost),
-      canAffordNextAug: player.money >= nextAugCost,
-      favor: targetFactionData?.favor ?? 0,
-      favorToUnlock,
-      pendingBackdoors,
-      nonWorkableFactions: nonWorkableProgress.map(item => ({
-        factionName: item.faction.name,
-        nextAugName: item.nextAug.name,
-        progress: item.progress,
-        currentRep: ns.format.number(item.faction.currentRep),
-        requiredRep: ns.format.number(item.nextAug.repReq),
-      })),
-      isWorkingForFaction: workStatus.isWorkingForFaction,
-      isOptimalWork: workStatus.isOptimalWork,
-      bestWorkType: workStatus.bestWorkType,
-      currentWorkType: workStatus.currentWorkType,
-      isWorkable: workStatus.isWorkable,
-    };
-  } catch {
-    return null;
-  }
-}
 
 // === TIER DISPLAY HELPERS ===
 
@@ -671,7 +495,6 @@ export const repPlugin: ToolPlugin<FormattedRepStatus> = {
   name: "REP",
   id: "rep",
   script: "daemons/rep.js",
-  getFormattedStatus: formatRepStatus,
   OverviewCard: RepOverviewCard,
   DetailPanel: RepDetailPanel,
 };

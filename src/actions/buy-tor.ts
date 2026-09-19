@@ -13,11 +13,17 @@ export const MANUAL_COMMAND = 'ns.singularity.purchaseTor()';
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
 
-  const success = ns.singularity.purchaseTor();
+  // ns.singularity.purchaseTor() throws if Source-File 4 isn't available.
+  let success = false;
+  try {
+    success = ns.singularity.purchaseTor();
+  } catch {
+    success = false;
+  }
 
   if (success) {
     ns.tprint("SUCCESS: Purchased TOR router");
   } else {
-    ns.tprint("FAILED: Could not purchase TOR router (cost: $200k)");
+    ns.tprint("FAILED: Could not purchase TOR router (cost: $200k, requires Source-File 4)");
   }
 }

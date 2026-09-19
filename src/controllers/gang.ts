@@ -599,13 +599,18 @@ export function rankEquipment(
 
   return available
     .map(e => {
+      // Equipment stats are multipliers (e.g. 1.04 = +4%), not additive
+      // deltas — subtract the 1.0 baseline so ROI reflects the actual
+      // bonus. Missing stats (equipment doesn't affect that stat) default
+      // to 1 (no bonus) rather than 0, which would otherwise be double
+      // counted against the baseline.
       const statDelta =
-        (e.stats.str ?? 0) * weights.str +
-        (e.stats.def ?? 0) * weights.def +
-        (e.stats.dex ?? 0) * weights.dex +
-        (e.stats.agi ?? 0) * weights.agi +
-        (e.stats.cha ?? 0) * weights.cha +
-        (e.stats.hack ?? 0) * weights.hack;
+        ((e.stats.str ?? 1) - 1) * weights.str +
+        ((e.stats.def ?? 1) - 1) * weights.def +
+        ((e.stats.dex ?? 1) - 1) * weights.dex +
+        ((e.stats.agi ?? 1) - 1) * weights.agi +
+        ((e.stats.cha ?? 1) - 1) * weights.cha +
+        ((e.stats.hack ?? 1) - 1) * weights.hack;
       const roi = e.cost > 0 ? statDelta / e.cost : 0;
       return { name: e.name, cost: e.cost, roi, type: e.type };
     })

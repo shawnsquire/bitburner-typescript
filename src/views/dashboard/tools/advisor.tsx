@@ -5,7 +5,6 @@
  * OverviewCard shows top recommendation; DetailPanel shows full scored table.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, FormattedAdvisorStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { AdvisorCategory, Recommendation } from "/types/ports";
 import { styles } from "views/dashboard/styles";
@@ -183,15 +182,10 @@ function AdvisorDetailPanel({ status, running, toolId, pid }: DetailPanelProps<F
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const advisorPlugin: ToolPlugin<FormattedAdvisorStatus> = {
   name: "ADVISOR",
   id: "advisor",
   script: "daemons/advisor.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: AdvisorOverviewCard,
   DetailPanel: AdvisorDetailPanel,
 };

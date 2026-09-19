@@ -13,7 +13,7 @@
  * Usage:
  *   run daemons/blade.js
  */
-import { NS } from "@ns";
+import { NS, BladeburnerActionName } from "@ns";
 import { COLORS } from "/lib/utils";
 import {
   selectAction,
@@ -39,6 +39,13 @@ import {
 } from "/types/ports";
 import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool, setConfigValue } from "/lib/config";
 
+// === NS TYPE HELPERS ===
+// BladeburnerActionName is exported by @ns, but the city/skill name types
+// (CityName, BladeburnerSkillName) are not — derive them positionally instead
+// of casting to `any` so calls still get real type checking.
+type BladeCityName = Parameters<NS["bladeburner"]["switchCity"]>[0];
+type BladeSkillName = Parameters<NS["bladeburner"]["upgradeSkill"]>[0];
+
 // === TIER DEFINITIONS ===
 
 interface BladeTierConfig {
@@ -57,6 +64,10 @@ const BASE_FUNCTIONS = [
   "getPlayer",
   "getPortHandle",
   "fileExists",
+  // Referenced by lib/ram-utils.ts (freeRamForTarget/calcAvailableAfterKills, called from
+  // main() at every tier) and directly by the monitor/analysis self-upgrade path (ns.spawn).
+  "kill",
+  "spawn",
 ];
 
 const BLADE_TIERS: BladeTierConfig[] = [
@@ -103,7 +114,6 @@ const BLADE_TIERS: BladeTierConfig[] = [
     name: "automation",
     functions: [
       "bladeburner.startAction",
-      "bladeburner.stopBladeburnerAction",
       "bladeburner.upgradeSkill",
       "bladeburner.switchCity",
       "bladeburner.joinBladeburnerDivision",
@@ -202,14 +212,14 @@ function gatherActionData(
   names: string[],
 ): ActionData[] {
   return names.map(name => {
-    const [successMin, successMax] = ns.bladeburner.getActionEstimatedSuccessChance(type, name as any);
+    const [successMin, successMax] = ns.bladeburner.getActionEstimatedSuccessChance(type, name as BladeburnerActionName);
     return {
       name,
       successMin: successMin * 100,
       successMax: successMax * 100,
-      count: ns.bladeburner.getActionCountRemaining(type, name as any),
-      time: ns.bladeburner.getActionTime(type, name as any),
-      rankGain: ns.bladeburner.getActionRepGain(type, name as any),
+      count: ns.bladeburner.getActionCountRemaining(type, name as BladeburnerActionName),
+      time: ns.bladeburner.getActionTime(type, name as BladeburnerActionName),
+      rankGain: ns.bladeburner.getActionRepGain(type, name as BladeburnerActionName),
     };
   });
 }
@@ -279,12 +289,16 @@ function formatBonusTime(ms: number): string {
 
 function currentActionDisplay(action: ReturnType<NS["bladeburner"]["getCurrentAction"]>): { text: string; type: BladeburnerStatus["currentActionType"] } {
   if (!action) return { text: "Idle", type: "idle" };
-  const typeName = action.type.toLowerCase();
-  if (typeName === "general") return { text: action.name, type: "general" };
-  if (typeName === "contract") return { text: `Contract: ${action.name}`, type: "contract" };
-  if (typeName === "operation") return { text: `Op: ${action.name}`, type: "operation" };
-  if (typeName === "blackop" || typeName === "black operation") return { text: `BlackOp: ${action.name}`, type: "blackop" };
-  return { text: `${action.type}: ${action.name}`, type: "general" };
+  // action.type comes from the BladeburnerActionType enum values, which are plural
+  // ("Contracts", "Operations", "Black Operations"), not the singular controller
+  // BladeAction["type"] strings — match on the exact API strings, not a guessed prefix.
+  switch (action.type) {
+    case "General": return { text: action.name, type: "general" };
+    case "Contracts": return { text: `Contract: ${action.name}`, type: "contract" };
+    case "Operations": return { text: `Op: ${action.name}`, type: "operation" };
+    case "Black Operations": return { text: `BlackOp: ${action.name}`, type: "blackop" };
+    default: return { text: `${action.type}: ${action.name}`, type: "general" };
+  }
 }
 
 // === TIER LOOP FUNCTIONS ===
@@ -472,7 +486,7 @@ async function runAutomationMode(
 
     let nextBlackOp: BladeState["nextBlackOp"] = null;
     if (nextBlackOpRaw) {
-      const [boMin, boMax] = ns.bladeburner.getActionEstimatedSuccessChance("Black Operations", nextBlackOpRaw.name as any);
+      const [boMin, boMax] = ns.bladeburner.getActionEstimatedSuccessChance("Black Operations", nextBlackOpRaw.name as BladeburnerActionName);
       nextBlackOp = {
         name: nextBlackOpRaw.name,
         rankRequired: nextBlackOpRaw.rank,
@@ -523,7 +537,7 @@ async function runAutomationMode(
     if (!focusYielding && recommended) {
       // Switch city if needed
       if (targetCity) {
-        ns.bladeburner.switchCity(targetCity as any);
+        ns.bladeburner.switchCity(targetCity as BladeCityName);
         ns.print(`${COLORS.green}Switched to ${targetCity}${COLORS.reset}`);
       }
 
@@ -534,16 +548,16 @@ async function runAutomationMode(
         current.name === recommended.name;
 
       if (!alreadyRunning) {
-        ns.bladeburner.startAction(toBBActionType(recommended.type), recommended.name as any);
+        ns.bladeburner.startAction(toBBActionType(recommended.type), recommended.name as BladeburnerActionName);
       }
     }
 
     // Handle skill buy commands from dashboard
     const pendingSkill = getConfigString(ns, "blade", "buySkill", "");
     if (pendingSkill) {
-      const cost = ns.bladeburner.getSkillUpgradeCost(pendingSkill as any);
+      const cost = ns.bladeburner.getSkillUpgradeCost(pendingSkill as BladeSkillName);
       if (cost <= ns.bladeburner.getSkillPoints()) {
-        const success = ns.bladeburner.upgradeSkill(pendingSkill as any);
+        const success = ns.bladeburner.upgradeSkill(pendingSkill as BladeSkillName);
         if (success) {
           ns.tprint(`SUCCESS: Upgraded ${pendingSkill}`);
         }
@@ -560,7 +574,7 @@ async function runAutomationMode(
         const sp = ns.bladeburner.getSkillPoints();
         const rec = recommendSkillUpgrade(freshSkills, sp);
         if (!rec) break;
-        const success = ns.bladeburner.upgradeSkill(rec.name as any);
+        const success = ns.bladeburner.upgradeSkill(rec.name as BladeSkillName);
         if (!success) break;
         bought++;
       }
@@ -659,7 +673,7 @@ function computeFullStatus(
   if (nextBlackOp === undefined && tier >= 1) {
     const raw = ns.bladeburner.getNextBlackOp();
     if (raw) {
-      const [boMin, boMax] = ns.bladeburner.getActionEstimatedSuccessChance("Black Operations", raw.name as any);
+      const [boMin, boMax] = ns.bladeburner.getActionEstimatedSuccessChance("Black Operations", raw.name as BladeburnerActionName);
       nextBlackOp = { name: raw.name, rankRequired: raw.rank, successMin: boMin * 100, successMax: boMax * 100 };
     } else {
       nextBlackOp = null;
@@ -829,16 +843,25 @@ export async function main(ns: NS): Promise<void> {
     freeRamForTarget(ns, requiredRam);
   }
 
-  // Upgrade RAM allocation
-  if (selectedTier.tier > 0) {
-    const actual = ns.ramOverride(requiredRam);
-    if (actual < requiredRam) {
-      ns.tprint(`WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM for blade daemon`);
-      const fallback = selectBestTier(actual, tierRamCosts);
-      ns.ramOverride(fallback.ramCost);
-      requiredRam = fallback.ramCost;
-      selectedTier = fallback.tier;
+  // Upgrade RAM allocation to match the selected tier. This must run even for tier 0:
+  // monitor mode's own bladeburner calls cost far more than the 5 GB floor set above
+  // (BladeburnerApiBase alone is 4 GB per call), so skipping the override for tier 0
+  // left the daemon running on a 5 GB allocation it would immediately exceed and get
+  // killed for by the game's dynamic RAM check.
+  let actual = ns.ramOverride(requiredRam);
+  if (actual < requiredRam) {
+    ns.tprint(`WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM for blade daemon`);
+    if (actual < tierRamCosts[0]) {
+      ns.tprint(
+        `ERROR: Not enough home RAM for even the monitor tier ` +
+        `(need ${ns.format.ram(tierRamCosts[0])}, have ${ns.format.ram(actual)}). Blade daemon exiting.`,
+      );
+      return;
     }
+    const fallback = selectBestTier(actual, tierRamCosts);
+    actual = ns.ramOverride(fallback.ramCost);
+    requiredRam = fallback.ramCost;
+    selectedTier = fallback.tier;
   }
 
   ns.tprint(`INFO: Blade daemon: ${selectedTier.name} tier (${ns.format.ram(requiredRam)} RAM)`);

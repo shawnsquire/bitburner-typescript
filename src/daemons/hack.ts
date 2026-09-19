@@ -768,8 +768,8 @@ export async function main(ns: NS): Promise<void> {
  */
 async function runStocksMode(ns: NS): Promise<void> {
   const C = COLORS;
-  const GROW_SCRIPT = "scripts/hack/stock-grow.js";
-  const HACK_SCRIPT = "scripts/hack/stock-hack.js";
+  const GROW_SCRIPT = "/scripts/hack/stock-grow.js";
+  const HACK_SCRIPT = "/scripts/hack/stock-hack.js";
   const GROW_RAM = ns.getScriptRam(GROW_SCRIPT);
   const HACK_RAM = ns.getScriptRam(HACK_SCRIPT);
 
@@ -821,6 +821,17 @@ async function runStocksMode(ns: NS): Promise<void> {
     const sharePercent = getSharePercentFromPort(ns);
     const allocation = computeFleetAllocation(fleetServers, "stocks", sharePercent);
     publishStatus(ns, STATUS_PORTS.fleet, allocation);
+
+    // Deploy stock-manipulation workers to the fleet. These aren't part of
+    // the standard HWGW worker set that deployWorkers() copies, so without
+    // this every ns.exec() below silently fails (pid 0) on any non-home
+    // server, leaving stocks mode running on home's RAM only.
+    for (const hostname of allocation.hackServers) {
+      if (hostname === "home") continue;
+      if (!ns.fileExists(GROW_SCRIPT, hostname) || !ns.fileExists(HACK_SCRIPT, hostname)) {
+        await ns.scp([GROW_SCRIPT, HACK_SCRIPT], hostname, "home");
+      }
+    }
 
     // Kill stale workers (targets changed or removed)
     const currentTargetKeys = new Set(targets.map(t => `${t.server}-${t.action}`));
@@ -931,8 +942,6 @@ async function runStocksMode(ns: NS): Promise<void> {
 // === LEGACY MODE ===
 
 async function runLegacyMode(ns: NS): Promise<void> {
-  let cycleCount = 0;
-
   do {
     const cfg = readHackConfig(ns);
     const config: DistributedConfig = {
@@ -946,7 +955,6 @@ async function runLegacyMode(ns: NS): Promise<void> {
     };
 
     ns.clearLog();
-    cycleCount++;
 
     // Compute fleet allocation BEFORE running cycle so we can filter servers
     const legacyServers = getUsableServers(ns, config.homeReserve, cfg.excludeHacknet);

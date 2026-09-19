@@ -212,7 +212,10 @@ export async function main(ns: NS): Promise<void> {
           let ram = config.minRam;
           while (ram < effectiveMax) {
             const nextRam = ram * 2;
-            totalRemainingCost += ns.cloud.getServerUpgradeCost(`${config.prefix}-0`, nextRam) * slotsLeft;
+            // ns.cloud.getServerUpgradeCost requires an existing hostname and returns -1
+            // otherwise, so estimate the upgrade cost from the cost curve directly
+            // (upgrade cost is always cost(nextRam) - cost(currentRam), see ServerPurchases.ts).
+            totalRemainingCost += (ns.cloud.getServerCost(nextRam) - ns.cloud.getServerCost(ram)) * slotsLeft;
             ram = nextRam;
           }
         }

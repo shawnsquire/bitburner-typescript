@@ -168,7 +168,7 @@ export async function main(ns: NS): Promise<void> {
 }
 
 function renderServerRow(ns: NS, hostname: string, actions?: Partial<JobCounts>): RowResult {
-  const { red, green, yellow, blue, cyan, dim, reset } = COLORS;
+  const { red, green, yellow, blue, cyan, reset } = COLORS;
   const gray = COLORS.gray;
 
   const a = {
@@ -245,7 +245,7 @@ function getHackableServers(ns: NS): string[] {
   for (const hostname of getAllServers(ns)) {
     if (hostname === "home" || hostname.startsWith("pserv-")) continue;
     const server = ns.getServer(hostname);
-    if (server.moneyMax === 0) continue;
+    if ((server.moneyMax ?? 0) === 0) continue;
     servers.push(hostname);
   }
 

@@ -9,7 +9,7 @@
  */
 import { NS, FactionName } from "@ns";
 import { publishStatus, peekStatus } from "/lib/ports";
-import { getConfigString, setConfigValue } from "/lib/config";
+import { writeDefaultConfig, getConfigString, setConfigValue } from "/lib/config";
 import {
   STATUS_PORTS,
   INFILTRATION_CONTROL_PORT,
@@ -61,7 +61,6 @@ let locations: InfiltrationLocationInfo[] = [];
 
 // Log buffer
 const logBuffer: InfiltrationLogEntry[] = [];
-const LOG_MAX = 100;
 
 // Rep verification
 let consecutiveZeroDeltas = 0;
@@ -85,7 +84,7 @@ let _ns: NS | null = null;
 
 function log(level: InfiltrationLogEntry["level"], message: string): void {
   logBuffer.push({ timestamp: Date.now(), level, message });
-  if (logBuffer.length > LOG_MAX) logBuffer.shift();
+  if (logBuffer.length > config.logBufferSize) logBuffer.shift();
   // Also print to tail window for live debugging
   if (_ns) {
     const prefix = level === "error" ? "ERROR" : level === "warn" ? "WARN " : "INFO ";
@@ -276,6 +275,9 @@ function checkControlPort(ns: NS): void {
           }
           if (msg.rewardMode) {
             config.rewardMode = msg.rewardMode;
+            // Persist so the setting survives a daemon restart — this is the dashboard's
+            // control path; the floating overlay's <select> already did this separately.
+            setConfigValue(ns, "infiltration", "rewardMode", msg.rewardMode);
             log("info", `Reward mode: ${msg.rewardMode}`);
           }
           if (msg.solvers) {
@@ -805,6 +807,7 @@ export async function main(ns: NS): Promise<void> {
   // Reset module-level state (persists across restarts in Bitburner)
   state = "IDLE";
   stopRequested = false;
+  manualRewardPending = false;
   currentTarget = undefined;
   currentCity = undefined;
   currentGame = 0;
@@ -835,6 +838,12 @@ export async function main(ns: NS): Promise<void> {
     ...DEFAULT_CONFIG,
     enabledSolvers: new Set(SOLVERS.map(s => s.id)),
   };
+
+  // Seed /config/infiltration.txt so the reward mode is visible/editable there too
+  // (no-ops if the file already exists).
+  writeDefaultConfig(ns, "infiltration", {
+    rewardMode: DEFAULT_CONFIG.rewardMode,
+  });
 
   // Read saved config from dashboard
   const savedMode = getConfigString(ns, "infiltration", "rewardMode", DEFAULT_CONFIG.rewardMode);

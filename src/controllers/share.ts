@@ -11,6 +11,16 @@ import { getCachedServers } from "/lib/server-cache";
 
 export const DEFAULT_SHARE_SCRIPT = "/workers/share.js";
 
+/**
+ * ns.ps() returns RunningScript.filename WITHOUT a leading slash (Bitburner's
+ * internal FilePath type disallows one — see Paths/FilePath.ts rule 3), while
+ * script paths in this codebase are written repo-absolute ("/workers/..").
+ * Normalize before comparing against ps() output or the two never match.
+ */
+function normalizeScriptPath(path: string): string {
+  return path.startsWith("/") ? path.slice(1) : path;
+}
+
 // === TYPES ===
 
 export interface ServerShareInfo {
@@ -52,13 +62,12 @@ export function getShareStatus(
   shareScript: string = DEFAULT_SHARE_SCRIPT
 ): ShareStatus {
   const shareRam = ns.getScriptRam(shareScript);
+  const normalizedScript = normalizeScriptPath(shareScript);
   const serverStats: ServerShareInfo[] = [];
   let totalThreads = 0;
 
   for (const hostname of getCachedServers(ns)) {
-    const procs = ns.ps(hostname).filter((p) =>
-      p.filename === shareScript || p.filename.endsWith("workers/share.js")
-    );
+    const procs = ns.ps(hostname).filter((p) => p.filename === normalizedScript);
     const threads = procs.reduce((sum, p) => sum + p.threads, 0);
 
     if (threads > 0) {
@@ -170,6 +179,7 @@ export function launchShareThreads(
 ): ShareCycleResult {
   const { minFree, homeReserve, shareScript } = config;
   const shareRam = ns.getScriptRam(shareScript);
+  const normalizedScript = normalizeScriptPath(shareScript);
 
   if (shareRam === 0) {
     return { launchedThreads: 0, serversUsed: 0 };
@@ -198,7 +208,7 @@ export function launchShareThreads(
       const shareAllocation = totalUsable * (config.targetPercent / 100);
       // Subtract share workers already running on this server
       const shareUsed = ns.ps(hostname)
-        .filter(p => p.filename === shareScript)
+        .filter(p => p.filename === normalizedScript)
         .reduce((sum, p) => sum + p.threads * shareRam, 0);
       maxForShare = Math.min(available, Math.max(0, shareAllocation - shareUsed));
     }

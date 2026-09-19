@@ -277,7 +277,6 @@ export const focusPlugin: ToolPlugin<FormattedFocusStatus> = {
   name: "FOCUS",
   id: "focus",
   script: "daemons/focus.js",
-  getFormattedStatus: () => null,
   OverviewCard: FocusOverviewCard,
   DetailPanel: FocusDetailPanel,
 };

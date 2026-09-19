@@ -21,7 +21,7 @@
 import { NS, FactionName } from "@ns";
 import { COLORS, makeBar, formatTime } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
-import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool, setConfigValue } from "/lib/config";
+import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
 import {
   getBasicFactionRep,
   analyzeFactions,
@@ -55,6 +55,8 @@ const BASE_FUNCTIONS = [
   "getPlayer",
   "getPortHandle",
   "fileExists",
+  "kill", // via lib/ram-utils freeRamForTarget, called unconditionally when RAM is short
+  "spawn", // self-respawn on tier upgrade, runs regardless of current tier
 ];
 
 const REP_TIERS: RepTierConfig[] = [
@@ -170,10 +172,13 @@ function calculateAllTierRamCosts(ns: NS): number[] {
 
 // === BITNODE REQUIREMENTS ===
 
+// Daedalus invite (game: src/Faction/FactionInfo.tsx): augs >= 30 AND money >= 100b
+// AND (hacking >= 2500 OR every combat skill >= 1500).
 const BITNODE_REQUIREMENTS = {
   augmentations: 30,
   money: 100_000_000_000,
   hacking: 2500,
+  combat: 1500,
 };
 
 // === FACTION BACKDOOR SERVERS ===
@@ -265,7 +270,11 @@ function computeBitnodeStatus(ns: NS, installedAugsCount?: number): BitnodeStatu
 
   const augsComplete = installedAugs >= BITNODE_REQUIREMENTS.augmentations;
   const moneyComplete = player.money >= BITNODE_REQUIREMENTS.money;
-  const hackingComplete = player.skills.hacking >= BITNODE_REQUIREMENTS.hacking;
+  const { strength, defense, dexterity, agility } = player.skills;
+  const combatMin = Math.min(strength, defense, dexterity, agility);
+  // Skill requirement is hacking OR all combat skills; hackingComplete reports the combined result.
+  const hackingComplete =
+    player.skills.hacking >= BITNODE_REQUIREMENTS.hacking || combatMin >= BITNODE_REQUIREMENTS.combat;
 
   return {
     augmentations: installedAugs,
@@ -276,6 +285,8 @@ function computeBitnodeStatus(ns: NS, installedAugsCount?: number): BitnodeStatu
     moneyRequiredFormatted: ns.format.number(BITNODE_REQUIREMENTS.money),
     hacking: player.skills.hacking,
     hackingRequired: BITNODE_REQUIREMENTS.hacking,
+    combatMin,
+    combatRequired: BITNODE_REQUIREMENTS.combat,
     augsComplete,
     moneyComplete,
     hackingComplete,
@@ -424,11 +435,8 @@ function computeHighTierStatus(
   currentRamUsage: number,
   nextTierRam: number | null,
   repGainRate: number,
-  noWork: boolean,
   targetFactionOverride = "",
   focusYielding = false,
-  focusHolder = "",
-  sleeveHolder = "",
 ): RepStatus {
   const player = ns.getPlayer();
   const ownedAugs = getOwnedAugs(ns);
@@ -963,7 +971,7 @@ async function runFullMode(
     // Compute and publish RepStatus
     // Calculate next tier RAM for display
     const nextTierRam = tier.tier < 6 ? tierRamCosts[tier.tier + 1] : null;
-    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, noWork, targetFactionOverride, focusYielding, focusHolder, sleeveHolder);
+    const repStatus = computeHighTierStatus(ns, tier, currentTierRam, nextTierRam, repGainRate, targetFactionOverride, focusYielding);
     publishStatus(ns, STATUS_PORTS.rep, repStatus);
 
     // Compute and publish BitnodeStatus
@@ -1031,12 +1039,11 @@ export async function main(ns: NS): Promise<void> {
     _: string[];
   };
 
-  const targetFactionOverride = getConfigString(ns, "rep", "faction", "");
-  const noWork = getConfigBool(ns, "rep", "noWork", false);
+  // Note: faction/noWork/interval/oneShot config is re-read fresh every loop
+  // iteration inside runBasicMode/runFullMode so live config edits take effect
+  // without a restart; only noKill and the tier gate the RAM/mode selection below.
   const noKill = getConfigBool(ns, "rep", "noKill", false);
   const forcedTierName = flags.tier as RepTierName | "";
-  const interval = getConfigNumber(ns, "rep", "interval", 2000);
-  const oneShot = getConfigBool(ns, "rep", "oneShot", false);
   const spawnArgs = buildSpawnArgs(flags.tier);
 
   // Check SF4 level

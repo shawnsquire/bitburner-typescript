@@ -11,7 +11,7 @@
  */
 import { NS } from "@ns";
 import { ensureRamAndExec } from "/lib/launcher";
-import { setConfigValue, getConfigBool } from "/lib/config";
+import { readConfig, setConfigValue, getConfigBool } from "/lib/config";
 
 const START_CONFIG_PATH = "/config/start.txt";
 
@@ -32,13 +32,13 @@ const DEFAULT_START_CONFIG = `# Startup Config
 daemons/nuke.js
 daemons/hack.js
 daemons/queue.js
-daemons/darkweb.js
 daemons/focus.js
 daemons/work.js
 daemons/rep.js
 daemons/share.js
 
 # [optional]
+daemons/darkweb.js
 daemons/pserv.js
 daemons/faction.js
 daemons/augments.js
@@ -106,9 +106,10 @@ export async function main(ns: NS): Promise<void> {
   // Brief pause to let dashboard initialize
   await ns.sleep(500);
 
-  // Set default strategies for fresh bootstrap
-  setConfigValue(ns, "hack", "strategy", "money");
-  setConfigValue(ns, "pserv", "autoBuy", "true");
+  // Seed default strategies on a fresh bootstrap only. start.js is documented
+  // as safe to re-run, so never overwrite a value the player has already set.
+  if (!readConfig(ns, "hack").has("strategy")) setConfigValue(ns, "hack", "strategy", "money");
+  if (!readConfig(ns, "pserv").has("autoBuy")) setConfigValue(ns, "pserv", "autoBuy", "true");
 
   // 2. Read startup config
   const entries = readStartConfig(ns);

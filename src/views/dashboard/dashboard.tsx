@@ -28,6 +28,7 @@ import {
 import { styles } from "views/dashboard/styles";
 import { GroupedTabBar, TabGroup, ToolStatus } from "views/dashboard/components/TabBar";
 import { ErrorBoundary } from "views/dashboard/components/ErrorBoundary";
+import { BitnodeStatusBar } from "views/dashboard/components/BitnodeStatus";
 
 // Tool plugins
 import { nukePlugin } from "views/dashboard/tools/nuke";
@@ -61,8 +62,13 @@ function pick<K extends keyof DashboardState>(key: K): (s: DashboardState) => Da
 
 interface PluginEntry {
   toolId: ToolName;
+  // The registry is intentionally heterogeneous (each plugin has its own
+  // TFormatted status type) — `any` here is a deliberate type-erasure
+  // escape hatch, not an oversight.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   plugin: ToolPlugin<any>;
   tabLabel: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getStatus: (s: DashboardState) => any;
   getError: (s: DashboardState) => string | null;
 }
@@ -212,6 +218,11 @@ function OverviewPanel({ state, onNavigate }: OverviewPanelProps): React.ReactEl
 
   return (
     <div>
+      <div style={{ marginBottom: "12px" }}>
+        <ErrorBoundary label="Bitnode">
+          <BitnodeStatusBar status={state.bitnodeStatus} />
+        </ErrorBoundary>
+      </div>
       <div style={{ marginBottom: "12px" }}>
         <ErrorBoundary label="Advisor">
           <AdvisorPanel
@@ -363,7 +374,6 @@ function Dashboard(): React.ReactElement {
 // === MAIN LOOP ===
 
 export async function main(ns: NS): Promise<void> {
-  const PAUSED = false;
   ns.disableLog("ALL");
   ns.ui.openTail();
   ns.ui.resizeTail(600, 700);
@@ -374,7 +384,7 @@ export async function main(ns: NS): Promise<void> {
   ns.clearLog()
   ns.printRaw(<Dashboard />);
 
-  while (!PAUSED) {
+  while (true) {
     // 1. Process any pending commands first (responsive to clicks)
     readAndExecuteCommands(ns);
 

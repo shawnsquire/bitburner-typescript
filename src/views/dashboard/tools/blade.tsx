@@ -5,7 +5,6 @@
  * Reads status from the blade status port.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
@@ -17,10 +16,6 @@ import { buyBladeSkill, buyAllBladeSkills, setBladeConfig } from "views/dashboar
 const { useState } = React;
 
 // === HELPERS ===
-
-function formatInactive(_ns: NS): BladeburnerStatus | null {
-  return null;
-}
 
 function successColor(min: number): string {
   if (min >= 90) return "#00ff00";
@@ -531,7 +526,6 @@ export const bladePlugin: ToolPlugin<BladeburnerStatus> = {
   name: "BLADE",
   id: "blade",
   script: "daemons/blade.js",
-  getFormattedStatus: formatInactive,
   OverviewCard: BladeOverviewCard,
   DetailPanel: BladeDetailPanel,
 };

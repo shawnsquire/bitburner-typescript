@@ -410,15 +410,10 @@ function BudgetDetailPanel({
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const budgetPlugin: ToolPlugin<FormattedBudgetStatus> = {
   name: "BUDGET",
   id: "budget",
   script: "daemons/budget.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: BudgetOverviewCard,
   DetailPanel: BudgetDetailPanel,
 };

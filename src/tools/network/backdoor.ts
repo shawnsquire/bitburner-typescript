@@ -1,5 +1,5 @@
 import { NS } from "@ns";
-import { COLORS, discoverAllWithDepthAndPath, pathToArray } from '/lib/utils.js';
+import { COLORS, discoverAllWithDepthAndPath, pathToArray } from "/lib/utils";
 
 export async function main(ns: NS) {
     ns.disableLog("ALL")
@@ -27,7 +27,7 @@ export async function main(ns: NS) {
         const { parentByHost } = discoverAllWithDepthAndPath(ns, start, 100);
         const path = pathToArray(parentByHost, host);
 
-        const rooted = server.hasAdminRights ? `${COLORS.green}✓${COLORS.reset}` : `${COLORS.red}✗${COLORS.red}`;
+        const rooted = server.hasAdminRights ? `${COLORS.green}✓${COLORS.reset}` : `${COLORS.red}✗${COLORS.reset}`;
         const reqHack =  server.hasAdminRights ? '' : `${COLORS.yellow}(Req. ${server.requiredHackingSkill} Hack)${COLORS.reset}`;
 
         ns.print(`${rooted} ${COLORS.cyan}${host}${COLORS.reset} ${reqHack}`)

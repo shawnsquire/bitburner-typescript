@@ -688,17 +688,12 @@ export function runWorkCycle(ns: NS, currentTier = 2): boolean {
     const classWork = currentWork as { classType: string };
     const currentStat = classWork.classType.toLowerCase();
 
-    // Map class types to our skill names
+    // classType from ns.singularity.getCurrentWork() is the raw GymType ("str"/"def"/"dex"/"agi")
+    // or UniversityClassType ("Algorithms", "Leadership", etc.) value — not a free-form
+    // description — so gym stats already match our skill short names via the identity
+    // fallback below; only the university course names need translating.
     const classToSkill: Record<string, string> = {
-      "gym strength": "str",
-      "gym defense": "def",
-      "gym dexterity": "dex",
-      "gym agility": "agi",
-      "study computer science basics": "hacking",
-      "taking algorithms": "hacking",
       algorithms: "hacking",
-      "study leadership": "charisma",
-      "taking leadership": "charisma",
       leadership: "charisma",
     };
 

@@ -5,7 +5,6 @@
  * DetailPanel shows positions table, signals, hack awareness overlay, and budget info.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import {
   ToolPlugin,
   FormattedStocksStatus,
@@ -548,15 +547,10 @@ function formatCompact(n: number): string {
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const stocksPlugin: ToolPlugin<FormattedStocksStatus> = {
   name: "STOCKS",
   id: "stocks",
   script: "daemons/stocks.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: StocksOverviewCard,
   DetailPanel: StocksDetailPanel,
 };

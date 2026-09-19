@@ -28,7 +28,6 @@ import {
   StockPosition,
   StockSignal,
   HackStatus,
-  BatchTargetStatus,
 } from "/types/ports";
 import {
   createPriceHistory,
@@ -43,7 +42,6 @@ import {
   estimateVolatility,
   shouldSell,
   getHackAdjustment,
-  getSymbolForServer,
   shouldStopLoss,
   updatePeakPrice,
   detectActiveProfile,
@@ -63,6 +61,33 @@ interface StocksTierConfig {
   functions: string[];
   features: string[];
 }
+
+const BASE_SCRIPT_COST = 1.6;
+
+// Functions called unconditionally every tick regardless of tier (API purchase attempts,
+// RAM bookkeeping in main()/freeRamForTarget, respawn). These must be budgeted at every
+// tier, not just the tier that "feels" related to them.
+const BASE_FUNCTIONS = [
+  "getServerMaxRam",
+  "getServerUsedRam",
+  "getPlayer",
+  "fileExists",
+  "spawn",
+  "stock.purchaseTixApi",
+  "stock.purchase4SMarketDataTixApi",
+  // via /lib/ram-utils freeRamForTarget()
+  "ps",
+  "getScriptRam",
+  "kill",
+];
+
+// Launch-time static RAM cost, pinned via the literal ns.ramOverride() call at the top of
+// main() (see the syntactic-override rule in the game's RAM static analyzer — it only
+// applies when the override call is the first statement of main() with a literal argument).
+// This lets the script start on a low-RAM home server; main() bumps the allocation up to the
+// selected tier's requirement immediately after. Must equal ceil(tier-1 total) + 2 below —
+// recompute with `node tools/ram-check.mjs --json daemons/stocks.js` if the function lists change.
+const LAUNCH_RAM = 19;
 
 const TIERS: StocksTierConfig[] = [
   {
@@ -102,8 +127,10 @@ const TIERS: StocksTierConfig[] = [
 ];
 
 function calculateTierRam(ns: NS): { tier: number; name: string; ramNeeded: number }[] {
-  const BASE_RAM = 1.6; // Script base
-  let cumulative = BASE_RAM;
+  let cumulative = BASE_SCRIPT_COST;
+  for (const fn of BASE_FUNCTIONS) {
+    cumulative += ns.getFunctionRamCost(fn);
+  }
 
   const results: { tier: number; name: string; ramNeeded: number }[] = [];
 
@@ -117,48 +144,61 @@ function calculateTierRam(ns: NS): { tier: number; name: string; ramNeeded: numb
   return results;
 }
 
-function selectBestTier(ns: NS): { tier: number; name: string; totalRam: number } {
-  const tierRams = calculateTierRam(ns);
-  const available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home");
-
+function selectBestTier(
+  potentialRam: number,
+  tierRams: { tier: number; name: string; ramNeeded: number }[],
+): { tier: number; name: string; totalRam: number } {
   let best = { tier: 0, name: "disabled", totalRam: 0 };
   for (const t of tierRams) {
-    if (t.ramNeeded <= available + 5) { // +5 for overhead tolerance
+    if (t.ramNeeded <= potentialRam) {
       best = { tier: t.tier, name: t.name, totalRam: t.ramNeeded };
     }
   }
-
   return best;
 }
 
 // === MAIN ===
 
-/** @ram dynamic */
+/** @ram 19 */
 export async function main(ns: NS): Promise<void> {
-  const tierInfo = selectBestTier(ns);
+  // Literal + first statement: pins this script's static launch cost to the tier-1 minimum
+  // (LAUNCH_RAM) so it can start on a low-RAM home server. Without this being the very first
+  // statement with a literal argument, the game's static analyzer charges the FULL dependency
+  // graph (~33GB) just to launch, defeating the entire tiered design. Bumped to the actual
+  // selected tier's requirement below via a second, non-literal ramOverride() call.
+  ns.ramOverride(19);
+
+  const tierRams = calculateTierRam(ns);
+  const available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home") + LAUNCH_RAM;
+  let tierInfo = selectBestTier(available, tierRams);
 
   if (tierInfo.tier === 0) {
-    ns.tprint("WARN: Not enough RAM for stock monitor. Need ~30GB for tier 1.");
+    const tier1Need = Math.ceil(tierRams[0].ramNeeded) + 2;
+    ns.tprint(`WARN: Not enough RAM for stock monitor. Need ~${tier1Need}GB for tier 1.`);
     return;
   }
 
-  // Free RAM and override to the exact amount needed for our tier
-  const requiredRam = Math.ceil(tierInfo.totalRam) + 2;
-  freeRamForTarget(ns, requiredRam);
-  ns.ramOverride(requiredRam);
+  // Free RAM and override to the exact amount needed for our tier. We already hold
+  // LAUNCH_RAM, so only the delta needs to be freed/acquired.
+  let requiredRam = Math.ceil(tierInfo.totalRam) + 2;
+  freeRamForTarget(ns, requiredRam - LAUNCH_RAM);
+  let actual = ns.ramOverride(requiredRam);
+  if (actual < requiredRam) {
+    // Couldn't get the full amount (another script grabbed the freed RAM first) — fall back
+    // to the highest tier that actually fits what we got.
+    tierInfo = selectBestTier(actual, tierRams);
+    if (tierInfo.tier === 0) {
+      ns.tprint("WARN: Lost RAM allocation for stock monitor after override; exiting.");
+      return;
+    }
+    requiredRam = Math.ceil(tierInfo.totalRam) + 2;
+    actual = ns.ramOverride(requiredRam);
+  }
 
-  await daemon(ns, tierInfo.tier, tierInfo.name);
+  await daemon(ns, tierInfo.tier, tierInfo.name, actual);
 }
 
 // === STATE ===
-
-interface HeldPosition {
-  symbol: string;
-  longShares: number;
-  longAvgPrice: number;
-  shortShares: number;
-  shortAvgPrice: number;
-}
 
 let realizedProfit = 0;
 let tickCount = 0;
@@ -336,7 +376,7 @@ function getHackTargets(ns: NS): Map<string, string> {
 
 // === DAEMON LOOP ===
 
-async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> {
+async function daemon(ns: NS, maxTier: number, tierName: string, allocatedRam: number): Promise<void> {
   ns.disableLog("ALL");
 
   writeDefaultConfig(ns, "stocks", {
@@ -431,11 +471,18 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     // Attempt to purchase APIs
     const apis = tryPurchaseAPIs(ns);
 
-    // Respawn at higher tier if we now have 4S but started at a lower tier
+    // Respawn at higher tier if we now have 4S but started at a lower tier — but only if a
+    // higher tier would actually fit. Otherwise this would respawn every tick forever
+    // (has4S stays true, maxTier stays the same after every restart).
     if (apis.has4S && maxTier < 3) {
-      ns.tprint("INFO: 4S API acquired — respawning stocks daemon at tier 3");
-      ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
-      return;
+      const tierRams = calculateTierRam(ns);
+      const available = ns.getServerMaxRam("home") - ns.getServerUsedRam("home") + allocatedRam;
+      const nextBest = selectBestTier(available, tierRams);
+      if (nextBest.tier > maxTier) {
+        ns.tprint(`INFO: 4S API acquired — respawning stocks daemon at tier ${nextBest.tier}`);
+        ns.spawn(ns.getScriptName(), { threads: 1, spawnDelay: 100 });
+        return;
+      }
     }
 
     if (!apis.hasTIX) {
@@ -632,9 +679,17 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         signalStrength = sig.strength;
         displayConfidence = sig.strength;
         maRatio = sig.maRatio;
-        // Use estimated forecast for display if available
+        // Use estimated forecast for display, and to derive an expected-return magnitude
+        // for the commission threshold check below (same formula as the 4S/scraped path).
+        // Without this, expectedReturn stays 0 and meetsCommissionThreshold() always
+        // rejects — pre-4S mode would never actually buy anything.
         const estFc = estimateForecast(history);
-        if (estFc !== null) forecastVal = estFc;
+        if (estFc !== null) {
+          forecastVal = estFc;
+          if (volatility !== null && volatility > 0) {
+            expectedReturn = calcExpectedReturn(estFc, volatility);
+          }
+        }
       }
 
       // Collect forecast for market grid

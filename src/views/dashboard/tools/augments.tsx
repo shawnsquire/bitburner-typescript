@@ -548,15 +548,10 @@ function AugmentsDetailPanel({ status, running, toolId, pid }: DetailPanelProps<
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const augmentsPlugin: ToolPlugin<FormattedAugmentsStatus> = {
   name: "AUGS",
   id: "augments",
   script: "daemons/augments.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: AugmentsOverviewCard,
   DetailPanel: AugmentsDetailPanel,
 };

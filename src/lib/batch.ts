@@ -46,6 +46,15 @@ export interface BatchDelays {
   weaken2Delay: number;
 }
 
+/** Per-thread RAM cost of each worker script. hack.js, grow.js and weaken.js
+ *  have different RAM costs (ns.hack/ns.grow/ns.weaken cost 0.1/0.15/0.15 GB
+ *  respectively), so batch math must not assume a single shared cost. */
+export interface WorkerRamCosts {
+  hack: number;
+  grow: number;
+  weaken: number;
+}
+
 export interface TargetScore {
   hostname: string;
   score: number;
@@ -66,7 +75,7 @@ export interface CyclePlan {
   prepOps: BatchOp[];
   newBatches: { target: string; ops: BatchOp[]; expectedEnd: number }[];
   abortTargets: string[];
-  scriptRam: number;
+  ramCosts: WorkerRamCosts;
 }
 
 export interface AllocatedOp extends BatchOp {
@@ -161,13 +170,28 @@ export function calculatePrepPlan(ns: NS, hostname: string): PrepPlan {
   return { weakenThreads, growThreads, compensateWeakenThreads, totalThreads, estimatedTime };
 }
 
+// === WORKER RAM COSTS ===
+
+/**
+ * Get the per-thread RAM cost of each HWGW worker script.
+ * hack.js/grow.js/weaken.js have different base RAM costs (different ns
+ * calls), so callers must not assume they're interchangeable.
+ */
+export function getWorkerRamCosts(ns: NS): WorkerRamCosts {
+  return {
+    hack: ns.getScriptRam("/workers/hack.js"),
+    grow: ns.getScriptRam("/workers/grow.js"),
+    weaken: ns.getScriptRam("/workers/weaken.js"),
+  };
+}
+
 // === BATCH THREAD CALCULATION ===
 
 export function calculateBatchThreads(
   ns: NS,
   hostname: string,
   hackPercent: number,
-  scriptRam: number,
+  ramCosts: WorkerRamCosts,
 ): BatchThreads {
   const server = ns.getServer(hostname);
 
@@ -191,21 +215,13 @@ export function calculateBatchThreads(
     postHackServer.moneyAvailable = (preppedServer.moneyMax ?? 0) * (1 - actualStolen);
     postHackServer.moneyAvailable = Math.max(postHackServer.moneyAvailable, 0);
 
-    // Grow needs to restore from post-hack to max
+    // Grow needs to restore from post-hack money (not current/prepped money) to max
     if (postHackServer.moneyAvailable > 0) {
-      growThreads = ns.formulas.hacking.growThreads(
-        preppedServer,
-        player,
-        (preppedServer.moneyMax ?? 0),
-        0, // cores
-      );
-      // growThreads from formulas estimates from *current* money to target,
-      // we need from post-hack money. Re-calc with post-hack server:
       growThreads = ns.formulas.hacking.growThreads(
         postHackServer,
         player,
         (preppedServer.moneyMax ?? 0),
-        0,
+        1, // cores (fleet workers run on 1-core servers)
       );
     } else {
       // Money is 0 after hack, need heavy grow
@@ -228,7 +244,10 @@ export function calculateBatchThreads(
   const weaken2Threads = Math.max(1, Math.ceil(growThreads * SECURITY_PER_GROW / SECURITY_PER_WEAKEN));
 
   const totalThreads = hackThreads + weaken1Threads + growThreads + weaken2Threads;
-  const ramPerBatch = totalThreads * scriptRam;
+  const ramPerBatch =
+    hackThreads * ramCosts.hack +
+    (weaken1Threads + weaken2Threads) * ramCosts.weaken +
+    growThreads * ramCosts.grow;
 
   return { hackThreads, weaken1Threads, growThreads, weaken2Threads, totalThreads, ramPerBatch };
 }
@@ -277,7 +296,7 @@ export function optimizeHackPercent(
   const server = ns.getServer(hostname);
   const moneyMax = server.moneyMax ?? 0;
   const weakenTime = ns.getWeakenTime(hostname);
-  const scriptRam = ns.getScriptRam("/workers/hack.js");
+  const ramCosts = getWorkerRamCosts(ns);
 
   let bestScore = -1;
   let bestPercent = 0.05;
@@ -293,7 +312,7 @@ export function optimizeHackPercent(
   }
 
   for (let pct = 0.01; pct <= 0.95; pct += 0.01) {
-    const bt = calculateBatchThreads(ns, hostname, pct, scriptRam);
+    const bt = calculateBatchThreads(ns, hostname, pct, ramCosts);
     if (bt.ramPerBatch <= 0) continue;
 
     const cycleTime = weakenTime + BATCH_WINDOW;
@@ -309,7 +328,7 @@ export function optimizeHackPercent(
 
   // Fallback if nothing scored
   if (!bestBatch) {
-    bestBatch = calculateBatchThreads(ns, hostname, 0.05, scriptRam);
+    bestBatch = calculateBatchThreads(ns, hostname, 0.05, ramCosts);
   }
 
   const cycleTime = weakenTime + BATCH_WINDOW;

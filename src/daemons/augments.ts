@@ -14,7 +14,6 @@ import { COLORS } from "/lib/utils";
 import {
   analyzeFactions,
   calculatePurchasePriority,
-  AUG_COST_MULT,
   getOwnedAugs,
   getInstalledAugs,
   getPendingAugs,
@@ -93,19 +92,21 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
       ? donationCostForGap + nfInfo.currentPrice
       : null;
 
-  // Current multiplier based on pending augs (flat, not rolling)
-  const currentMultiplier = Math.pow(AUG_COST_MULT, pendingAugs.length);
-
   return {
+    // item.basePrice is the live price from ns.singularity.getAugmentationPrice(),
+    // which already bakes in the game's multiplier for currently-pending augs.
+    // item.adjustedCost (from calculatePurchasePriority) additionally applies the
+    // per-purchase 1.9x growth for this aug's position in the buy order — do not
+    // re-multiply by pendingAugs.length here, that would double-count the pending
+    // multiplier that's already inside basePrice.
     available: purchasePlan.map((item) => {
-      const adjustedCost = Math.round(item.basePrice * currentMultiplier);
       return {
         name: item.name,
         faction: item.faction,
         baseCost: item.basePrice,
-        adjustedCost,
+        adjustedCost: item.adjustedCost,
         baseCostFormatted: ns.format.number(item.basePrice),
-        adjustedCostFormatted: ns.format.number(adjustedCost),
+        adjustedCostFormatted: ns.format.number(item.adjustedCost),
         tags: classifyAugTags(ns, item.name, item.prereqs),
       };
     }),

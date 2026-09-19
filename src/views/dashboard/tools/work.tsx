@@ -4,7 +4,6 @@
  * Displays training status, focus selection, and skill progress.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import {
   ToolPlugin,
   FormattedWorkStatus,
@@ -14,12 +13,7 @@ import {
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { TierFooter } from "views/dashboard/components/TierFooter";
-import {
-  getWorkStatus,
-  getSkillDisplayName,
-  WorkFocus,
-  TRAVEL_COST,
-} from "/controllers/work";
+import { WorkFocus } from "/controllers/work";
 import { writeWorkFocusCommand, writeStartTrainingCommand, claimFocus } from "views/dashboard/state-store";
 
 // === FOCUS OPTIONS (grouped for dropdown) ===
@@ -56,161 +50,6 @@ const FOCUS_GROUPS: FocusGroup[] = [
     ],
   },
 ];
-
-// Flat list for label lookups
-const ALL_FOCUS_OPTIONS: FocusOption[] = FOCUS_GROUPS.flatMap(g => g.options);
-
-// === STATUS FORMATTING ===
-
-function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
-  try {
-    const status = getWorkStatus(ns);
-
-    // Check if player is focused on current work
-    const isFocused = ns.singularity.isFocused();
-
-    // Calculate lowest combat stat for balance progress
-    const combatStats = [
-      status.skills.strength,
-      status.skills.defense,
-      status.skills.dexterity,
-      status.skills.agility,
-    ];
-    const lowestCombat = Math.min(...combatStats);
-    const highestCombat = Math.max(...combatStats);
-
-    // Determine current activity display
-    let activityDisplay = "Idle";
-    let activityType: "gym" | "university" | "crime" | "idle" | "other" = "idle";
-    const focusedSuffix = isFocused ? " (focused)" : "";
-
-    if (status.currentWork) {
-      if (status.currentWork.type === "class") {
-        const stat = status.currentWork.stat ?? "";
-        if (stat.toLowerCase().includes("gym")) {
-          activityType = "gym";
-          activityDisplay = `Gym: ${stat}`;
-        } else {
-          activityType = "university";
-          activityDisplay = `University: ${stat}`;
-        }
-        if (status.currentWork.location) {
-          activityDisplay += ` @ ${status.currentWork.location}`;
-        }
-        activityDisplay += focusedSuffix;
-      } else if (status.currentWork.type === "crime") {
-        activityType = "crime";
-        activityDisplay = `Crime: ${status.currentWork.stat ?? "Unknown"}${focusedSuffix}`;
-      } else {
-        activityType = "other";
-        activityDisplay = status.currentWork.type + focusedSuffix;
-      }
-    }
-
-    return {
-      tier: 0,
-      tierName: "monitor",
-      availableFeatures: ["status-display"],
-      unavailableFeatures: [],
-      currentRamUsage: 0,
-      currentFocus: status.currentFocus,
-      focusLabel: ALL_FOCUS_OPTIONS.find((f) => f.value === status.currentFocus)?.label ?? status.currentFocus,
-      playerCity: status.playerCity,
-      playerMoney: status.playerMoney,
-      playerMoneyFormatted: ns.format.number(status.playerMoney),
-      isFocused,
-      skills: {
-        strength: status.skills.strength,
-        defense: status.skills.defense,
-        dexterity: status.skills.dexterity,
-        agility: status.skills.agility,
-        hacking: status.skills.hacking,
-        charisma: status.skills.charisma,
-        strengthFormatted: ns.format.number(status.skills.strength, 0),
-        defenseFormatted: ns.format.number(status.skills.defense, 0),
-        dexterityFormatted: ns.format.number(status.skills.dexterity, 0),
-        agilityFormatted: ns.format.number(status.skills.agility, 0),
-        hackingFormatted: ns.format.number(status.skills.hacking, 0),
-        charismaFormatted: ns.format.number(status.skills.charisma, 0),
-      },
-      activityDisplay,
-      activityType,
-      isTraining: status.isTraining,
-      recommendation: status.recommendedAction
-        ? {
-            type: status.recommendedAction.type,
-            location: status.recommendedAction.location,
-            city: status.recommendedAction.city,
-            skill: status.recommendedAction.skill,
-            skillDisplay: getSkillDisplayName(status.recommendedAction.skill),
-            expMult: status.recommendedAction.expMult,
-            expMultFormatted: status.recommendedAction.type === "crime"
-              ? ns.format.number(status.recommendedAction.expMult)
-              : `${status.recommendedAction.expMult}x`,
-            needsTravel: status.recommendedAction.needsTravel,
-            travelCost: status.recommendedAction.travelCost,
-            travelCostFormatted: ns.format.number(TRAVEL_COST),
-          }
-        : null,
-      canTravelToBest: status.canTravelToBest,
-      skillTimeSpent: Object.entries(status.skillTimeSpent).map(([skill, time]) => ({
-        skill,
-        skillDisplay: getSkillDisplayName(skill),
-        timeMs: time as number,
-        timeFormatted: `${Math.floor((time as number) / 1000)}s`,
-      })),
-      lowestCombatStat: lowestCombat,
-      highestCombatStat: highestCombat,
-      combatBalance: highestCombat > 0 ? lowestCombat / highestCombat : 1,
-      balanceRotation: status.balanceRotation
-        ? {
-            currentSkill: status.balanceRotation.currentSkill,
-            currentSkillDisplay: getSkillDisplayName(status.balanceRotation.currentSkill),
-            currentValue: status.balanceRotation.currentValue,
-            currentValueFormatted: ns.format.number(status.balanceRotation.currentValue, 0),
-            lowestSkill: status.balanceRotation.lowestSkill,
-            lowestSkillDisplay: getSkillDisplayName(status.balanceRotation.lowestSkill),
-            lowestValue: status.balanceRotation.lowestValue,
-            lowestValueFormatted: ns.format.number(status.balanceRotation.lowestValue, 0),
-            timeSinceSwitch: status.balanceRotation.timeSinceSwitch,
-            timeUntilEligible: status.balanceRotation.timeUntilEligible,
-            timeUntilEligibleFormatted: status.balanceRotation.timeUntilEligible > 0
-              ? `${Math.ceil(status.balanceRotation.timeUntilEligible / 1000)}s`
-              : "Ready",
-            canSwitch: status.balanceRotation.canSwitch,
-            isTrainingLowest: status.balanceRotation.isTrainingLowest,
-            skillValues: status.balanceRotation.skillValues.map(sv => ({
-              skill: sv.skill,
-              display: getSkillDisplayName(sv.skill),
-              value: sv.value,
-              valueFormatted: ns.format.number(sv.value, 0),
-            })),
-          }
-        : null,
-      crimeInfo: status.currentCrime
-        ? {
-            name: status.currentCrime.crime,
-            chance: status.currentCrime.chance,
-            chanceFormatted: `${(status.currentCrime.chance * 100).toFixed(1)}%`,
-            moneyPerMin: status.currentCrime.moneyPerMin,
-            moneyPerMinFormatted: ns.format.number(status.currentCrime.moneyPerMin),
-            combatExpPerMin:
-              status.currentCrime.strExpPerMin +
-              status.currentCrime.defExpPerMin +
-              status.currentCrime.dexExpPerMin +
-              status.currentCrime.agiExpPerMin,
-            karmaPerMin: status.currentCrime.karmaPerMin,
-            karmaPerMinFormatted: ns.format.number(Math.abs(status.currentCrime.karmaPerMin)),
-            killsPerMin: status.currentCrime.killsPerMin,
-            killsPerMinFormatted: ns.format.number(status.currentCrime.killsPerMin),
-          }
-        : null,
-      pendingCrimeSwitch: null,
-    };
-  } catch {
-    return null;
-  }
-}
 
 // === COMPONENTS ===
 
@@ -645,7 +484,6 @@ export const workPlugin: ToolPlugin<FormattedWorkStatus> = {
   name: "WORK",
   id: "work",
   script: "daemons/work.js",
-  getFormattedStatus: formatWorkStatus,
   OverviewCard: WorkOverviewCard,
   DetailPanel: WorkDetailPanel,
 };

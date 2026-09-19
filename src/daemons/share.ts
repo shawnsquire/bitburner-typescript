@@ -6,8 +6,8 @@
  * for the dashboard.
  *
  * Operates in two tiers based on focus priority:
- *   Tier 0 (Monitor): ~5GB  - Watches for rep focus, publishes paused status
- *   Tier 1 (Active):  Full  - Deploys share threads across fleet
+ *   Tier 0 (Monitor): ~3.8GB - Watches for rep focus, publishes paused status
+ *   Tier 1 (Active):  ~8.8GB - Deploys share threads across fleet
  *
  * Share only activates when the rep daemon holds focus (i.e., the player is
  * grinding faction rep). Otherwise it stays in low-RAM monitor mode.
@@ -222,7 +222,7 @@ async function runMonitorMode(ns: NS): Promise<void> {
     printMonitorStatus(ns);
 
     if (firstRun) {
-      ns.tprint("INFO: Share daemon: monitor tier (~5GB RAM) — waiting for rep focus");
+      ns.tprint("INFO: Share daemon: monitor tier active — waiting for rep focus");
       firstRun = false;
     }
 
@@ -344,7 +344,7 @@ export async function main(ns: NS): Promise<void> {
     selectedTier = holder === "rep" ? "active" : "monitor";
   }
 
-  // If active, upgrade RAM allocation
+  // Adjust RAM allocation to match the selected tier (started at a flat 5GB above).
   if (selectedTier === "active") {
     const actual = ns.ramOverride(activeRam);
     if (actual < activeRam) {
@@ -355,6 +355,8 @@ export async function main(ns: NS): Promise<void> {
       selectedTier = "monitor";
       ns.ramOverride(monitorRam);
     }
+  } else {
+    ns.ramOverride(monitorRam);
   }
 
   ns.tprint(

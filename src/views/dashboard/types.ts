@@ -48,19 +48,12 @@ export type { HacknetStatus as FormattedHacknetStatus } from "/types/ports";
 
 // Legacy plugin interface (kept for any remaining references)
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolName, OverviewCardProps, DetailPanelProps } from "/types/ports";
-
-export interface PluginContext {
-  playerMoney?: number;
-  favorToUnlock?: number;
-}
 
 export interface ToolPlugin<TFormatted> {
   name: string;
   id: ToolName;
   script: string;
-  getFormattedStatus: (ns: NS, extra?: PluginContext) => TFormatted | null;
   OverviewCard: React.ComponentType<OverviewCardProps<TFormatted>>;
   DetailPanel: React.ComponentType<DetailPanelProps<TFormatted>>;
 }

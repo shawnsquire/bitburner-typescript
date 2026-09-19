@@ -7,7 +7,10 @@
  *
  * Usage:
  *   run daemons/queue.js
- *   run daemons/queue.js --interval 2000
+ *
+ * Takes no CLI args — the loop interval and per-script timeout are read from
+ * /config/queue.txt (interval, scriptTimeout; see writeDefaultConfig below),
+ * not from ns.args.
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
@@ -56,7 +59,7 @@ const STATUS_CHECKS: QueueEntry[] = [
 /**
  * Collect all pending queue entries, sorted by priority (highest first)
  */
-function drainQueue(ns: NS): QueueEntry[] {
+export function drainQueue(ns: NS): QueueEntry[] {
   const entries: QueueEntry[] = [];
   let entry = dequeueAction(ns);
   while (entry !== null) {
@@ -116,7 +119,7 @@ async function waitForScript(ns: NS, pid: number, timeoutMs: number): Promise<bo
 /**
  * Attempt to run a queue entry. Returns true if successfully executed.
  */
-async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
+export async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
   const scriptRam = ns.getScriptRam(entry.script);
 
   // Script doesn't exist

@@ -5,38 +5,21 @@
  * and saturation status.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import {
   ToolPlugin,
   FormattedHackStatus,
-  FormattedTargetAssignment,
   OverviewCardProps,
   DetailPanelProps,
 } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
-import {
-  getUsableServers,
-  getTargets,
-  DistributedConfig,
-} from "/controllers/hack";
-import { getAllServers, HackAction } from "lib/utils";
+import { HackAction } from "lib/utils";
 import {
   restartHackDaemon,
   getPluginUIState,
   setPluginUIState,
 } from "views/dashboard/state-store";
 import { HackStrategy } from "/types/ports";
-
-// === CONFIG ===
-
-const DEFAULT_CONFIG: Pick<DistributedConfig, "homeReserve" | "maxTargets" | "moneyThreshold" | "securityBuffer" | "hackPercent"> = {
-  homeReserve: 640,
-  maxTargets: 100,
-  moneyThreshold: 0.8,
-  securityBuffer: 5,
-  hackPercent: 0.25,
-};
 
 // === ACTION COLORS ===
 
@@ -45,291 +28,6 @@ const ACTION_COLORS: Record<HackAction, string> = {
   grow: "#ffff00",
   weaken: "#0088ff",
 };
-
-// === TIME FORMATTING ===
-
-/**
- * Format milliseconds as condensed MM:SS or HH:MM:SS
- */
-function formatTimeCondensed(ms: number): string {
-  if (ms <= 0) return "0:00";
-  const totalSeconds = Math.ceil(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-  }
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-// === RUNNING JOBS SCANNING ===
-
-interface RunningJobs {
-  [target: string]: {
-    hack: number;
-    grow: number;
-    weaken: number;
-    earliestCompletion: number | null;
-  };
-}
-
-/**
- * Scan all servers for actually running worker scripts
- */
-function getRunningJobs(ns: NS): RunningJobs {
-  const jobs: RunningJobs = {};
-
-  for (const hostname of getAllServers(ns)) {
-    for (const proc of ns.ps(hostname)) {
-      // Match worker scripts: workers/hack.js, workers/grow.js, workers/weaken.js
-      if (!proc.filename.includes("workers/")) continue;
-
-      const target = proc.args[0] as string;
-      if (!target) continue;
-
-      const action = proc.filename.split("/").pop()?.replace(".js", "") as "hack" | "grow" | "weaken";
-      if (!["hack", "grow", "weaken"].includes(action)) continue;
-
-      const delay = (proc.args[1] as number) || 0;
-      const launchTime = proc.args[2] as number;
-
-      if (!jobs[target]) {
-        jobs[target] = { hack: 0, grow: 0, weaken: 0, earliestCompletion: null };
-      }
-      jobs[target][action] += proc.threads;
-
-      // Calculate completion time
-      if (launchTime) {
-        let duration: number;
-        if (action === "hack") duration = ns.getHackTime(target);
-        else if (action === "grow") duration = ns.getGrowTime(target);
-        else duration = ns.getWeakenTime(target);
-
-        const completionTime = launchTime + delay + duration;
-        const currentEarliest = jobs[target].earliestCompletion;
-        if (currentEarliest === null || completionTime < currentEarliest) {
-          jobs[target].earliestCompletion = completionTime;
-        }
-      }
-    }
-  }
-
-  return jobs;
-}
-
-/**
- * Calculate expected money from hack threads
- */
-function calcExpectedMoney(ns: NS, target: string, hackThreads: number): number {
-  if (hackThreads <= 0) return 0;
-
-  const server = ns.getServer(target);
-  const moneyAvailable = server.moneyAvailable ?? 0;
-
-  // Use Formulas API if available
-  if (ns.fileExists("Formulas.exe", "home")) {
-    const player = ns.getPlayer();
-    const hackPercent = ns.formulas.hacking.hackPercent(server, player);
-    const hackChance = ns.formulas.hacking.hackChance(server, player);
-    return moneyAvailable * Math.min(hackPercent * hackThreads, 1) * hackChance;
-  }
-
-  // Fallback to standard API
-  const hackPercent = ns.hackAnalyze(target) * hackThreads;
-  const hackChance = ns.hackAnalyzeChance(target);
-  return moneyAvailable * Math.min(hackPercent, 1) * hackChance;
-}
-
-/**
- * Determine the display action based on running jobs or server state
- */
-function determineDisplayAction(
-  jobs: { hack: number; grow: number; weaken: number },
-  server: { hackDifficulty?: number; minDifficulty?: number; moneyAvailable?: number; moneyMax?: number }
-): HackAction {
-  // If there are running jobs, show the dominant action
-  const totalJobs = jobs.hack + jobs.grow + jobs.weaken;
-  if (totalJobs > 0) {
-    if (jobs.hack >= jobs.grow && jobs.hack >= jobs.weaken) return "hack";
-    if (jobs.grow >= jobs.weaken) return "grow";
-    return "weaken";
-  }
-
-  // Otherwise, determine from server state using inline logic
-  const securityThresh = (server.minDifficulty ?? 0) + DEFAULT_CONFIG.securityBuffer;
-  const moneyThresh = (server.moneyMax ?? 0) * DEFAULT_CONFIG.moneyThreshold;
-
-  if ((server.hackDifficulty ?? 0) > securityThresh) {
-    return "weaken";
-  } else if ((server.moneyAvailable ?? 0) < moneyThresh) {
-    return "grow";
-  } else {
-    return "hack";
-  }
-}
-
-// === STATUS FORMATTING ===
-
-function formatHackStatus(ns: NS): FormattedHackStatus | null {
-  try {
-    const player = ns.getPlayer();
-    const playerHacking = player.skills.hacking;
-
-    // Get all servers with available RAM
-    const servers = getUsableServers(ns, DEFAULT_CONFIG.homeReserve);
-    const totalRam = servers.reduce((sum, s) => sum + s.availableRam, 0);
-
-    // Get all potential targets sorted by value
-    const targets = getTargets(ns, DEFAULT_CONFIG.maxTargets);
-    if (targets.length === 0) {
-      return null;
-    }
-
-    // Get actual running jobs from ps()
-    const runningJobs = getRunningJobs(ns);
-
-    // Track servers needing higher level
-    let needHigherLevel: { count: number; nextLevel: number } | null = null;
-    let lowestRequiredAbovePlayer = Number.MAX_SAFE_INTEGER;
-    let countNeedHigher = 0;
-
-    // Scan all servers for ones we can't hack yet
-    for (const hostname of getAllServers(ns)) {
-      const server = ns.getServer(hostname);
-      if ((server.moneyMax ?? 0) === 0) continue;
-      if (hostname.startsWith("pserv-") || hostname === "home") continue;
-
-      const required = server.requiredHackingSkill ?? 0;
-      if (required > playerHacking) {
-        countNeedHigher++;
-        if (required < lowestRequiredAbovePlayer) {
-          lowestRequiredAbovePlayer = required;
-        }
-      }
-    }
-
-    if (countNeedHigher > 0 && lowestRequiredAbovePlayer < Number.MAX_SAFE_INTEGER) {
-      needHigherLevel = { count: countNeedHigher, nextLevel: lowestRequiredAbovePlayer };
-    }
-
-    // Count by action type and calculate totals
-    let hackingCount = 0;
-    let growingCount = 0;
-    let weakeningCount = 0;
-    let totalExpectedMoney = 0;
-    let totalThreadsCount = 0;
-
-    // Calculate wait times
-    let shortestWait = Number.MAX_SAFE_INTEGER;
-    let longestWait = 0;
-
-    const formattedTargets: FormattedTargetAssignment[] = [];
-
-    // Show all targets by value, with their running job info
-    for (let i = 0; i < targets.length; i++) {
-      const target = targets[i];
-      const jobs = runningJobs[target.hostname] || { hack: 0, grow: 0, weaken: 0, earliestCompletion: null };
-      const server = ns.getServer(target.hostname);
-
-      const totalThreads = jobs.hack + jobs.grow + jobs.weaken;
-      totalThreadsCount += totalThreads;
-
-      // Determine action from actual jobs, or from server state
-      const action = determineDisplayAction(jobs, server);
-
-      // Count targets with running jobs by dominant action
-      if (totalThreads > 0) {
-        if (jobs.hack >= jobs.grow && jobs.hack >= jobs.weaken) hackingCount++;
-        else if (jobs.grow >= jobs.weaken) growingCount++;
-        else weakeningCount++;
-      }
-
-      // Calculate expected money for targets with hack threads
-      const expectedMoney = calcExpectedMoney(ns, target.hostname, jobs.hack);
-      totalExpectedMoney += expectedMoney;
-
-      // Get wait time based on action
-      let waitTime: number;
-      if (action === "weaken") waitTime = ns.getWeakenTime(target.hostname);
-      else if (action === "grow") waitTime = ns.getGrowTime(target.hostname);
-      else waitTime = ns.getHackTime(target.hostname);
-
-      if (totalThreads > 0) {
-        shortestWait = Math.min(shortestWait, waitTime);
-        longestWait = Math.max(longestWait, waitTime);
-      }
-
-      // Calculate completion ETA
-      let completionEta: string | null = null;
-      if (jobs.earliestCompletion !== null) {
-        const msRemaining = jobs.earliestCompletion - Date.now();
-        if (msRemaining > 0) {
-          completionEta = formatTimeCondensed(msRemaining);
-        } else {
-          completionEta = "now";
-        }
-      }
-
-      // Get server state
-      const moneyAvailable = server.moneyAvailable ?? 0;
-      const moneyMax = server.moneyMax ?? 1;
-      const moneyPercent = (moneyAvailable / moneyMax) * 100;
-
-      const hackDifficulty = server.hackDifficulty ?? 0;
-      const minDifficulty = server.minDifficulty ?? 0;
-      const securityDelta = hackDifficulty - minDifficulty;
-
-      formattedTargets.push({
-        rank: i + 1,
-        hostname: target.hostname,
-        action,
-        assignedThreads: totalThreads,
-        optimalThreads: 0, // Not computing optimal anymore since we're showing actual
-        threadsSaturated: totalThreads > 0,
-        moneyPercent,
-        moneyDisplay: `${ns.format.number(moneyAvailable)} / ${ns.format.number(moneyMax)}`,
-        securityDelta: securityDelta > 0 ? `+${securityDelta.toFixed(1)}` : "0",
-        securityClean: securityDelta <= 2,
-        eta: formatTimeCondensed(waitTime),
-        expectedMoney,
-        expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.format.number(expectedMoney)}` : "-",
-        totalThreads,
-        completionEta,
-        hackThreads: jobs.hack,
-        growThreads: jobs.grow,
-        weakenThreads: jobs.weaken,
-      });
-    }
-
-    // Count active targets (those with running jobs)
-    const activeTargets = formattedTargets.filter(t => t.totalThreads > 0).length;
-
-    // Calculate saturation (targets with jobs / total targets)
-    const saturationPercent = targets.length > 0 ? (activeTargets / targets.length) * 100 : 0;
-
-    return {
-      totalRam: ns.format.ram(totalRam),
-      serverCount: servers.length,
-      totalThreads: ns.format.number(totalThreadsCount),
-      activeTargets,
-      totalTargets: targets.length,
-      saturationPercent,
-      shortestWait: shortestWait === Number.MAX_SAFE_INTEGER ? "N/A" : formatTimeCondensed(shortestWait),
-      longestWait: longestWait === 0 ? "N/A" : formatTimeCondensed(longestWait),
-      hackingCount,
-      growingCount,
-      weakeningCount,
-      targets: formattedTargets,
-      totalExpectedMoney,
-      totalExpectedMoneyFormatted: `$${ns.format.number(totalExpectedMoney)}`,
-      needHigherLevel,
-    };
-  } catch {
-    return null;
-  }
-}
 
 // === PHASE COLORS ===
 
@@ -1088,7 +786,6 @@ export const hackPlugin: ToolPlugin<FormattedHackStatus> = {
   name: "HACK",
   id: "hack",
   script: "daemons/hack.js",
-  getFormattedStatus: formatHackStatus,
   OverviewCard: HackOverviewCard,
   DetailPanel: HackDetailPanel,
 };

@@ -5,7 +5,7 @@
  *
  * Usage: run actions/corp/make-product.js --division "Pony Tobacco" --name "Product-1" --invest 1e9
  */
-import { NS } from "@ns";
+import { NS, CityName } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -23,7 +23,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   try {
-    ns.corporation.makeProduct(flags.division, flags.city as any, flags.name, flags.invest, flags.invest);
+    ns.corporation.makeProduct(flags.division, flags.city as CityName, flags.name, flags.invest, flags.invest);
     ns.tprint(`SUCCESS: Started developing "${flags.name}" in ${flags.division} (${ns.format.number(flags.invest * 2)} total investment)`);
   } catch (e) {
     ns.tprint(`ERROR: ${e}`);

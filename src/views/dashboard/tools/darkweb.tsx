@@ -4,57 +4,9 @@
  * Displays darkweb program purchase status with TOR router info and program list.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, FormattedDarkwebStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
-import { getDarkwebStatus } from "/controllers/darkweb";
-
-// === STATUS FORMATTING ===
-
-function formatDarkwebStatus(ns: NS): FormattedDarkwebStatus | null {
-  try {
-    const raw = getDarkwebStatus(ns);
-    const playerMoney = ns.getServerMoneyAvailable("home");
-
-    const programs = raw.hasTorRouter
-      ? ns.singularity.getDarkwebPrograms().map(name => {
-          const cost = ns.singularity.getDarkwebProgramCost(name);
-          return {
-            name,
-            cost,
-            costFormatted: ns.format.number(cost),
-            owned: ns.fileExists(name, "home"),
-          };
-        }).sort((a, b) => a.cost - b.cost)
-      : [];
-
-    const ownedCount = programs.filter(p => p.owned).length;
-    const allOwned = programs.length > 0 && ownedCount === programs.length;
-
-    const nextProgram = raw.nextProgram
-      ? {
-          name: raw.nextProgram.name,
-          cost: raw.nextProgram.cost,
-          costFormatted: ns.format.number(raw.nextProgram.cost),
-        }
-      : null;
-
-    return {
-      hasTorRouter: raw.hasTorRouter,
-      ownedCount,
-      totalPrograms: programs.length,
-      nextProgram,
-      moneyUntilNext: raw.moneyUntilNext,
-      moneyUntilNextFormatted: ns.format.number(raw.moneyUntilNext),
-      canAffordNext: nextProgram ? playerMoney >= nextProgram.cost : false,
-      programs,
-      allOwned,
-    };
-  } catch {
-    return null;
-  }
-}
 
 // === COMPONENTS ===
 
@@ -285,7 +237,6 @@ export const darkwebPlugin: ToolPlugin<FormattedDarkwebStatus> = {
   name: "DARKWEB",
   id: "darkweb",
   script: "daemons/darkweb.js",
-  getFormattedStatus: formatDarkwebStatus,
   OverviewCard: DarkwebOverviewCard,
   DetailPanel: DarkwebDetailPanel,
 };

@@ -5,7 +5,7 @@
  *
  * Usage: run actions/corp/hire-employees.js --division "Pony Agriculture" --city Sector-12 --count 3
  */
-import { NS } from "@ns";
+import { NS, CityName } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -24,7 +24,7 @@ export async function main(ns: NS): Promise<void> {
   let hired = 0;
   try {
     for (let i = 0; i < flags.count; i++) {
-      const success = ns.corporation.hireEmployee(flags.division, flags.city as any);
+      const success = ns.corporation.hireEmployee(flags.division, flags.city as CityName);
       if (success) {
         hired++;
       } else {

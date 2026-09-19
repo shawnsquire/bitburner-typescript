@@ -3,7 +3,8 @@
  *
  * Lightweight one-shot that reads current work state and player stats.
  * Publishes partial WorkStatus to port 6.
- * Target RAM: ~11 GB at SF4.1 (getCurrentWork + isFocused = 2 Singularity functions)
+ * Target RAM: ~12 GB at SF4.1 (getCurrentWork + isFocused = 2 Singularity functions,
+ * plus getPlayer/ps/getScriptRam base cost)
  *
  * Usage: run actions/check-work.js
  */
@@ -46,7 +47,10 @@ export async function main(ns: NS): Promise<void> {
     if (workType === "CLASS") {
       const classType = work.classType as string;
       const location = work.location as string;
-      if (classType?.includes("gym")) {
+      // classType is the raw GymType/UniversityClassType value ("str"/"def"/"dex"/"agi" for
+      // gyms, e.g. "Algorithms" for university) — it never contains "gym", so detect gym
+      // work by membership in the known gym stat short names instead.
+      if (["str", "def", "dex", "agi"].includes(classType)) {
         activityType = "gym";
         activityDisplay = `Gym: ${location}${focused ? " (focused)" : ""}`;
         isTraining = true;

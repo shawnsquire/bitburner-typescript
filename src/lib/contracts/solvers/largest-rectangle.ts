@@ -14,10 +14,13 @@ export function largestRectangle(grid: number[][]): [[number, number], [number, 
   const heights: number[][] = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
 
   for (let c = 0; c < cols; c++) {
-    let run = 0;
+    // Named to avoid colliding with the ns.run() identifier: the game's static RAM
+    // analyzer flags ANY identifier matching a top-level NS function name, even a
+    // local variable that's never called as ns.run() (see tools/ram-check.mjs).
+    let zeroRun = 0;
     for (let r = 0; r < rows; r++) {
-      run = grid[r][c] === 0 ? run + 1 : 0;
-      heights[r][c] = run;
+      zeroRun = grid[r][c] === 0 ? zeroRun + 1 : 0;
+      heights[r][c] = zeroRun;
     }
   }
 

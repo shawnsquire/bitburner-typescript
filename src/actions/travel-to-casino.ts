@@ -1,7 +1,9 @@
 /**
  * Travel to Aevum (casino city) if not already there.
  *
- * RAM: ~2.0 GB (singularity.travelToCity + getPlayer)
+ * RAM: ~4.1 GB total (1.6 base + travelToCity 2.0 + getPlayer 0.5) at SF4 level 3+
+ * or inside BN4. Without SF4-3, travelToCity is charged at 16x (~34.1 GB total) —
+ * see CLAUDE.md "Pitfalls" (singularity functions cost 16x at SF4 level 0-1).
  */
 import { NS } from "@ns";
 

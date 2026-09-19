@@ -5,7 +5,7 @@
  *
  * Usage: run actions/corp/expand-division.js --type Tobacco --name "Pony Tobacco"
  */
-import { NS } from "@ns";
+import { NS, CorpIndustryName } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -21,7 +21,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   try {
-    ns.corporation.expandIndustry(flags.type as any, flags.name);
+    ns.corporation.expandIndustry(flags.type as CorpIndustryName, flags.name);
     ns.tprint(`SUCCESS: Created ${flags.type} division "${flags.name}"`);
   } catch (e) {
     ns.tprint(`ERROR: ${e}`);

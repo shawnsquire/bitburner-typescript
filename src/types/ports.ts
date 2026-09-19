@@ -36,6 +36,7 @@ export const STATUS_PORTS = {
   focus: 32,
 } as const;
 
+export const INFILTRATION_CONTROL_PORT = 12;
 export const GANG_CONTROL_PORT = 15;
 export const CONTRACTS_CONTROL_PORT = 21;
 export const BUDGET_CONTROL_PORT = 23;
@@ -132,7 +133,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "toggle-gang-warfare" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy" | "freeze-budget-bucket" | "unfreeze-budget-bucket" | "set-focus-holder" | "set-focus-sleeve";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy" | "freeze-budget-bucket" | "unfreeze-budget-bucket";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -658,8 +659,12 @@ export interface BitnodeStatus {
   moneyRequiredFormatted: string;
   hacking: number;
   hackingRequired: number;
+  /** Lowest of the four combat skills; the alternative to the hacking requirement. */
+  combatMin?: number;
+  combatRequired?: number;
   augsComplete: boolean;
   moneyComplete: boolean;
+  /** True when either the hacking or the all-combat-skills requirement is met. */
   hackingComplete: boolean;
   allComplete: boolean;
 }
@@ -809,8 +814,6 @@ export interface InfiltrationStatus {
 
   locations: InfiltrationLocationInfo[];
 }
-
-export const INFILTRATION_CONTROL_PORT = 12;
 
 // === GANG TYPES ===
 

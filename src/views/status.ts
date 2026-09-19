@@ -42,30 +42,48 @@ type Log = (msg: string) => void;
 // === DAEMON DOCS ===
 
 const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string | null }> = {
-  nuke:    { start: "run daemons/nuke.js",    stop: "kill daemons/nuke.js",    flags: null },
+  nuke:    { start: "run daemons/nuke.js",    stop: "kill daemons/nuke.js",
+             flags: "config: /config/nuke.txt (interval, oneShot)" },
+  // hack.ts has no ns.flags() — strategy/batches/reserve are config-only, set via the dashboard.
   hack:    { start: "run daemons/hack.js",    stop: "kill daemons/hack.js",
-             flags: "--strategy money|xp --max-batches <N> (0=legacy, 1+=HWGW batch mode) --max-targets <N> --home-reserve <GB>" },
-  pserv:   { start: "run daemons/pserv.js",   stop: "kill daemons/pserv.js",   flags: null },
+             flags: "config: /config/hack.txt (oneShot, interval, homeReserve, maxTargets, maxBatches [0=legacy, 1+=HWGW batch], strategy [money|xp|drain|stocks], moneyThreshold, securityBuffer, hackPercent)" },
+  pserv:   { start: "run daemons/pserv.js",   stop: "kill daemons/pserv.js",
+             flags: "config: /config/pserv.txt (prefix, minRam, maxRam [0=game max], reserve, oneShot, interval, autoBuy)" },
+  // --tier is an internal self-respawn flag (monitor/active); targetPercent is config-only.
   share:   { start: "run daemons/share.js",   stop: "kill daemons/share.js",
-             flags: "--tier monitor|active (auto: active when rep has focus) --target-percent <N> (0=greedy, 1-100=% of capacity for share)" },
-  rep:     { start: "run daemons/rep.js",      stop: "kill daemons/rep.js",     flags: null },
-  darkweb: { start: "run daemons/darkweb.js",  stop: "kill daemons/darkweb.js", flags: null },
+             flags: "--tier monitor|active (internal; auto-selected: active when rep daemon holds focus) | config: /config/share.txt (minFree, homeReserve, interval, oneShot, targetPercent [0=greedy, 1-100=% of capacity])" },
+  rep:     { start: "run daemons/rep.js",      stop: "kill daemons/rep.js",
+             flags: "--tier <name> (internal self-upgrade flag) | config: /config/rep.txt (faction, noWork, noKill, interval, oneShot)" },
+  darkweb: { start: "run daemons/darkweb.js",  stop: "kill daemons/darkweb.js",
+             flags: "config: /config/darkweb.txt (interval, oneShot)" },
+  // work.ts has no ns.flags() — focus is config-only, set via actions/set-work-focus.js or the dashboard.
   work:    { start: "run daemons/work.js",     stop: "kill daemons/work.js",
-             flags: "--focus <focus> (strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats, crime-karma, crime-kills)" },
+             flags: "config: /config/work.txt (focus [strength, defense, dexterity, agility, hacking, charisma, balance-combat, balance-all, crime-money, crime-stats, crime-karma, crime-kills, none], interval, oneShot)" },
+  // faction.ts has no --preferred-city flag — preferredCity is config-only.
   faction: { start: "run daemons/faction.js", stop: "kill daemons/faction.js",
-             flags: "--preferred-city <city> (Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven)" },
-  infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js", flags: null },
-  gang: { start: "run daemons/gang.js", stop: "kill daemons/gang.js", flags: "--strategy respect|money|territory|balanced --no-kill" },
-  augments: { start: "run daemons/augments.js", stop: "kill daemons/augments.js", flags: "--interval <ms> --one-shot" },
-  advisor: { start: "run daemons/advisor.js", stop: "kill daemons/advisor.js", flags: null },
-  contracts: { start: "run daemons/contracts.js", stop: "kill daemons/contracts.js", flags: "--interval <ms> --one-shot --min-tries <N>" },
-  budget: { start: "run daemons/budget.js", stop: "kill daemons/budget.js", flags: null },
-  stocks: { start: "run daemons/stocks.js", stop: "kill daemons/stocks.js", flags: "config: /config/stocks.txt (enabled, pollInterval, smartMode, preThreshold, forecastThreshold, maWindow, buyThreshold)" },
+             flags: "--tier <name> (internal self-upgrade flag) | config: /config/faction.txt (interval, oneShot, preferredCity [Sector-12, Aevum, Chongqing, New Tokyo, Ishima, Volhaven], noKill)" },
+  infiltration: { start: "run daemons/infiltration.js", stop: "kill daemons/infiltration.js",
+             flags: "config: /config/infiltration.txt (rewardMode [rep|money|manual])" },
+  // gang.ts has no ns.flags() — strategy/noKill are config-only; CLI args are ignored.
+  gang: { start: "run daemons/gang.js", stop: "kill daemons/gang.js",
+             flags: "config: /config/gang.txt (strategy [respect|money|territory|balanced|grow], noKill)" },
+  // augments.ts has no ns.flags() — interval/oneShot are config-only.
+  augments: { start: "run daemons/augments.js", stop: "kill daemons/augments.js",
+             flags: "config: /config/augments.txt (interval, oneShot)" },
+  advisor: { start: "run daemons/advisor.js", stop: "kill daemons/advisor.js",
+             flags: "config: /config/advisor.txt (interval)" },
+  // contracts.ts has no ns.flags() — interval/oneShot/minTries are config-only.
+  contracts: { start: "run daemons/contracts.js", stop: "kill daemons/contracts.js",
+             flags: "config: /config/contracts.txt (interval, oneShot, minTries)" },
+  budget: { start: "run daemons/budget.js", stop: "kill daemons/budget.js",
+             flags: "config: /config/budget.txt (interval)" },
+  stocks: { start: "run daemons/stocks.js", stop: "kill daemons/stocks.js",
+             flags: "config: /config/stocks.txt (enabled, pollInterval, smartMode, minForecastDeviation, sellForecastDeviation, preThreshold, tickWindow, maxPositions, stopLossPercent, trailingStopPercent, maxHoldTicks, sellCooldownTicks, commissionPerTrade, scrapeMaxAge)" },
   casino: { start: "run casino.js", stop: "kill casino.js", flags: null },
   home: { start: "run daemons/home.js", stop: "kill daemons/home.js", flags: "config: /config/home.txt (interval, autoBuy)" },
-  corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (directive, pinDirective, tier, autoTea, dividendRate, productInvestPct, countdownSeconds)" },
-  blade: { start: "run daemons/blade.js", stop: "kill daemons/blade.js", flags: "config: /config/blade.txt (operationThreshold, blackOpThreshold, staminaMinPercent, chaosMax, populationMin)" },
-  hacknet: { start: "run daemons/hacknet.js", stop: "kill daemons/hacknet.js", flags: "config: /config/hacknet.txt (interval, autoBuy, maxServers, spendThreshold, reserveHashes, allowWorkers)" },
+  corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (interval, tier, directive, pinDirective, countdownSeconds, dividendRate, productInvestPct, corpName, autoTea, enabled)" },
+  blade: { start: "run daemons/blade.js", stop: "kill daemons/blade.js", flags: "config: /config/blade.txt (interval, operationThreshold, blackOpThreshold, contractThreshold, staminaMinPercent, staminaRestoreTo, staminaTrainMax, chaosMax, chaosTarget, successSpreadMax, populationMin, buySkill)" },
+  hacknet: { start: "run daemons/hacknet.js", stop: "kill daemons/hacknet.js", flags: "config: /config/hacknet.txt (interval, autoBuy, maxServers, spendThreshold, reserveHashes, allowWorkers, spendStrategy)" },
   focus: { start: "run daemons/focus.js", stop: "kill daemons/focus.js", flags: "config: /config/focus.txt (holder, sleeveHolder, default, simulacrum)" },
 };
 

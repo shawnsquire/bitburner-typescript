@@ -48,8 +48,12 @@ function readMines(grid: Element): number[] {
   const mines: number[] = [];
   const cells = Array.from(grid.children);
   for (let i = 0; i < cells.length; i++) {
-    // Mine cells contain an SVG (MUI <Report/> icon, data-testid="ReportIcon")
-    if (cells[i].querySelector("svg")) {
+    // Mine cells contain an SVG (MUI <Report/> icon, data-testid="ReportIcon").
+    // Must match the testid specifically, not just "any svg": in the marking phase
+    // the cursor cell renders a <Close/> icon and a correctly-flagged cell renders
+    // a <Flag/> icon, both also SVGs, which a bare "svg" selector would misidentify
+    // as mines (see MinesweeperGame.tsx / MinesweeperModel.ts in the game source).
+    if (cells[i].querySelector('svg[data-testid="ReportIcon"]')) {
       mines.push(i);
     }
   }

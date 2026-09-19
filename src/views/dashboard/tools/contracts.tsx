@@ -5,7 +5,6 @@
  * DetailPanel shows pending contracts table + recent results table.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import {
   ToolPlugin,
   FormattedContractsStatus,
@@ -229,15 +228,10 @@ function ContractsDetailPanel({
 
 // === PLUGIN EXPORT ===
 
-function noopStatus(): null {
-  return null;
-}
-
 export const contractsPlugin: ToolPlugin<FormattedContractsStatus> = {
   name: "CONTRACTS",
   id: "contracts",
   script: "daemons/contracts.js",
-  getFormattedStatus: noopStatus,
   OverviewCard: ContractsOverviewCard,
   DetailPanel: ContractsDetailPanel,
 };

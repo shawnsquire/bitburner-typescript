@@ -5,7 +5,6 @@
  * Supports tiered display based on daemon operating tier.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, FormattedFactionStatus, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
@@ -16,20 +15,10 @@ import {
   getPluginUIState,
   setPluginUIState,
 } from "views/dashboard/state-store";
-import { peekStatus } from "lib/ports";
-import { STATUS_PORTS, FactionStatus } from "types/ports";
 import { CITY_FACTIONS, CITY_FACTION_CONFLICTS } from "/controllers/faction-manager";
 import { TierFooter } from "views/dashboard/components/TierFooter";
 
 const { useState } = React;
-
-// === STATUS FORMATTING ===
-
-function formatFactionStatus(ns: NS): FormattedFactionStatus | null {
-  const portStatus = peekStatus<FactionStatus>(ns, STATUS_PORTS.faction);
-  if (portStatus) return portStatus;
-  return null;
-}
 
 // === TYPE BADGE COLORS ===
 
@@ -496,7 +485,6 @@ export const factionPlugin: ToolPlugin<FormattedFactionStatus> = {
   name: "FACTION",
   id: "faction",
   script: "daemons/faction.js",
-  getFormattedStatus: formatFactionStatus,
   OverviewCard: FactionOverviewCard,
   DetailPanel: FactionDetailPanel,
 };

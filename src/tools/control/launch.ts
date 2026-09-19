@@ -5,13 +5,13 @@
  * automatic RAM-freeing by killing low-priority workers.
  *
  * Usage:
- *   run tools/launch.js <script> [--threads N] [--dry-run] [-- script-args...]
+ *   run tools/control/launch.js <script> [--threads N] [--dry-run] [-- script-args...]
  *
  * Examples:
- *   run tools/launch.js auto/auto-rep.js
- *   run tools/launch.js hack/distributed.js --threads 1
- *   run tools/launch.js auto/auto-work.js -- --focus hacking
- *   run tools/launch.js auto/auto-rep.js --dry-run
+ *   run tools/control/launch.js daemons/rep.js
+ *   run tools/control/launch.js workers/hack.js --threads 4 -- n00dles 0
+ *   run tools/control/launch.js daemons/work.js -- --focus hacking
+ *   run tools/control/launch.js daemons/rep.js --dry-run
  *
  * RAM: ~3.8 GB (launcher lib + base)
  */
@@ -31,7 +31,7 @@ export async function main(ns: NS): Promise<void> {
   const args = ns.args;
 
   if (args.length === 0) {
-    ns.tprint("ERROR: Usage: run tools/launch.js <script> [--threads N] [--dry-run] [-- script-args...]");
+    ns.tprint("ERROR: Usage: run tools/control/launch.js <script> [--threads N] [--dry-run] [-- script-args...]");
     return;
   }
 

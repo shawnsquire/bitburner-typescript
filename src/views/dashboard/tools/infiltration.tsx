@@ -5,7 +5,6 @@
  * Reads status from the infiltration status port.
  */
 import React from "lib/react";
-import { NS } from "@ns";
 import { ToolPlugin, OverviewCardProps, DetailPanelProps } from "views/dashboard/types";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
@@ -16,13 +15,6 @@ import {
   getStateSnapshot,
   configureInfiltration,
 } from "views/dashboard/state-store";
-
-// === STATUS FORMATTING ===
-
-function formatInfiltrationStatus(_ns: NS): InfiltrationStatus | null {
-  // Status comes from ports, not computed here
-  return null;
-}
 
 // === HELPER COMPONENTS ===
 
@@ -526,7 +518,6 @@ export const infiltrationPlugin: ToolPlugin<InfiltrationStatus> = {
   name: "INFILTRATE",
   id: "infiltration",
   script: "daemons/infiltration.js",
-  getFormattedStatus: formatInfiltrationStatus,
   OverviewCard: InfiltrationOverviewCard,
   DetailPanel: InfiltrationDetailPanel,
 };

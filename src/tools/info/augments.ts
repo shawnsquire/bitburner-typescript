@@ -1,9 +1,13 @@
 import { NS, Multipliers } from "@ns";
+import { getInstalledAugs, getPendingAugs } from "/controllers/factions";
 
 export async function main(ns: NS): Promise<void> {
-  const installed = ns.singularity.getOwnedAugmentations(false);
-  const all = ns.singularity.getOwnedAugmentations(true);
-  const pending = all.filter(a => !installed.includes(a));
+  const installed = getInstalledAugs(ns);
+  // Count-based diff (not a plain `!installed.includes(a)` filter): NeuroFlux
+  // Governor can appear multiple times in the "purchased" list (once per queued
+  // level) while only ever appearing once in the installed list, so a naive
+  // membership filter would hide ALL pending NFG once any NFG is installed.
+  const pending = getPendingAugs(ns);
 
   ns.tprint(`\n=== Installed Augmentations (${installed.length}) ===`);
   for (const aug of installed.sort()) {

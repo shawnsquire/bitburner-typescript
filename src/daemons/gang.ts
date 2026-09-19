@@ -44,7 +44,7 @@ import {
   type AscensionResult,
   type TerritoryContext,
 } from "/controllers/gang";
-import { getBudgetBalance, notifyPurchase, signalDone } from "/lib/budget";
+import { getBudgetBalance, notifyPurchase, signalDone, reactivateBucket } from "/lib/budget";
 
 // === TIER DEFINITIONS ===
 
@@ -65,6 +65,8 @@ const BASE_FUNCTIONS = [
   "getPlayer",
   "getPortHandle",
   "fileExists",
+  "spawn",
+  "kill",
 ];
 
 const GANG_TIERS: GangTierConfig[] = [
@@ -214,6 +216,8 @@ function saveConfig(ns: NS, config: GangConfig): void {
 /** Pending ascend requests from dashboard (processed in full mode) */
 const pendingAscends: string[] = [];
 let pendingForceBuy = false;
+/** Whether the "gang" budget bucket was last signalled done (equipment purchasing has nothing left to buy, or purchasing is disabled). */
+let wasGangBudgetDone = false;
 
 function readControlCommands(ns: NS, config: GangConfig): GangConfig {
   const handle = ns.getPortHandle(GANG_CONTROL_PORT);
@@ -379,7 +383,7 @@ async function runLiteMode(
     ns.clearLog();
 
     if (!ns.gang.inGang()) {
-      const karma = (ns as any).heart.break() as number;
+      const karma = ns.heart.break();
       const karmaRequired = 54000;
       const karmaProgress = Math.min(1, Math.abs(karma) / karmaRequired);
       const status: GangStatus = {
@@ -472,7 +476,7 @@ async function runBasicMode(
     config = readControlCommands(ns, config);
 
     if (!ns.gang.inGang()) {
-      const karma = (ns as any).heart.break() as number;
+      const karma = ns.heart.break();
       const karmaRequired = 54000;
       const karmaProgress = Math.min(1, Math.abs(karma) / karmaRequired);
       publishStatus(ns, STATUS_PORTS.gang, {
@@ -692,7 +696,7 @@ async function runFullMode(
     config = readControlCommands(ns, config);
 
     if (!ns.gang.inGang()) {
-      const karma = (ns as any).heart.break() as number;
+      const karma = ns.heart.break();
       const karmaRequired = 54000;
       const karmaProgress = Math.min(1, Math.abs(karma) / karmaRequired);
       publishStatus(ns, STATUS_PORTS.gang, {
@@ -857,6 +861,21 @@ async function runFullMode(
           }
         }
       }
+    }
+
+    // Budget bucket lifecycle: release the "gang" allocation back to the
+    // shared pool when there is nothing left to buy (all equipment owned
+    // by every member) or purchasing is disabled, so other budget
+    // consumers (pserv, hacknet, home, ...) get the freed share instead of
+    // it sitting unused forever. Re-activate if upgrades become
+    // purchasable again (e.g. purchasing re-enabled, or new equipment).
+    const gangBudgetDone = shouldBuy ? availableUpgrades === 0 : true;
+    if (gangBudgetDone && !wasGangBudgetDone) {
+      signalDone(ns, "gang");
+      wasGangBudgetDone = true;
+    } else if (!gangBudgetDone && wasGangBudgetDone) {
+      reactivateBucket(ns, "gang");
+      wasGangBudgetDone = false;
     }
 
     // Build member status with ascension data

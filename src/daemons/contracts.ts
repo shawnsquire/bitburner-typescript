@@ -35,8 +35,27 @@ let totalSolved = 0;
 let totalFailed = 0;
 const recentResults: ContractResult[] = [];
 const MAX_RECENT = 20;
-const attemptedThisCycle = new Set<string>();
+// Tracks every contract we've already submitted an answer for, for the life of the daemon
+// (NOT cleared per cycle — despite contracts running solvers deterministically off a fixed
+// contract `state`, resubmitting the same wrong answer would only burn a try for nothing).
+const attemptedKeys = new Set<string>();
 const forcedAttemptQueue: { host: string; file: string }[] = [];
+
+/**
+ * Submits a solver's answer via ns.codingcontract.attempt, treating a thrown exception the
+ * same as a wrong answer (empty string). The game throws synchronously from attempt() when the
+ * answer fails its format/type check (see CodingContract.isValid in the game source) rather than
+ * just returning "" like it does for a wrong-but-well-formed answer — an uncaught throw here
+ * would otherwise kill the whole daemon loop on a single malformed solver answer.
+ */
+function submitAnswer(ns: NS, answer: unknown, file: string, host: string, type: string): string {
+  try {
+    return ns.codingcontract.attempt(answer, file, host);
+  } catch (e) {
+    ns.print(`  ${C.red}ERROR${C.reset} attempt() threw for ${type} on ${host}: ${String(e)}`);
+    return "";
+  }
+}
 
 function readControlCommands(ns: NS): void {
   const port = ns.getPortHandle(CONTRACTS_CONTROL_PORT);
@@ -75,7 +94,9 @@ async function daemon(ns: NS): Promise<void> {
 
   // Compare against the game's own list so a new contract type is flagged at startup,
   // not only when one shows up in the network (getContractTypes costs 0 GB).
-  const missingSolvers = ns.codingcontract.getContractTypes().filter((t) => !SOLVERS[t]);
+  const allContractTypes = ns.codingcontract.getContractTypes();
+  const totalTypes = allContractTypes.length;
+  const missingSolvers = allContractTypes.filter((t) => !SOLVERS[t]);
   if (missingSolvers.length > 0) {
     ns.print(`${C.yellow}WARN: no solver for: ${missingSolvers.join(", ")}${C.reset}`);
     ns.tprint(`WARN: contracts daemon has no solver for: ${missingSolvers.join(", ")} (run npm run test:contracts after adding one)`);
@@ -101,11 +122,17 @@ async function daemon(ns: NS): Promise<void> {
         found++;
         const key = `${host}:${file}`;
 
-        // Skip already attempted this session
-        if (attemptedThisCycle.has(key)) continue;
-
         const type = ns.codingcontract.getContractType(file, host);
         const tries = ns.codingcontract.getNumTriesRemaining(file, host);
+
+        // Already submitted an answer for this contract (solvers are deterministic against a
+        // fixed contract state, so a repeat attempt would just waste a try on the same wrong
+        // answer). Still surface it as pending so it isn't silently dropped from the dashboard.
+        if (attemptedKeys.has(key)) {
+          pendingContracts.push({ host, file, type, triesRemaining: tries, reason: "previously failed" });
+          skipped++;
+          continue;
+        }
 
         // Check if we have a solver
         if (!SOLVERS[type]) {
@@ -133,8 +160,8 @@ async function daemon(ns: NS): Promise<void> {
         }
 
         // Submit answer
-        const reward = ns.codingcontract.attempt(result.answer, file, host);
-        attemptedThisCycle.add(key);
+        const reward = submitAnswer(ns, result.answer, file, host, type);
+        attemptedKeys.add(key);
 
         if (reward) {
           totalSolved++;
@@ -187,8 +214,8 @@ async function daemon(ns: NS): Promise<void> {
         continue;
       }
 
-      const reward = ns.codingcontract.attempt(result.answer, file, host);
-      attemptedThisCycle.add(key);
+      const reward = submitAnswer(ns, result.answer, file, host, type);
+      attemptedKeys.add(key);
 
       if (reward) {
         totalSolved++;
@@ -217,7 +244,7 @@ async function daemon(ns: NS): Promise<void> {
       pendingContracts,
       recentResults: [...recentResults],
       knownTypes,
-      totalTypes: 28,
+      totalTypes,
       lastScanTime: Date.now() - scanStart,
       serversScanned: servers.length,
     };

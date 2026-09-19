@@ -146,6 +146,24 @@ export async function main(ns: NS): Promise<void> {
     oneShot: "false",
   });
 
+  // This whole daemon is built on ns.singularity.* (getDarkwebPrograms,
+  // purchaseTor, purchaseProgram, getDarkwebProgramCost) and has no
+  // ramOverride/tiering, so it always statically costs the full singularity
+  // rate (up to 16x below SF4 level 3 — tens of GB, see ram-check.mjs).
+  // Without Source-File 4 it can never buy anything, so exit immediately
+  // instead of looping forever while pinning that RAM for nothing. Checked
+  // via ns.getResetInfo() (flat, non-singularity cost) rather than an actual
+  // singularity call, which would itself be charged/RAM-checked before it
+  // could throw the "no SF4" error.
+  const resetInfo = ns.getResetInfo();
+  const hasSingularity = resetInfo.currentNode === 4 || (resetInfo.ownedSF.get(4) ?? 0) > 0;
+  if (!hasSingularity) {
+    ns.tprint(
+      `${COLORS.yellow}Darkweb daemon: Source-File 4 not available — cannot auto-buy TOR/programs. Exiting to free RAM.${COLORS.reset}`,
+    );
+    return;
+  }
+
   do {
     const interval = getConfigNumber(ns, "darkweb", "interval", 30000);
     const oneShot = getConfigBool(ns, "darkweb", "oneShot", false);

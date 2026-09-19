@@ -68,6 +68,10 @@ export const ALL_KNOWN_FACTIONS: Record<string, FactionDef> = {
   "Tetrads": { type: "location-locked" },
   "Speakers for the Dead": { type: "location-locked" },
   "Slum Snakes": { type: "location-locked" },
+  // Silhouette has no location requirement (executive job title + money + karma
+  // instead), but is grouped with its fellow underworld factions here since the
+  // status type union has no dedicated category for it.
+  "Silhouette": { type: "location-locked" },
 
   // Hacking factions
   "CyberSec": { type: "hacking" },
@@ -192,6 +196,11 @@ const FACTION_REQUIREMENTS: Record<string, RequirementDef[]> = {
     { label: "Agility >= 30", check: p => p.agility >= 30, verifiable: true },
     { label: "Money >= $1M", check: p => p.money >= 1e6, verifiable: true },
     { label: "Karma <= -9", check: p => p.karma <= -9, verifiable: true },
+  ],
+  "Silhouette": [
+    { label: "Money >= $15M", check: p => p.money >= 15e6, verifiable: true },
+    { label: "Karma <= -22", check: p => p.karma <= -22, verifiable: true },
+    { label: "CTO, CFO, or CEO of a company", check: () => false, verifiable: false },
   ],
 
   // Hacking factions — hacking level + backdoor (not verifiable)

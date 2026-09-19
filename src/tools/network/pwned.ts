@@ -56,6 +56,10 @@ function run(ns: NS, servers: Server[], script: string, threads: number, args: (
     if (server.maxRam === 0) continue;
 
     const scriptRam = ns.getScriptRam(script, server.hostname)
+    if (scriptRam === 0) {
+      ns.tprint(`${red}Failed on ${server.hostname}: ${script} not found (copy it there first)${reset}`);
+      continue;
+    }
     const freeRam = server.maxRam - server.ramUsed;
     const maxThreads = Math.floor(freeRam / scriptRam);
     const runThreads = threads > 0 ? Math.min(threads, maxThreads) : Math.min(maxThreads, 9999999999);

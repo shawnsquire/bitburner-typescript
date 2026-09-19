@@ -685,25 +685,40 @@ export interface NeuroFluxPurchasePlan {
 
 /**
  * Get information about NeuroFlux Governor augmentation
+ *
+ * @param forcedFaction - Optional faction to evaluate instead of auto-selecting
+ * the joined faction with the highest reputation. Must be a joined faction that
+ * offers NeuroFlux Governor, or it is ignored and auto-selection is used.
  */
-export function getNeuroFluxInfo(ns: NS): NeuroFluxInfo {
+export function getNeuroFluxInfo(ns: NS, forcedFaction?: string): NeuroFluxInfo {
   const player = ns.getPlayer();
-  const ownedAugs = ns.singularity.getOwnedAugmentations(true);
 
-  // Count current NFG level (how many we own)
-  const currentLevel = ownedAugs.filter(a => a === "NeuroFlux Governor").length;
+  // NeuroFlux Governor is a single augmentation entry whose level increases on
+  // each install — ns.singularity.getOwnedAugmentations() only returns names, so
+  // counting "NeuroFlux Governor" occurrences in it undercounts once level > 1.
+  // ns.getResetInfo().ownedAugs is a name -> level map of INSTALLED augs (not
+  // pending/queued purchases) and gives the true current level directly.
+  const currentLevel = ns.getResetInfo().ownedAugs.get("NeuroFlux Governor") ?? 0;
 
-  // Find best faction with NFG (highest rep)
   let bestFaction: string | null = null;
   let bestFactionRep = 0;
 
-  for (const faction of player.factions) {
-    const factionAugs = ns.singularity.getAugmentationsFromFaction(faction);
+  if (forcedFaction && player.factions.includes(forcedFaction as FactionName)) {
+    const factionAugs = ns.singularity.getAugmentationsFromFaction(forcedFaction as FactionName);
     if (factionAugs.includes("NeuroFlux Governor")) {
-      const rep = ns.singularity.getFactionRep(faction);
-      if (rep > bestFactionRep) {
-        bestFactionRep = rep;
-        bestFaction = faction;
+      bestFaction = forcedFaction;
+      bestFactionRep = ns.singularity.getFactionRep(forcedFaction as FactionName);
+    }
+  } else {
+    // Find best faction with NFG (highest rep)
+    for (const faction of player.factions) {
+      const factionAugs = ns.singularity.getAugmentationsFromFaction(faction);
+      if (factionAugs.includes("NeuroFlux Governor")) {
+        const rep = ns.singularity.getFactionRep(faction);
+        if (rep > bestFactionRep) {
+          bestFactionRep = rep;
+          bestFaction = faction;
+        }
       }
     }
   }
@@ -726,12 +741,16 @@ export function getNeuroFluxInfo(ns: NS): NeuroFluxInfo {
 /**
  * Calculate how many NeuroFlux Governor upgrades can be purchased with available money
  * Each purchase multiplies the price by 1.9
+ *
+ * @param forcedFaction - Optional faction to evaluate/purchase through instead of
+ * the auto-selected highest-rep faction (see getNeuroFluxInfo).
  */
 export function calculateNeuroFluxPurchasePlan(
   ns: NS,
-  availableMoney: number
+  availableMoney: number,
+  forcedFaction?: string
 ): NeuroFluxPurchasePlan {
-  const info = getNeuroFluxInfo(ns);
+  const info = getNeuroFluxInfo(ns, forcedFaction);
 
   const perPurchase: { level: number; cost: number }[] = [];
   let totalCost = 0;

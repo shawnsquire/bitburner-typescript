@@ -1,7 +1,6 @@
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
 import {
-  CrimeAnalysis,
   analyzeAllCrimes,
   fmtMoney,
   fmtExp,

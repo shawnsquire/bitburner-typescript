@@ -27,9 +27,9 @@ export async function main(ns: NS): Promise<void> {
   const dryRun = flags["dry-run"];
   const maxLevels = flags["max-levels"];
 
-  // Get NeuroFlux info
-  const nfInfo = getNeuroFluxInfo(ns);
-  const factionName = flags.faction || nfInfo.bestFaction;
+  // Get NeuroFlux info (honoring --faction override, if it's a joined faction with NFG)
+  const nfInfo = getNeuroFluxInfo(ns, flags.faction || undefined);
+  const factionName = nfInfo.bestFaction || flags.faction;
 
   if (!factionName) {
     ns.tprint("ERROR: No faction available for NeuroFlux Governor purchase.");
@@ -48,9 +48,10 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  // Calculate how many we can buy
+  // Calculate how many we can buy (use the resolved faction so the plan matches
+  // whichever faction we're actually about to purchase through)
   const availableMoney = ns.getServerMoneyAvailable("home");
-  const plan = calculateNeuroFluxPurchasePlan(ns, availableMoney);
+  const plan = calculateNeuroFluxPurchasePlan(ns, availableMoney, factionName);
 
   if (!plan || plan.purchases === 0) {
     ns.tprint("Cannot purchase any NeuroFlux Governor levels.");

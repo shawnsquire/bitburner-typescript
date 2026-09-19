@@ -75,12 +75,14 @@ export async function main(ns: NS): Promise<void> {
   }
 
   // 2. Check nuke status
-  const nuke = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke);
-  if (nuke && nuke.ready.length > 0) {
+  // (named nukeStatus, not "nuke" — a bare `nuke` identifier collides with the ns.nuke()
+  // static RAM check even though nothing here calls it; see tools/ram-check.mjs)
+  const nukeStatus = peekStatus<NukeStatus>(ns, STATUS_PORTS.nuke);
+  if (nukeStatus && nukeStatus.ready.length > 0) {
     suggestions.push({
       priority: 7,
       category: "NUKE",
-      message: `${nuke.ready.length} server(s) ready to root`,
+      message: `${nukeStatus.ready.length} server(s) ready to root`,
     });
   }
 
@@ -134,20 +136,21 @@ export async function main(ns: NS): Promise<void> {
   }
 
   // 5. Check hack status
-  const hack = peekStatus<HackStatus>(ns, STATUS_PORTS.hack);
-  if (hack) {
-    if (hack.saturationPercent < 50) {
+  // (named hackStatus — see nukeStatus comment above re: RAM identifier collisions)
+  const hackStatus = peekStatus<HackStatus>(ns, STATUS_PORTS.hack);
+  if (hackStatus) {
+    if (hackStatus.saturationPercent < 50) {
       suggestions.push({
         priority: 4,
         category: "HACK",
-        message: `Low thread saturation (${hack.saturationPercent.toFixed(0)}%) — need more servers or RAM`,
+        message: `Low thread saturation (${hackStatus.saturationPercent.toFixed(0)}%) — need more servers or RAM`,
       });
     }
-    if (hack.needHigherLevel) {
+    if (hackStatus.needHigherLevel) {
       suggestions.push({
         priority: 3,
         category: "HACK",
-        message: `${hack.needHigherLevel.count} target(s) need hacking level ${hack.needHigherLevel.nextLevel}+`,
+        message: `${hackStatus.needHigherLevel.count} target(s) need hacking level ${hackStatus.needHigherLevel.nextLevel}+`,
       });
     }
   }

@@ -35,14 +35,18 @@ export const bracketsSolver: MiniGameSolver = {
     if (!container) throw new Error("Brackets: game container not found");
 
     // The brackets are shown in a large Typography element (typically with fontSize ~5em)
-    // Contains the left (open) brackets + any already-typed right brackets
+    // Contains the left (open) brackets + any already-typed right brackets, followed by a
+    // <BlinkingCursor/> that alternates every 1s between "|" and a non-breaking space. Strip both
+    // so the match doesn't depend on catching the cursor mid-blink — without this, polling
+    // could exhaust its retry window while the cursor happens to be in its "|" phase and
+    // never find a match at all.
     // Poll for bracket text — React may not have rendered <p> elements on the first frame
     let bracketText = "";
     for (let attempt = 0; attempt < 20; attempt++) {
       const current = dom.getGameContainer() ?? container;
       const paragraphs = current.querySelectorAll("p");
       for (const p of paragraphs) {
-        const text = p.textContent?.trim() ?? "";
+        const text = (p.textContent ?? "").replace(/[\u00a0|]/g, "").trim();
         if (text && /^[([{<)\]}>]+$/.test(text)) {
           bracketText = text;
           break;

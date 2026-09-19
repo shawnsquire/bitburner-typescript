@@ -24,6 +24,7 @@
         "NetscriptDefinitions.d.ts"
     ],
     "rules": {
+        "no-constant-condition": ["error", { "checkLoops": false }],
         "@typescript-eslint/no-unused-vars": ["warn", {
             "argsIgnorePattern": "^_",
             "varsIgnorePattern": "^_",

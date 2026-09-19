@@ -20,6 +20,7 @@ import { publishStatus, peekStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 import { getBudgetBalance, notifyPurchase, canAfford, signalDone } from "/lib/budget";
 import { freeRamForTarget } from "/lib/ram-utils";
+import { WSE_TIX_API_COST, WSE_4S_TIX_API_COST } from "/controllers/budget";
 import {
   STATUS_PORTS,
   STOCKS_CONTROL_PORT,
@@ -310,9 +311,10 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
   const player = ns.getPlayer();
   const money = player.money;
 
-  // Purchase TIX API ($5B) — no longer requires a WSE account in v3.0+
+  // Purchase TIX API ($5B) — no longer requires a WSE account in v3.0+.
+  // The budget daemon carves out the full price once cash covers wseCarveoutMult times it.
   if (!hasTIX) {
-    const cost = 5_000_000_000;
+    const cost = WSE_TIX_API_COST;
     if (money >= cost && canAfford(ns, "wse-access", cost)) {
       try {
         if (ns.stock.purchaseTixApi()) {
@@ -328,7 +330,7 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
 
   // Purchase 4S Market Data TIX API ($25B)
   if (hasTIX && !has4S) {
-    const cost = 25_000_000_000;
+    const cost = WSE_4S_TIX_API_COST;
     if (money >= cost && canAfford(ns, "wse-access", cost)) {
       try {
         if (ns.stock.purchase4SMarketDataTixApi()) {

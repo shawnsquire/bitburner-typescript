@@ -1,8 +1,9 @@
 /**
  * Focus Tool Plugin
  *
- * OverviewCard shows active focus holder, sleeve assignment, Simulacrum status.
- * DetailPanel provides dropdowns to change focus holder and sleeve assignments.
+ * OverviewCard shows active focus holder, sleeve assignments, Simulacrum status.
+ * DetailPanel provides dropdowns to change focus holder and one row per sleeve
+ * (plus an "all sleeves" row when there is more than one).
  * FocusStickyHeader is a compact version rendered above sub-tabs.
  */
 import React from "lib/react";
@@ -11,7 +12,7 @@ import {
   OverviewCardProps,
   DetailPanelProps,
 } from "views/dashboard/types";
-import { FocusStatus, FocusDaemon } from "/types/ports";
+import { FocusStatus, FocusDaemon, SleeveAssignment } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { claimFocus, claimSleeveFocus } from "views/dashboard/state-store";
@@ -40,6 +41,66 @@ const ALL_DAEMONS: { value: FocusDaemon; label: string }[] = [
   { value: "blade", label: "Blade" },
 ];
 
+/** Sentinel select value when sleeves disagree (the "all" row only). */
+const MIXED = "mixed";
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** "#0 Work, #2 Rep" or "None"; used by the overview card. */
+function summarizeSleeves(sleeves: SleeveAssignment[]): string {
+  const assigned = sleeves.filter(s => s.daemon !== "none");
+  return assigned.length > 0
+    ? assigned.map(s => `#${s.sleeveIndex} ${capitalize(s.daemon)}`).join(", ")
+    : "None";
+}
+
+/**
+ * With a single sleeve, its row targets "all sleeves" (no index) so the bare
+ * `sleeveHolder` key keeps being written; the work/rep/blade daemons only read
+ * that key when deciding whether they hold a sleeve. Per-index keys are for
+ * splitting two or more sleeves.
+ */
+function rowIndex(sleeve: SleeveAssignment, total: number): number | undefined {
+  return total === 1 ? undefined : sleeve.sleeveIndex;
+}
+
+/** The shared daemon when every sleeve agrees, else MIXED. */
+function commonSleeveDaemon(sleeves: SleeveAssignment[]): string {
+  if (sleeves.length === 0) return "none";
+  const first = sleeves[0].daemon;
+  return sleeves.every(s => s.daemon === first) ? first : MIXED;
+}
+
+interface SleeveSelectProps {
+  holder: FocusDaemon;
+  value: string;
+  /** Omit to target every sleeve */
+  sleeveIndex?: number;
+  compact?: boolean;
+}
+
+/** One dropdown for a sleeve (or, with no index, for every sleeve). */
+function SleeveSelect({ holder, value, sleeveIndex, compact }: SleeveSelectProps): React.ReactElement {
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (e.target.value === MIXED) return;
+    claimSleeveFocus(e.target.value as FocusDaemon, sleeveIndex);
+  };
+  const style = compact ? { ...sleeveSelectStyle, padding: "2px 4px", fontSize: "11px" } : sleeveSelectStyle;
+  return (
+    <select value={value} onChange={handleChange} style={style}>
+      {value === MIXED && <option value={MIXED} disabled>Mixed</option>}
+      <option value="none">None</option>
+      {ALL_DAEMONS
+        .filter(d => d.value !== holder)
+        .map(d => (
+          <option key={d.value} value={d.value}>{d.label}</option>
+        ))}
+    </select>
+  );
+}
+
 // === OVERVIEW CARD ===
 
 function FocusOverviewCard({
@@ -64,12 +125,8 @@ function FocusOverviewCard({
           </div>
           {status.numSleeves > 0 && (
             <div style={styles.stat}>
-              <span style={styles.statLabel}>Sleeve</span>
-              <span style={{ color: "#44ccff" }}>
-                {status.sleeves.length > 0
-                  ? status.sleeves.map(s => s.daemon.charAt(0).toUpperCase() + s.daemon.slice(1)).join(", ")
-                  : "None"}
-              </span>
+              <span style={styles.statLabel}>Sleeves ({status.numSleeves})</span>
+              <span style={{ color: "#44ccff" }}>{summarizeSleeves(status.sleeves)}</span>
             </div>
           )}
           {status.simulacrum && (
@@ -100,10 +157,6 @@ function FocusDetailPanel({
     claimFocus(e.target.value as FocusDaemon);
   };
 
-  const handleSleeveChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    claimSleeveFocus(e.target.value as FocusDaemon);
-  };
-
   if (!status) {
     return (
       <div style={styles.panel}>
@@ -119,8 +172,6 @@ function FocusDetailPanel({
       </div>
     );
   }
-
-  const currentSleeve = status.sleeves.length > 0 ? status.sleeves[0].daemon : "none";
 
   return (
     <div style={styles.panel}>
@@ -152,25 +203,29 @@ function FocusDetailPanel({
           </select>
         </div>
 
-        {/* Sleeve Assignment — auto-hidden when no sleeves */}
-        {status.numSleeves > 0 && (
+        {/* Sleeve Assignment — one row per sleeve, auto-hidden when no sleeves */}
+        {status.sleeves.length > 1 && (
           <div style={{
             display: "flex",
             alignItems: "center",
             gap: "12px",
             marginBottom: "8px",
           }}>
-            <span style={{ ...styles.statLabel, minWidth: "80px", color: "#44ccff" }}>Sleeve #0</span>
-            <select value={currentSleeve} onChange={handleSleeveChange} style={sleeveSelectStyle}>
-              <option value="none">None</option>
-              {ALL_DAEMONS
-                .filter(d => d.value !== status.holder)
-                .map(d => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ))}
-            </select>
+            <span style={{ ...styles.statLabel, minWidth: "80px", color: "#44ccff" }}>All sleeves</span>
+            <SleeveSelect holder={status.holder} value={commonSleeveDaemon(status.sleeves)} />
           </div>
         )}
+        {status.sleeves.map(sleeve => (
+          <div key={sleeve.sleeveIndex} style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            marginBottom: "8px",
+          }}>
+            <span style={{ ...styles.statLabel, minWidth: "80px", color: "#44ccff" }}>Sleeve #{sleeve.sleeveIndex}</span>
+            <SleeveSelect holder={status.holder} value={sleeve.daemon} sleeveIndex={rowIndex(sleeve, status.sleeves.length)} />
+          </div>
+        ))}
       </div>
 
       {/* Simulacrum Banner */}
@@ -194,14 +249,14 @@ function FocusDetailPanel({
           <span style={styles.statLabel}>Running daemons</span>
           <span style={{ color: "#888", fontSize: "11px" }}>
             {status.runningDaemons.length > 0
-              ? status.runningDaemons.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(", ")
+              ? status.runningDaemons.map(capitalize).join(", ")
               : "none"}
           </span>
         </div>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Boot default</span>
           <span style={{ color: "#666", fontSize: "11px" }}>
-            {status.defaultHolder.charAt(0).toUpperCase() + status.defaultHolder.slice(1)}
+            {capitalize(status.defaultHolder)}
           </span>
         </div>
         {status.numSleeves > 0 && (
@@ -230,15 +285,10 @@ export function FocusStickyHeader({ status }: StickyHeaderProps): React.ReactEle
     claimFocus(e.target.value as FocusDaemon);
   };
 
-  const handleSleeveChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    claimSleeveFocus(e.target.value as FocusDaemon);
-  };
-
-  const currentSleeve = status.sleeves.length > 0 ? status.sleeves[0].daemon : "none";
-
   return (
     <div style={{
       display: "flex",
+      flexWrap: "wrap",
       alignItems: "center",
       gap: "8px",
       padding: "4px 8px",
@@ -251,19 +301,15 @@ export function FocusStickyHeader({ status }: StickyHeaderProps): React.ReactEle
         <option value="blade">Blade</option>
         <option value="none">None</option>
       </select>
-      {status.numSleeves > 0 && (
-        <>
-          <span style={{ ...styles.statLabel, fontSize: "11px", color: "#44ccff" }}>Sleeve:</span>
-          <select value={currentSleeve} onChange={handleSleeveChange} style={sleeveSelectStyle}>
-            <option value="none">None</option>
-            {ALL_DAEMONS
-              .filter(d => d.value !== status.holder)
-              .map(d => (
-                <option key={d.value} value={d.value}>{d.label}</option>
-              ))}
-          </select>
-        </>
+      {status.sleeves.length > 0 && (
+        <span style={{ ...styles.statLabel, fontSize: "11px", color: "#44ccff" }}>Sleeves:</span>
       )}
+      {status.sleeves.map(sleeve => (
+        <span key={sleeve.sleeveIndex} style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
+          <span style={{ color: "#44ccff", fontSize: "10px" }}>#{sleeve.sleeveIndex}</span>
+          <SleeveSelect holder={status.holder} value={sleeve.daemon} sleeveIndex={rowIndex(sleeve, status.sleeves.length)} compact />
+        </span>
+      ))}
       {status.simulacrum && (
         <span style={{ color: "#cc66ff", fontSize: "10px" }}>Simulacrum</span>
       )}

@@ -6,10 +6,14 @@
  *
  * Responsibilities:
  *   - Manages which daemon (work/rep/blade) holds the player's focus
- *   - Detects sleeve availability; Simulacrum detection is delegated to
- *     actions/check-simulacrum.js (exec'd at startup and on `refresh`)
+ *   - Manages every sleeve from ns.sleeve.getNumSleeves(); Simulacrum detection
+ *     is delegated to actions/check-simulacrum.js (exec'd at startup and on `refresh`)
  *   - Routes sleeve assignments via action scripts
  *   - Receives commands from dashboard via FOCUS_CONTROL_PORT (33)
+ *
+ * Sleeve config: `sleeveHolder.<i>` per sleeve index, falling back to the bare
+ * `sleeveHolder` key for any sleeve without its own entry (so older configs
+ * that only set `sleeveHolder` still direct every sleeve).
  *
  * Non-tiered: fixed RAM cost, pinned with ns.ramOverride so the daemon only
  * reserves what its loop needs (ps, exec, sleeve.getNumSleeves, config I/O).
@@ -19,7 +23,7 @@
  */
 import { NS } from "@ns";
 import { publishStatus } from "/lib/ports";
-import { writeDefaultConfig, getConfigString, getConfigBool, setConfigValue } from "/lib/config";
+import { writeDefaultConfig, readConfig, getConfigString, getConfigBool, setConfigValue } from "/lib/config";
 import {
   STATUS_PORTS,
   FOCUS_CONTROL_PORT,
@@ -40,11 +44,32 @@ const COLORS = {
 };
 
 const SIMULACRUM_ACTION = "actions/check-simulacrum.js";
+const ASSIGN_SLEEVE_ACTION = "actions/assign-sleeve.js";
 const FOCUS_DAEMONS: FocusDaemon[] = ["work", "rep", "blade"];
 
 function normalizeFocusDaemon(val: string): FocusDaemon {
   if (val === "work" || val === "rep" || val === "blade") return val;
   return "none";
+}
+
+/** Config key naming the daemon that directs sleeve `index`. */
+function sleeveKey(index: number): string {
+  return `sleeveHolder.${index}`;
+}
+
+/** Resolve sleeve `index`'s daemon: its own key, else the bare fallback, else none. */
+function resolveSleeveDaemon(config: Map<string, string>, index: number): FocusDaemon {
+  const raw = config.get(sleeveKey(index)) ?? config.get("sleeveHolder") ?? "none";
+  return normalizeFocusDaemon(raw);
+}
+
+/** Read the sleeve count; 0 when the Sleeve API is unavailable at this SF level. */
+function countSleeves(ns: NS): number {
+  try {
+    return ns.sleeve.getNumSleeves();
+  } catch {
+    return 0;
+  }
 }
 
 /** @ram 7.1 */
@@ -60,13 +85,8 @@ export async function main(ns: NS): Promise<void> {
     simulacrum: "false",
   });
 
-  // One-time detection (cached for session)
-  let numSleeves = 0;
-  try {
-    numSleeves = ns.sleeve.getNumSleeves();
-  } catch {
-    // Sleeve API not available (not enough SF)
-  }
+  // Re-read each tick: sleeves can be bought mid-run.
+  let numSleeves = countSleeves(ns);
 
   // Simulacrum detection runs in a short-lived action that writes the
   // `simulacrum` config key (read by the blade daemon). Retry until it launches
@@ -92,6 +112,7 @@ export async function main(ns: NS): Promise<void> {
 
   while (true) {
     if (!simulacrumChecked) simulacrumChecked = execSimulacrumCheck(ns);
+    numSleeves = countSleeves(ns);
 
     // Process control messages
     while (!controlPort.empty()) {
@@ -111,12 +132,8 @@ export async function main(ns: NS): Promise<void> {
     }
 
     // Re-read config (authoritative source after writes)
-    holder = getConfigString(ns, "focus", "holder", "none");
-    const sleeveHolder = getConfigString(ns, "focus", "sleeveHolder", "none");
-
-    // Normalize
-    const normalizedHolder = normalizeFocusDaemon(holder);
-    const normalizedSleeve = normalizeFocusDaemon(sleeveHolder);
+    const config = readConfig(ns, "focus");
+    const normalizedHolder = normalizeFocusDaemon(config.get("holder") ?? "none");
 
     // Detect running focus-relevant daemons
     const processes = ns.ps("home");
@@ -129,10 +146,10 @@ export async function main(ns: NS): Promise<void> {
       }
     }
 
-    // Build sleeve assignments
+    // Build sleeve assignments: one entry per sleeve, "none" included
     const sleeves: SleeveAssignment[] = [];
-    if (numSleeves > 0 && normalizedSleeve !== "none") {
-      sleeves.push({ sleeveIndex: 0, daemon: normalizedSleeve });
+    for (let i = 0; i < numSleeves; i++) {
+      sleeves.push({ sleeveIndex: i, daemon: resolveSleeveDaemon(config, i) });
     }
 
     // Publish status
@@ -142,7 +159,7 @@ export async function main(ns: NS): Promise<void> {
       simulacrum: getConfigBool(ns, "focus", "simulacrum", false),
       numSleeves,
       runningDaemons,
-      defaultHolder: normalizeFocusDaemon(getConfigString(ns, "focus", "default", "work")),
+      defaultHolder: normalizeFocusDaemon(config.get("default") ?? "work"),
     };
     publishStatus(ns, STATUS_PORTS.focus, status);
 
@@ -157,14 +174,14 @@ function processControlMessage(ns: NS, msg: FocusControlMessage, numSleeves: num
   switch (msg.action) {
     case "set-holder": {
       const newHolder = normalizeFocusDaemon(msg.holder ?? "none");
-      const currentSleeve = getConfigString(ns, "focus", "sleeveHolder", "none");
-
       setConfigValue(ns, "focus", "holder", newHolder);
 
-      // Clear sleeve if it conflicts with new primary holder
-      if (currentSleeve === newHolder && newHolder !== "none") {
-        setConfigValue(ns, "focus", "sleeveHolder", "none");
-        ns.print(`${COLORS.yellow}Cleared sleeve (conflicts with new holder)${COLORS.reset}`);
+      // Clear any sleeve key (bare or per-index) that conflicts with the new holder
+      if (newHolder !== "none") {
+        const cleared = clearSleeveConflicts(ns, newHolder);
+        if (cleared.length > 0) {
+          ns.print(`${COLORS.yellow}Cleared ${cleared.join(", ")} (conflicts with new holder)${COLORS.reset}`);
+        }
       }
 
       ns.print(`${COLORS.green}Focus holder: ${newHolder}${COLORS.reset}`);
@@ -186,20 +203,36 @@ function processControlMessage(ns: NS, msg: FocusControlMessage, numSleeves: num
         break;
       }
 
-      setConfigValue(ns, "focus", "sleeveHolder", sleeveDaemon);
-      ns.print(`${COLORS.cyan}Sleeve ${msg.sleeveIndex ?? 0}: ${sleeveDaemon}${COLORS.reset}`);
+      // No index = every sleeve: write the bare fallback and each per-index key
+      let targets: number[];
+      if (msg.sleeveIndex === undefined) {
+        targets = Array.from({ length: numSleeves }, (_, i) => i);
+        setConfigValue(ns, "focus", "sleeveHolder", sleeveDaemon);
+      } else {
+        const index = Math.trunc(Number(msg.sleeveIndex));
+        if (!Number.isFinite(index) || index < 0 || index >= numSleeves) {
+          ns.toast(`Sleeve ${msg.sleeveIndex} out of range (${numSleeves} sleeves)`, "warning", 2000);
+          break;
+        }
+        targets = [index];
+      }
 
-      // Exec sleeve assignment action script
-      if (sleeveDaemon !== "none") {
-        const pid = ns.exec(
-          "actions/assign-sleeve.js",
-          "home",
-          { threads: 1, temporary: true },
-          "--sleeve", String(msg.sleeveIndex ?? 0),
-          "--daemon", sleeveDaemon,
-        );
-        if (pid === 0) {
-          ns.print(`${COLORS.yellow}Could not exec assign-sleeve (RAM?)${COLORS.reset}`);
+      for (const index of targets) {
+        setConfigValue(ns, "focus", sleeveKey(index), sleeveDaemon);
+        ns.print(`${COLORS.cyan}Sleeve ${index}: ${sleeveDaemon}${COLORS.reset}`);
+
+        // Exec sleeve assignment action script
+        if (sleeveDaemon !== "none") {
+          const pid = ns.exec(
+            ASSIGN_SLEEVE_ACTION,
+            "home",
+            { threads: 1, temporary: true },
+            "--sleeve", String(index),
+            "--daemon", sleeveDaemon,
+          );
+          if (pid === 0) {
+            ns.print(`${COLORS.yellow}Could not exec assign-sleeve for #${index} (RAM?)${COLORS.reset}`);
+          }
         }
       }
       break;
@@ -209,6 +242,22 @@ function processControlMessage(ns: NS, msg: FocusControlMessage, numSleeves: num
       // Handled in the main loop (re-runs the Simulacrum check)
       break;
   }
+}
+
+/**
+ * Set every sleeve key (bare `sleeveHolder` and `sleeveHolder.<i>`) whose value
+ * is `daemon` to "none". Returns the keys that were cleared.
+ */
+function clearSleeveConflicts(ns: NS, daemon: FocusDaemon): string[] {
+  const cleared: string[] = [];
+  for (const [key, value] of readConfig(ns, "focus")) {
+    if (value !== daemon) continue;
+    if (key === "sleeveHolder" || key.startsWith("sleeveHolder.")) {
+      setConfigValue(ns, "focus", key, "none");
+      cleared.push(key);
+    }
+  }
+  return cleared;
 }
 
 /** Launch the Simulacrum check action. Returns true if it started. */
@@ -230,10 +279,11 @@ function printStatus(ns: NS, status: FocusStatus): void {
   ns.print(`Active: ${holderColor}${status.holder}${COLORS.reset}`);
 
   if (status.numSleeves > 0) {
-    const sleeveLabel = status.sleeves.length > 0
-      ? status.sleeves.map(s => `#${s.sleeveIndex}→${s.daemon}`).join(", ")
+    const assigned = status.sleeves.filter(s => s.daemon !== "none");
+    const sleeveLabel = assigned.length > 0
+      ? assigned.map(s => `#${s.sleeveIndex}→${s.daemon}`).join(", ")
       : "none";
-    ns.print(`Sleeve: ${COLORS.cyan}${sleeveLabel}${COLORS.reset}`);
+    ns.print(`Sleeves (${status.numSleeves}): ${COLORS.cyan}${sleeveLabel}${COLORS.reset}`);
   }
 
   if (status.simulacrum) {

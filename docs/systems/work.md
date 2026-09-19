@@ -75,17 +75,30 @@ message. If the exec fails for lack of RAM the daemon retries every tick.
 | Key | Default | Meaning |
 |---|---|---|
 | `holder` | `work` | Which daemon may use the player's focus: `work`, `rep`, `blade`, `none`. |
-| `sleeveHolder` | `none` | Which daemon directs sleeve 0. |
+| `sleeveHolder` | `none` | Fallback: which daemon directs any sleeve without its own `sleeveHolder.<i>` entry. Older configs that only set this key still direct every sleeve. |
+| `sleeveHolder.<i>` | unset | Which daemon directs sleeve `i` (`0` to `getNumSleeves() - 1`); overrides the fallback for that sleeve. Written by `set-sleeve` messages with an index. |
 | `default` | `work` | Holder to use at boot when `holder` is empty. |
 | `simulacrum` | detected | Whether The Blade's Simulacrum is installed (Bladeburner then needs no focus). Written by `actions/check-simulacrum.js`, not the player. |
 
 Control port `FOCUS_CONTROL_PORT` accepts `set-holder`, `set-sleeve`, and
-`refresh` messages. Publishes `FocusStatus` on `STATUS_PORTS.focus`. When the
-sleeve holder changes it runs `actions/assign-sleeve.js`. Dashboard: Focus
-group, Focus tab, plus the sticky header shown on the other Focus tabs.
+`refresh` messages. `set-sleeve` carries `sleeveIndex` and `sleeveDaemon`;
+with an index it writes `sleeveHolder.<i>`, without one it writes the bare
+`sleeveHolder` and every per-index key (all sleeves). `set-holder` sets any
+sleeve key that pointed at the new holder to `none`. Publishes `FocusStatus`
+on `STATUS_PORTS.focus` with one `sleeves` entry per sleeve, unassigned ones
+included. Whenever a sleeve is assigned it runs `actions/assign-sleeve.js`
+for that sleeve. Dashboard: Focus group, Focus tab (one dropdown per sleeve,
+plus an "All sleeves" dropdown when there is more than one), and the sticky
+header shown on the other Focus tabs. With a single sleeve its dropdown sends
+no index, so the bare `sleeveHolder` key is written exactly as before.
 
-Only sleeve 0 is managed. Sleeves are assigned in the city they are already in;
-the action does not travel them.
+Every sleeve reported by `getNumSleeves()` is managed, and the count is
+re-read each tick so newly bought sleeves appear. Sleeves are assigned in the
+city they are already in; the action does not travel them. Caveat: the work,
+rep and blade daemons only read the bare `sleeveHolder` key when deciding
+whether they hold a sleeve, so a per-index assignment (two or more sleeves
+split across daemons) routes the sleeve but does not stop that daemon from
+parking itself; teaching them the per-index keys is a follow-up.
 
 ## Actions
 
@@ -97,7 +110,7 @@ the action does not travel them.
 | `run actions/travel.js --city <city>` | Travel, after checking you have 200k. | 34 GB |
 | `run actions/set-work-focus.js --focus <value>` | Change focus without Singularity RAM. | 2 GB |
 | `run actions/check-work.js` | Publish a one-shot work status when the daemon is not running. | 12 GB |
-| `run actions/assign-sleeve.js --sleeve 0 --daemon work\|rep\|blade\|none` | Route a sleeve to a daemon's current task. Reports a warning if the game rejects the assignment. | 38 GB |
+| `run actions/assign-sleeve.js --sleeve <i> --daemon work\|rep\|blade\|none` | Route a sleeve to a daemon's current task. Reports a warning if the game rejects the assignment. | 38 GB |
 | `run actions/check-simulacrum.js` | Write `simulacrum=true\|false` to `/config/focus.txt` from `getResetInfo().ownedAugs`. Run by the focus daemon at startup and on `refresh`. | 2.6 GB |
 
 The actions hard-code their own valid-value lists instead of importing the

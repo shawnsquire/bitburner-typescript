@@ -122,7 +122,7 @@ attempt.
 | `PrimeTime 2` | yes | Repeated division by the 25 small primes. |
 | `Pr0verFl0` | yes | One repeated character, `2 * passwordLength` long. |
 | `BellaCuore` | mixed | Two sub-modes on one solver: exact roman-numeral decode from the hint (blind), or binary search over a roman `min,max` range using `ALTUS NIMIS`/`PARUM BREVIS` feedback (not blind). Registered `blind: false` overall. |
-| `AccountsManager_4.2` | no | Binary search on `Higher`/`Lower`; blind fallback counts up from 0. |
+| `AccountsManager_4.2` | no | Binary search on `Higher`/`Lower`; blind fallback counts up from 0 (also works with heartbleed off). |
 | `NIL` | no | One candidate character per position in parallel, kept on a `yes`. |
 | `RateMyPix.Auth` | no | Exact-match count only: all-same probes recover the multiset, then per-position isolation with an absent filler. |
 | `DeepGreen` | no | `exact,misplaced` counts; same two-phase scan-then-place as RateMyPix. |
@@ -130,7 +130,7 @@ attempt.
 | `BigMo%od` | no | `password % n` for 11 chosen moduli, solved by CRT. |
 | `PHP 5.4` | no | Sorted-digit hint; permutation search with swap hill-climbing on RMS deviation. |
 | `KingOfTheHill` | no | Coarse scan then golden-section search on the reported hill. |
-| `2G_cellular` | no | Confirmed-prefix length from the mismatch-index message, or from `elapsedMs` when heartbleed is off — the only feedback solver that also works blind. |
+| `2G_cellular` | no | Confirmed-prefix length from the mismatch-index message, or from `elapsedMs` when heartbleed is off — one of two feedback solvers that also work blind. |
 | `OpenWebAccessPoint` | no | Regex match on captured traffic, or longest common substring across captures at higher difficulty. |
 
 `tools/test-darknet.mjs` loads the game's own `ServerGenerator.ts`,
@@ -168,8 +168,9 @@ decisions, and one section per subsystem).
   time any script calls `heartbleed`, and that cannot be undone for the rest
   of the BitNode. Set `heartbleed=false` in `/config/darknet.txt` before
   starting the daemon in a BN15 run if the achievement matters — every
-  non-blind solver then gives up instead (`2G_cellular` is the one exception;
-  it still solves blind from timing alone).
+  non-blind solver then gives up instead (`2G_cellular` and
+  `AccountsManager_4.2` are the two exceptions; they still solve blind, from
+  timing and from a counting-up fallback respectively).
 - **The per-neighbour `maxAttempts` cap (default 120) can be too low for the
   hardest feedback-based servers, and the agent does not persist solver state
   across ticks.** `driveSolver` (`workers/dnet-agent.ts`) keeps its solver
@@ -182,11 +183,14 @@ decisions, and one section per subsystem).
   own 125-round sweep across difficulties 1/4/8/18/30 measured worst-case
   attempt counts of up to the low 300s for `2G_cellular` (cap is
   `62 * passwordLength`, i.e. up to 496 at the longest passwords the game
-  generates), up to ~130 for `RateMyPix.Auth`, and up to ~75 for `DeepGreen`
-  — all of which can exceed the 120 default at higher difficulty. (`Factori-Os`
-  needs up to ~125 attempts too, but is already exempted in
-  `lib/darknet/agent-logic.ts` to a floor of 130 regardless of the configured
-  `maxAttempts`.) Raise `maxAttempts` in `/config/darknet.txt` to crack these
+  generates), and up to ~130 for `RateMyPix.Auth` — both of which can exceed
+  the 120 default at higher difficulty. `DeepGreen` stayed under 75 in the
+  sweep, comfortably inside the default, but shares the same two-phase
+  scan-then-place strategy so a harder difficulty than tested could still push
+  it over. (`Factori-Os` needs up to ~125 attempts too, but is already
+  exempted in `lib/darknet/agent-logic.ts` to a floor of 130 — a higher
+  configured `maxAttempts` still applies above that floor.) Raise
+  `maxAttempts` in `/config/darknet.txt` to crack these
   deep feedback servers, at the cost of one neighbour's crack loop
   monopolizing that agent's tick — and delaying every other neighbour and
   local worker launch on that host — for longer before giving up or

@@ -1,0 +1,9 @@
+exp3 ECP k=0: netWorthLogReturnMedian=0.03140 priceLogReturnMedian=0.03140
+exp3 ECP k=2: netWorthLogReturnMedian=0.04419 priceLogReturnMedian=0.04419
+exp3 ECP k=10: netWorthLogReturnMedian=0.04844 priceLogReturnMedian=0.04845
+exp3 FLCM k=0: netWorthLogReturnMedian=0.07633 priceLogReturnMedian=0.07634
+exp3 FLCM k=2: netWorthLogReturnMedian=0.10219 priceLogReturnMedian=0.10220
+exp3 FLCM k=10: netWorthLogReturnMedian=0.11619 priceLogReturnMedian=0.11620
+exp3 JGN k=0: netWorthLogReturnMedian=-0.00399 priceLogReturnMedian=-0.00399
+exp3 JGN k=2: netWorthLogReturnMedian=0.01468 priceLogReturnMedian=0.01468
+exp3 JGN k=10: netWorthLogReturnMedian=0.06692 priceLogReturnMedian=0.06692

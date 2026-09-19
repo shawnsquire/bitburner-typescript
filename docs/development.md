@@ -31,6 +31,7 @@ npm install
 | `npm run ram -- <dist path>` | Static RAM cost of a compiled script (`npm run ram -- daemons/hack.js`). `--all` for every entry script, `--sf4 <level>` / `--bn4` for singularity multipliers, `--json` for machine output. |
 | `npm run ram:sync -- <tag>` | Regenerate the RAM table in `tools/ram-check.mjs` from the game checkout. |
 | `npm test` | typecheck, lint, build, unit tests, contract tests, in that order. Run before committing. |
+| `npm run sim` | Self-checks of the offline stock market simulator in `sim/stocks/stocksim/` (a port of the game's `StockMarket/*`). The Monte Carlo backtests next to it (`sim/stocks/exp-*`) run with plain `node file.ts`; see `sim/stocks/README.md`. Not part of `npm test`. |
 
 ## Test layout
 

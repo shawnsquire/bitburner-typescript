@@ -1,0 +1,476 @@
+{
+  "ECP": {
+    "1": {
+      "k": 1,
+      "totalEvents": 1755,
+      "predictedNeutralTicks": 500,
+      "predictedSaturateTicks": 950,
+      "neutralLatency": {
+        "n": 1668,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 507,
+        "mean": 113.7152278177458
+      },
+      "censoredNeutral": 87,
+      "saturateLatency": {
+        "n": 72,
+        "median": 240.5,
+        "q25": 73.5,
+        "q75": 381.5,
+        "min": 0,
+        "max": 756,
+        "mean": 248.77777777777777
+      },
+      "censoredSaturate": 1683
+    },
+    "2": {
+      "k": 2,
+      "totalEvents": 1777,
+      "predictedNeutralTicks": 250,
+      "predictedSaturateTicks": 475,
+      "neutralLatency": {
+        "n": 1724,
+        "median": 75,
+        "q25": 26.75,
+        "q75": 150,
+        "min": 0,
+        "max": 261,
+        "mean": 91.01740139211137
+      },
+      "censoredNeutral": 53,
+      "saturateLatency": {
+        "n": 362,
+        "median": 141,
+        "q25": 54.75,
+        "q75": 260,
+        "min": 0,
+        "max": 518,
+        "mean": 161.06629834254144
+      },
+      "censoredSaturate": 1415
+    },
+    "5": {
+      "k": 5,
+      "totalEvents": 1802,
+      "predictedNeutralTicks": 100,
+      "predictedSaturateTicks": 190,
+      "neutralLatency": {
+        "n": 1773,
+        "median": 75,
+        "q25": 25,
+        "q75": 99,
+        "min": 0,
+        "max": 101,
+        "mean": 61.71404399323181
+      },
+      "censoredNeutral": 29,
+      "saturateLatency": {
+        "n": 923,
+        "median": 124,
+        "q25": 52,
+        "q75": 151,
+        "min": 21,
+        "max": 298,
+        "mean": 110.0249187432286
+      },
+      "censoredSaturate": 879
+    },
+    "10": {
+      "k": 10,
+      "totalEvents": 1835,
+      "predictedNeutralTicks": 50,
+      "predictedSaturateTicks": 95,
+      "neutralLatency": {
+        "n": 1806,
+        "median": 49,
+        "q25": 25,
+        "q75": 50,
+        "min": 23,
+        "max": 50,
+        "mean": 42.28737541528239
+      },
+      "censoredNeutral": 29,
+      "saturateLatency": {
+        "n": 1315,
+        "median": 73,
+        "q25": 62,
+        "q75": 83,
+        "min": 46,
+        "max": 150,
+        "mean": 73.09201520912548
+      },
+      "censoredSaturate": 520
+    },
+    "20": {
+      "k": 20,
+      "totalEvents": 1812,
+      "predictedNeutralTicks": 25,
+      "predictedSaturateTicks": 47.5,
+      "neutralLatency": {
+        "n": 1795,
+        "median": 24,
+        "q25": 24,
+        "q75": 25,
+        "min": 24,
+        "max": 25,
+        "mean": 24.49192200557103
+      },
+      "censoredNeutral": 17,
+      "saturateLatency": {
+        "n": 1780,
+        "median": 41,
+        "q25": 38,
+        "q75": 43,
+        "min": 29,
+        "max": 47,
+        "mean": 40.44550561797753
+      },
+      "censoredSaturate": 32
+    },
+    "0.5": {
+      "k": 0.5,
+      "totalEvents": 1755,
+      "predictedNeutralTicks": 1000,
+      "predictedSaturateTicks": 1900,
+      "neutralLatency": {
+        "n": 1683,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 812,
+        "mean": 137.66310160427807
+      },
+      "censoredNeutral": 72,
+      "saturateLatency": {
+        "n": 0,
+        "median": null,
+        "q25": null,
+        "q75": null,
+        "min": null,
+        "max": null,
+        "mean": null
+      },
+      "censoredSaturate": 1755
+    }
+  },
+  "FLCM": {
+    "1": {
+      "k": 1,
+      "totalEvents": 1778,
+      "predictedNeutralTicks": 500,
+      "predictedSaturateTicks": 950,
+      "neutralLatency": {
+        "n": 1687,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 520,
+        "mean": 124.15886188500296
+      },
+      "censoredNeutral": 91,
+      "saturateLatency": {
+        "n": 0,
+        "median": null,
+        "q25": null,
+        "q75": null,
+        "min": null,
+        "max": null,
+        "mean": null
+      },
+      "censoredSaturate": 1778
+    },
+    "2": {
+      "k": 2,
+      "totalEvents": 1801,
+      "predictedNeutralTicks": 250,
+      "predictedSaturateTicks": 475,
+      "neutralLatency": {
+        "n": 1739,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 273,
+        "mean": 107.0264519838988
+      },
+      "censoredNeutral": 62,
+      "saturateLatency": {
+        "n": 113,
+        "median": 304,
+        "q25": 217,
+        "q75": 400,
+        "min": 60,
+        "max": 473,
+        "mean": 302.2920353982301
+      },
+      "censoredSaturate": 1688
+    },
+    "5": {
+      "k": 5,
+      "totalEvents": 1870,
+      "predictedNeutralTicks": 100,
+      "predictedSaturateTicks": 190,
+      "neutralLatency": {
+        "n": 1834,
+        "median": 75,
+        "q25": 54,
+        "q75": 99,
+        "min": 0,
+        "max": 105,
+        "mean": 71.36368593238822
+      },
+      "censoredNeutral": 36,
+      "saturateLatency": {
+        "n": 790,
+        "median": 139,
+        "q25": 101.25,
+        "q75": 160,
+        "min": 40,
+        "max": 198,
+        "mean": 129.75569620253165
+      },
+      "censoredSaturate": 1080
+    },
+    "10": {
+      "k": 10,
+      "totalEvents": 1991,
+      "predictedNeutralTicks": 50,
+      "predictedSaturateTicks": 95,
+      "neutralLatency": {
+        "n": 1955,
+        "median": 49,
+        "q25": 49,
+        "q75": 50,
+        "min": 21,
+        "max": 52,
+        "mean": 45.333503836317135
+      },
+      "censoredNeutral": 36,
+      "saturateLatency": {
+        "n": 1339,
+        "median": 75,
+        "q25": 65,
+        "q75": 85,
+        "min": 47,
+        "max": 149,
+        "mean": 74.93353248693055
+      },
+      "censoredSaturate": 652
+    },
+    "20": {
+      "k": 20,
+      "totalEvents": 2034,
+      "predictedNeutralTicks": 25,
+      "predictedSaturateTicks": 47.5,
+      "neutralLatency": {
+        "n": 2013,
+        "median": 24,
+        "q25": 24,
+        "q75": 25,
+        "min": 24,
+        "max": 26,
+        "mean": 24.483854942871336
+      },
+      "censoredNeutral": 21,
+      "saturateLatency": {
+        "n": 2002,
+        "median": 41,
+        "q25": 37,
+        "q75": 43,
+        "min": 23,
+        "max": 48,
+        "mean": 39.83416583416584
+      },
+      "censoredSaturate": 32
+    },
+    "0.5": {
+      "k": 0.5,
+      "totalEvents": 1757,
+      "predictedNeutralTicks": 1000,
+      "predictedSaturateTicks": 1900,
+      "neutralLatency": {
+        "n": 1673,
+        "median": 76,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 750,
+        "mean": 139.8362223550508
+      },
+      "censoredNeutral": 84,
+      "saturateLatency": {
+        "n": 0,
+        "median": null,
+        "q25": null,
+        "q75": null,
+        "min": null,
+        "max": null,
+        "mean": null
+      },
+      "censoredSaturate": 1757
+    }
+  },
+  "JGN": {
+    "1": {
+      "k": 1,
+      "totalEvents": 1870,
+      "predictedNeutralTicks": 500,
+      "predictedSaturateTicks": 950,
+      "neutralLatency": {
+        "n": 1774,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 525,
+        "mean": 124.46505073280721
+      },
+      "censoredNeutral": 96,
+      "saturateLatency": {
+        "n": 0,
+        "median": null,
+        "q25": null,
+        "q75": null,
+        "min": null,
+        "max": null,
+        "mean": null
+      },
+      "censoredSaturate": 1870
+    },
+    "2": {
+      "k": 2,
+      "totalEvents": 1897,
+      "predictedNeutralTicks": 250,
+      "predictedSaturateTicks": 475,
+      "neutralLatency": {
+        "n": 1831,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 319,
+        "mean": 114.17476788640087
+      },
+      "censoredNeutral": 66,
+      "saturateLatency": {
+        "n": 12,
+        "median": 397.5,
+        "q25": 380,
+        "q75": 422,
+        "min": 348,
+        "max": 427,
+        "mean": 397.1666666666667
+      },
+      "censoredSaturate": 1885
+    },
+    "5": {
+      "k": 5,
+      "totalEvents": 2040,
+      "predictedNeutralTicks": 100,
+      "predictedSaturateTicks": 190,
+      "neutralLatency": {
+        "n": 2001,
+        "median": 75,
+        "q25": 75,
+        "q75": 98,
+        "min": 0,
+        "max": 122,
+        "mean": 77.5767116441779
+      },
+      "censoredNeutral": 39,
+      "saturateLatency": {
+        "n": 621,
+        "median": 159,
+        "q25": 145,
+        "q75": 170,
+        "min": 63,
+        "max": 195,
+        "mean": 153.87761674718197
+      },
+      "censoredSaturate": 1419
+    },
+    "10": {
+      "k": 10,
+      "totalEvents": 2220,
+      "predictedNeutralTicks": 50,
+      "predictedSaturateTicks": 95,
+      "neutralLatency": {
+        "n": 2182,
+        "median": 49,
+        "q25": 48,
+        "q75": 50,
+        "min": 8,
+        "max": 59,
+        "mean": 47.54766269477543
+      },
+      "censoredNeutral": 38,
+      "saturateLatency": {
+        "n": 1459,
+        "median": 75,
+        "q25": 68,
+        "q75": 83,
+        "min": 49,
+        "max": 166,
+        "mean": 75.57916381082933
+      },
+      "censoredSaturate": 761
+    },
+    "20": {
+      "k": 20,
+      "totalEvents": 2391,
+      "predictedNeutralTicks": 25,
+      "predictedSaturateTicks": 47.5,
+      "neutralLatency": {
+        "n": 2361,
+        "median": 24,
+        "q25": 24,
+        "q75": 25,
+        "min": 3,
+        "max": 27,
+        "mean": 24.43117323168149
+      },
+      "censoredNeutral": 30,
+      "saturateLatency": {
+        "n": 2353,
+        "median": 40,
+        "q25": 34,
+        "q75": 43,
+        "min": 22,
+        "max": 50,
+        "mean": 38.16489587760306
+      },
+      "censoredSaturate": 38
+    },
+    "0.5": {
+      "k": 0.5,
+      "totalEvents": 1852,
+      "predictedNeutralTicks": 1000,
+      "predictedSaturateTicks": 1900,
+      "neutralLatency": {
+        "n": 1759,
+        "median": 75,
+        "q25": 75,
+        "q75": 150,
+        "min": 0,
+        "max": 675,
+        "mean": 125.85957930642411
+      },
+      "censoredNeutral": 93,
+      "saturateLatency": {
+        "n": 0,
+        "median": null,
+        "q25": null,
+        "q75": null,
+        "min": null,
+        "max": null,
+        "mean": null
+      },
+      "censoredSaturate": 1852
+    }
+  }
+}

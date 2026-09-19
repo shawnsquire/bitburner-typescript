@@ -1,0 +1,911 @@
+{
+  "ECP": {
+    "0": {
+      "k": 0,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 74,
+        "q25": 37,
+        "q75": 159.25,
+        "min": 1,
+        "max": 583,
+        "mean": 117.36
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 200,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.6762758711544985,
+        "q25": 0.3101562587885272,
+        "q75": 0.6883496861213807,
+        "min": 0.28494535595998177,
+        "max": 0.724536649164547,
+        "mean": 0.5161783454151087
+      },
+      "fractionOnDesiredSideAt600": 0.455,
+      "repin": {
+        "depinEvents": 327,
+        "repinnedCount": 218,
+        "censoredCount": 109,
+        "latencies": {
+          "n": 218,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 124.54128440366972
+        }
+      }
+    },
+    "1": {
+      "k": 1,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 195,
+        "median": 91,
+        "q25": 40.5,
+        "q75": 164.5,
+        "min": 1,
+        "max": 598,
+        "mean": 118.26666666666667
+      },
+      "fractionNeverCrossed": 0.025,
+      "crossingMechanism": {
+        "flipDriven": 195,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.6020907000106726,
+        "q25": 0.32291947903094875,
+        "q75": 0.6723394731614121,
+        "min": 0.17835769886037703,
+        "max": 0.8109685282496311,
+        "mean": 0.5062226759277959
+      },
+      "fractionOnDesiredSideAt600": 0.48,
+      "repin": {
+        "depinEvents": 300,
+        "repinnedCount": 201,
+        "censoredCount": 99,
+        "latencies": {
+          "n": 201,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 129.47761194029852
+        }
+      }
+    },
+    "2": {
+      "k": 2,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 198,
+        "median": 99.5,
+        "q25": 41,
+        "q75": 176,
+        "min": 1,
+        "max": 534,
+        "mean": 123.81313131313131
+      },
+      "fractionNeverCrossed": 0.01,
+      "crossingMechanism": {
+        "flipDriven": 198,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.4254629291723303,
+        "q25": 0.343016676081908,
+        "q75": 0.6266537493867494,
+        "min": 0.15895279726127115,
+        "max": 0.8111364502786675,
+        "mean": 0.4880948526048514
+      },
+      "fractionOnDesiredSideAt600": 0.525,
+      "repin": {
+        "depinEvents": 305,
+        "repinnedCount": 212,
+        "censoredCount": 93,
+        "latencies": {
+          "n": 212,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 133.0188679245283
+        }
+      }
+    },
+    "5": {
+      "k": 5,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 198,
+        "median": 98,
+        "q25": 38,
+        "q75": 202,
+        "min": 1,
+        "max": 560,
+        "mean": 129.33333333333334
+      },
+      "fractionNeverCrossed": 0.01,
+      "crossingMechanism": {
+        "flipDriven": 198,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.430974998754981,
+        "q25": 0.3704369501960137,
+        "q75": 0.63307732332454,
+        "min": 0.1738081183272052,
+        "max": 0.8092397153312783,
+        "mean": 0.494518702403903
+      },
+      "fractionOnDesiredSideAt600": 0.535,
+      "repin": {
+        "depinEvents": 299,
+        "repinnedCount": 208,
+        "censoredCount": 91,
+        "latencies": {
+          "n": 208,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 128.3653846153846
+        }
+      }
+    },
+    "10": {
+      "k": 10,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 93,
+        "q25": 38,
+        "q75": 169.75,
+        "min": 1,
+        "max": 559,
+        "mean": 119.985
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 200,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.43065147018141037,
+        "q25": 0.36434947391488426,
+        "q75": 0.6222806718744153,
+        "min": 0.23838454917226407,
+        "max": 0.7700636293441714,
+        "mean": 0.4927771091775157
+      },
+      "fractionOnDesiredSideAt600": 0.525,
+      "repin": {
+        "depinEvents": 333,
+        "repinnedCount": 238,
+        "censoredCount": 95,
+        "latencies": {
+          "n": 238,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 129.83193277310923
+        }
+      }
+    },
+    "20": {
+      "k": 20,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 197,
+        "median": 67,
+        "q25": 38,
+        "q75": 152,
+        "min": 1,
+        "max": 565,
+        "mean": 110.84263959390863
+      },
+      "fractionNeverCrossed": 0.015,
+      "crossingMechanism": {
+        "flipDriven": 197,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.42826010490212296,
+        "q25": 0.34915885659031426,
+        "q75": 0.6231628112834047,
+        "min": 0.21146781788898536,
+        "max": 0.7891702354421669,
+        "mean": 0.48570421289330296
+      },
+      "fractionOnDesiredSideAt600": 0.515,
+      "repin": {
+        "depinEvents": 307,
+        "repinnedCount": 213,
+        "censoredCount": 94,
+        "latencies": {
+          "n": 213,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 136.9718309859155
+        }
+      }
+    },
+    "0.5": {
+      "k": 0.5,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 90.5,
+        "q25": 38,
+        "q75": 189.25,
+        "min": 1,
+        "max": 592,
+        "mean": 131.61
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 200,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.36379611109512905,
+        "q25": 0.3196964464180431,
+        "q75": 0.6814779695688975,
+        "min": 0.24885710823608775,
+        "max": 0.7548073523848431,
+        "mean": 0.4926475286256153
+      },
+      "fractionOnDesiredSideAt600": 0.525,
+      "repin": {
+        "depinEvents": 301,
+        "repinnedCount": 206,
+        "censoredCount": 95,
+        "latencies": {
+          "n": 206,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 375,
+          "mean": 129.9757281553398
+        }
+      }
+    }
+  },
+  "FLCM": {
+    "0": {
+      "k": 0,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 74,
+        "q25": 37,
+        "q75": 159.25,
+        "min": 1,
+        "max": 583,
+        "mean": 117.36
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 200,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.6346058708862545,
+        "q25": 0.3424707988143736,
+        "q75": 0.6570192044382778,
+        "min": 0.28717480211057506,
+        "max": 0.734630889795123,
+        "mean": 0.5129999775214461
+      },
+      "fractionOnDesiredSideAt600": 0.455,
+      "repin": {
+        "depinEvents": 327,
+        "repinnedCount": 218,
+        "censoredCount": 109,
+        "latencies": {
+          "n": 218,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 450,
+          "mean": 124.54128440366972
+        }
+      }
+    },
+    "1": {
+      "k": 1,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 94,
+        "q25": 41,
+        "q75": 170.25,
+        "min": 1,
+        "max": 569,
+        "mean": 127.775
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 194,
+        "driftDriven": 6,
+        "fractionDriftDriven": 0.03
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.5341966553733796,
+        "q25": 0.3689951766741895,
+        "q75": 0.624521987718563,
+        "min": 0.050101502777357754,
+        "max": 0.8986167068465818,
+        "mean": 0.5030967990534367
+      },
+      "fractionOnDesiredSideAt600": 0.48,
+      "repin": {
+        "depinEvents": 303,
+        "repinnedCount": 203,
+        "censoredCount": 100,
+        "latencies": {
+          "n": 203,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 68,
+          "max": 450,
+          "mean": 129.15270935960592
+        }
+      }
+    },
+    "2": {
+      "k": 2,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 102.5,
+        "q25": 41,
+        "q75": 177.25,
+        "min": 1,
+        "max": 390,
+        "mean": 123.215
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 190,
+        "driftDriven": 10,
+        "fractionDriftDriven": 0.05
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.4562749309958142,
+        "q25": 0.3742626834404133,
+        "q75": 0.5832547311458923,
+        "min": 0.031366254751306215,
+        "max": 0.939950593681171,
+        "mean": 0.48502308118492676
+      },
+      "fractionOnDesiredSideAt600": 0.535,
+      "repin": {
+        "depinEvents": 311,
+        "repinnedCount": 225,
+        "censoredCount": 86,
+        "latencies": {
+          "n": 225,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 53,
+          "max": 450,
+          "mean": 131.84444444444443
+        }
+      }
+    },
+    "5": {
+      "k": 5,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 99,
+        "q25": 38,
+        "q75": 205,
+        "min": 1,
+        "max": 324,
+        "mean": 122.915
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 174,
+        "driftDriven": 26,
+        "fractionDriftDriven": 0.13
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.48524311975272666,
+        "q25": 0.3926547461702666,
+        "q75": 0.6159031757150996,
+        "min": 0.04706850253713192,
+        "max": 0.8990162320828488,
+        "mean": 0.4988262261248861
+      },
+      "fractionOnDesiredSideAt600": 0.525,
+      "repin": {
+        "depinEvents": 323,
+        "repinnedCount": 233,
+        "censoredCount": 90,
+        "latencies": {
+          "n": 233,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 1,
+          "max": 420,
+          "mean": 124.21030042918454
+        }
+      }
+    },
+    "10": {
+      "k": 10,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 93,
+        "q25": 38,
+        "q75": 169.75,
+        "min": 1,
+        "max": 284,
+        "mean": 107.085
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 180,
+        "driftDriven": 20,
+        "fractionDriftDriven": 0.1
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.47270036100588986,
+        "q25": 0.40661053423192334,
+        "q75": 0.5893051221688974,
+        "min": 0.1580151341727919,
+        "max": 0.8787970714196228,
+        "mean": 0.4951603092538972
+      },
+      "fractionOnDesiredSideAt600": 0.525,
+      "repin": {
+        "depinEvents": 368,
+        "repinnedCount": 277,
+        "censoredCount": 91,
+        "latencies": {
+          "n": 277,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 44,
+          "max": 360,
+          "mean": 122.01083032490975
+        }
+      }
+    },
+    "20": {
+      "k": 20,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 67,
+        "q25": 38,
+        "q75": 165.25,
+        "min": 1,
+        "max": 267,
+        "mean": 102.74
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 173,
+        "driftDriven": 27,
+        "fractionDriftDriven": 0.135
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.4423255170479288,
+        "q25": 0.3896031490385662,
+        "q75": 0.5759390793356223,
+        "min": 0.06217834421829437,
+        "max": 0.9148872852727119,
+        "mean": 0.4692134642021654
+      },
+      "fractionOnDesiredSideAt600": 0.595,
+      "repin": {
+        "depinEvents": 348,
+        "repinnedCount": 267,
+        "censoredCount": 81,
+        "latencies": {
+          "n": 267,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 36,
+          "max": 324,
+          "mean": 126.02996254681648
+        }
+      }
+    },
+    "0.5": {
+      "k": 0.5,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 90.5,
+        "q25": 38,
+        "q75": 189.25,
+        "min": 1,
+        "max": 592,
+        "mean": 131.61
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 200,
+        "driftDriven": 0,
+        "fractionDriftDriven": 0
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.42646907637163667,
+        "q25": 0.35733046713808503,
+        "q75": 0.6419933319051223,
+        "min": 0.21626482545986764,
+        "max": 0.7979681190530026,
+        "mean": 0.4960605884771037
+      },
+      "fractionOnDesiredSideAt600": 0.525,
+      "repin": {
+        "depinEvents": 301,
+        "repinnedCount": 206,
+        "censoredCount": 95,
+        "latencies": {
+          "n": 206,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 75,
+          "max": 375,
+          "mean": 129.9757281553398
+        }
+      }
+    }
+  },
+  "JGN": {
+    "0": {
+      "k": 0,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 15,
+        "q25": 2,
+        "q75": 47,
+        "min": 1,
+        "max": 341,
+        "mean": 36.5
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 71,
+        "driftDriven": 129,
+        "fractionDriftDriven": 0.645
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.4888870309662964,
+        "q25": 0.44554661141751706,
+        "q75": 0.5547754499966193,
+        "min": 0.3970692231410813,
+        "max": 0.6044667795597516,
+        "mean": 0.49849858776563544
+      },
+      "fractionOnDesiredSideAt600": 0.52,
+      "repin": {
+        "depinEvents": 334,
+        "repinnedCount": 262,
+        "censoredCount": 72,
+        "latencies": {
+          "n": 262,
+          "median": 75,
+          "q25": 40,
+          "q75": 150,
+          "min": 1,
+          "max": 375,
+          "mean": 88.83969465648855
+        }
+      }
+    },
+    "1": {
+      "k": 1,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 19,
+        "q25": 2,
+        "q75": 48,
+        "min": 1,
+        "max": 226,
+        "mean": 33.61
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 45,
+        "driftDriven": 155,
+        "fractionDriftDriven": 0.775
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.4656938104688775,
+        "q25": 0.40464790418854474,
+        "q75": 0.5831073333514408,
+        "min": 0.012303974323507135,
+        "max": 0.9856023140243143,
+        "mean": 0.49472294750287704
+      },
+      "fractionOnDesiredSideAt600": 0.54,
+      "repin": {
+        "depinEvents": 374,
+        "repinnedCount": 288,
+        "censoredCount": 86,
+        "latencies": {
+          "n": 288,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 1,
+          "max": 375,
+          "mean": 114.51736111111111
+        }
+      }
+    },
+    "2": {
+      "k": 2,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 15.5,
+        "q25": 2,
+        "q75": 38,
+        "min": 1,
+        "max": 203,
+        "mean": 25.895
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 37,
+        "driftDriven": 163,
+        "fractionDriftDriven": 0.815
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.4537447069474345,
+        "q25": 0.2675164191327452,
+        "q75": 0.6979141255754342,
+        "min": 0,
+        "max": 0.9893076318353212,
+        "mean": 0.48536713283710553
+      },
+      "fractionOnDesiredSideAt600": 0.515,
+      "repin": {
+        "depinEvents": 395,
+        "repinnedCount": 304,
+        "censoredCount": 91,
+        "latencies": {
+          "n": 304,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 2,
+          "max": 468,
+          "mean": 113.40131578947368
+        }
+      }
+    },
+    "5": {
+      "k": 5,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 13,
+        "q25": 2,
+        "q75": 30,
+        "min": 1,
+        "max": 63,
+        "mean": 17.625
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 19,
+        "driftDriven": 181,
+        "fractionDriftDriven": 0.905
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.5149076862199756,
+        "q25": 0.36156787917873057,
+        "q75": 0.6782248264247637,
+        "min": 0,
+        "max": 0.9865894153877474,
+        "mean": 0.5036955996625958
+      },
+      "fractionOnDesiredSideAt600": 0.485,
+      "repin": {
+        "depinEvents": 437,
+        "repinnedCount": 337,
+        "censoredCount": 100,
+        "latencies": {
+          "n": 337,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 3,
+          "max": 289,
+          "mean": 117.58456973293768
+        }
+      }
+    },
+    "10": {
+      "k": 10,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 12,
+        "q25": 2,
+        "q75": 25,
+        "min": 1,
+        "max": 59,
+        "mean": 14.745
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 17,
+        "driftDriven": 183,
+        "fractionDriftDriven": 0.915
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.511948788400204,
+        "q25": 0.36127138650039337,
+        "q75": 0.6301937235710148,
+        "min": 0.0037220664406979864,
+        "max": 0.9327756447818021,
+        "mean": 0.488649154125027
+      },
+      "fractionOnDesiredSideAt600": 0.495,
+      "repin": {
+        "depinEvents": 493,
+        "repinnedCount": 397,
+        "censoredCount": 96,
+        "latencies": {
+          "n": 397,
+          "median": 75,
+          "q25": 75,
+          "q75": 147,
+          "min": 15,
+          "max": 234,
+          "mean": 105.11838790931989
+        }
+      }
+    },
+    "20": {
+      "k": 20,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 12,
+        "q25": 2,
+        "q75": 19,
+        "min": 1,
+        "max": 57,
+        "mean": 12.165
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 13,
+        "driftDriven": 187,
+        "fractionDriftDriven": 0.935
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.43680876381055933,
+        "q25": 0.3099384675497259,
+        "q75": 0.591298366523658,
+        "min": 0,
+        "max": 0.9411472124507224,
+        "mean": 0.43624317576969623
+      },
+      "fractionOnDesiredSideAt600": 0.57,
+      "repin": {
+        "depinEvents": 523,
+        "repinnedCount": 440,
+        "censoredCount": 83,
+        "latencies": {
+          "n": 440,
+          "median": 75,
+          "q25": 75,
+          "q75": 113,
+          "min": 1,
+          "max": 225,
+          "mean": 91.41363636363636
+        }
+      }
+    },
+    "0.5": {
+      "k": 0.5,
+      "nSeeds": 200,
+      "crossingTicks": {
+        "n": 200,
+        "median": 15.5,
+        "q25": 2,
+        "q75": 43.75,
+        "min": 1,
+        "max": 219,
+        "mean": 32.04
+      },
+      "fractionNeverCrossed": 0,
+      "crossingMechanism": {
+        "flipDriven": 47,
+        "driftDriven": 153,
+        "fractionDriftDriven": 0.765
+      },
+      "finalForecast": {
+        "n": 200,
+        "median": 0.5134234270628873,
+        "q25": 0.4371829497484051,
+        "q75": 0.5676709378862083,
+        "min": 0.33374585446802596,
+        "max": 0.6710196258345742,
+        "mean": 0.5069194276256972
+      },
+      "fractionOnDesiredSideAt600": 0.48,
+      "repin": {
+        "depinEvents": 367,
+        "repinnedCount": 272,
+        "censoredCount": 95,
+        "latencies": {
+          "n": 272,
+          "median": 75,
+          "q25": 75,
+          "q75": 150,
+          "min": 1,
+          "max": 375,
+          "mean": 99.38602941176471
+        }
+      }
+    }
+  }
+}

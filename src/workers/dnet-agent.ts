@@ -146,7 +146,7 @@ async function handleNeighbour(ns: NS, self: string, n: string, policy: Policy, 
 
   const vaultEntry = policy.vault[n];
   if (vaultEntry && sameFingerprint(vaultEntry.fingerprint, fingerprintOf(details))) {
-    const restored = await restoreSession(ns, n, vaultEntry.password, details, events);
+    const restored = await restoreSession(ns, self, n, vaultEntry.password, details, events);
     if (restored) return;
     // else: password was correct but stale (reported), fall through to solving
   }
@@ -162,9 +162,20 @@ async function handleNeighbour(ns: NS, self: string, n: string, policy: Policy, 
  * be done this tick (session restored, or a transient failure to retry
  * next tick), false when the vault entry is actually stale and the caller
  * should fall through to the solver.
+ *
+ * A `connectToSession` AuthFailure followed by a successful `authenticate`
+ * with the SAME password unambiguously means admin rights were cleared --
+ * which only a restart does, and a restart kills every script on the host,
+ * agent included. The coordinator only re-seeds darkweb and stasis-linked
+ * hosts, so without replicating here a restarted (but not re-fingerprinted)
+ * neighbour would silently and permanently drop out of the swarm: next
+ * tick `hasSession` is true and neither branch above ever runs again. This
+ * goes beyond design section 2 step 3's "push nothing more" (which is about
+ * events, not replication) -- a deliberate addition to close that gap.
  */
 async function restoreSession(
   ns: NS,
+  self: string,
   host: string,
   password: string,
   details: SeenDetails,
@@ -175,7 +186,10 @@ async function restoreSession(
   if (r.code !== CODE.AuthFailure) return true; // e.g. ServiceUnavailable -- try again next tick
 
   const auth = await ns.dnet.authenticate(host, password);
-  if (auth.success) return true;
+  if (auth.success) {
+    await replicate(ns, self, host); // admin was cleared by a restart -- re-seed in case the old agent died with it
+    return true;
+  }
   if (auth.code !== CODE.AuthFailure) return true; // RequestTimeOut/ServiceUnavailable -- try again next tick
 
   events.push({ t: "stale", host, fingerprint: fingerprintOf(details) });

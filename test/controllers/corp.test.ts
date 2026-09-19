@@ -11,7 +11,12 @@ import {
   getNextResearch,
   evaluateInvestmentOffer,
   shouldFreezeSpending,
+  selectOfficeUpgrade,
+  officeSizeUpgradeCost,
   formatMoney,
+  OFFICE_UPGRADE_STEP,
+  DEFAULT_OFFICE_MAX_SIZE,
+  DEFAULT_OFFICE_UPGRADE_RESERVE_MULT,
   INDUSTRY_FACTORS,
   EXPORT_ROUTES,
   UNLOCK_PRIORITY,
@@ -20,6 +25,8 @@ import {
   type DivisionSnapshot,
   type ProductSnapshot,
   type EmployeeContext,
+  type OfficeSnapshot,
+  type OfficeUpgradePolicy,
 } from "/controllers/corp";
 
 function division(overrides: Partial<DivisionSnapshot> = {}): DivisionSnapshot {
@@ -34,6 +41,7 @@ function division(overrides: Partial<DivisionSnapshot> = {}): DivisionSnapshot {
     research: 0,
     products: [],
     warehouses: [],
+    offices: [],
     maxProducts: 3,
     hasResearch: () => false,
     ...overrides,
@@ -277,7 +285,7 @@ describe("calculateEmployeeDistribution", () => {
 
   it("always sums to the requested count", () => {
     const ctx: EmployeeContext = { hasProducts: true, isResearchPhase: false, isCreationCity: true };
-    for (let n = 0; n <= 20; n++) {
+    for (let n = 0; n <= DEFAULT_OFFICE_MAX_SIZE; n++) {
       const dist = calculateEmployeeDistribution(n, ctx);
       const total = Object.values(dist).reduce((a, b) => a + b, 0);
       expect(total).toBe(n);
@@ -289,6 +297,96 @@ describe("calculateEmployeeDistribution", () => {
     const dist = calculateEmployeeDistribution(20, ctx);
     expect(dist["Research & Development"]).toBeGreaterThan(dist.Operations);
     expect(dist["Research & Development"]).toBeGreaterThan(dist.Management);
+  });
+});
+
+describe("officeSizeUpgradeCost (game data)", () => {
+  it("matches calculateOfficeSizeUpgradeCost for the first step of a new office", () => {
+    // (4e9 / 0.09) * 1.09^(3/3) * (1.09^(3/3) - 1) = 4.36e9
+    expect(officeSizeUpgradeCost(3, 3)).toBeCloseTo(4.36e9, -6);
+  });
+
+  it("grows with current size and is zero for a non-positive increase", () => {
+    expect(officeSizeUpgradeCost(6, 3)).toBeGreaterThan(officeSizeUpgradeCost(3, 3));
+    expect(officeSizeUpgradeCost(27, 3)).toBeGreaterThan(officeSizeUpgradeCost(24, 3));
+    expect(officeSizeUpgradeCost(3, 0)).toBe(0);
+  });
+});
+
+describe("selectOfficeUpgrade", () => {
+  const policy: OfficeUpgradePolicy = {
+    reserveMult: DEFAULT_OFFICE_UPGRADE_RESERVE_MULT,
+    maxSize: DEFAULT_OFFICE_MAX_SIZE,
+    step: OFFICE_UPGRADE_STEP,
+  };
+  const office = (city: string, size: number): OfficeSnapshot => ({ city, size, employees: size });
+
+  it("returns null when there are no offices", () => {
+    expect(selectOfficeUpgrade(snapshot({ funds: 1e15 }), policy)).toBeNull();
+  });
+
+  it("picks the office with the lowest headcount across divisions", () => {
+    const s = snapshot({
+      funds: 1e15,
+      divisions: [
+        division({ name: "AgriCo", offices: [office("Sector-12", 9), office("Aevum", 6)] }),
+        division({ name: "ChemCo", type: "Chemical", offices: [office("Sector-12", 3), office("Aevum", 12)] }),
+      ],
+    });
+    const plan = selectOfficeUpgrade(s, policy);
+    expect(plan).toMatchObject({ division: "ChemCo", city: "Sector-12", currentSize: 3, increase: 3 });
+    expect(plan?.cost).toBeCloseTo(officeSizeUpgradeCost(3, 3), -3);
+  });
+
+  it("breaks ties by division order then city order", () => {
+    const s = snapshot({
+      funds: 1e15,
+      divisions: [
+        division({ name: "AgriCo", offices: [office("Sector-12", 6), office("Aevum", 3), office("Volhaven", 3)] }),
+        division({ name: "ChemCo", type: "Chemical", offices: [office("Sector-12", 3)] }),
+      ],
+    });
+    expect(selectOfficeUpgrade(s, policy)).toMatchObject({ division: "AgriCo", city: "Aevum" });
+  });
+
+  it("requires funds of at least reserveMult times the cost", () => {
+    const cost = officeSizeUpgradeCost(3, 3);
+    const divs = [division({ offices: [office("Sector-12", 3)] })];
+    expect(selectOfficeUpgrade(snapshot({ funds: cost * 10 - 1, divisions: divs }), policy)).toBeNull();
+    expect(selectOfficeUpgrade(snapshot({ funds: cost * 10, divisions: divs }), policy)).not.toBeNull();
+  });
+
+  it("skips offices already at maxSize and returns null when all are", () => {
+    const s = snapshot({
+      funds: 1e18,
+      divisions: [division({ offices: [office("Sector-12", 30), office("Aevum", 27)] })],
+    });
+    expect(selectOfficeUpgrade(s, policy)).toMatchObject({ city: "Aevum", currentSize: 27, increase: 3 });
+    const full = snapshot({ funds: 1e18, divisions: [division({ offices: [office("Sector-12", 30)] })] });
+    expect(selectOfficeUpgrade(full, policy)).toBeNull();
+  });
+
+  it("clips the last step so an office never exceeds maxSize", () => {
+    const s = snapshot({ funds: 1e18, divisions: [division({ offices: [office("Sector-12", 30)] })] });
+    const plan = selectOfficeUpgrade(s, { ...policy, maxSize: 32 });
+    expect(plan).toMatchObject({ currentSize: 30, increase: 2 });
+    expect(plan?.cost).toBeCloseTo(officeSizeUpgradeCost(30, 2), -3);
+  });
+
+  it("honours a lower maxSize from config", () => {
+    const s = snapshot({ funds: 1e18, divisions: [division({ offices: [office("Sector-12", 9)] })] });
+    expect(selectOfficeUpgrade(s, { ...policy, maxSize: 9 })).toBeNull();
+  });
+
+  it("always chooses the cheapest candidate because cost rises with size", () => {
+    const s = snapshot({
+      funds: 1e18,
+      divisions: [division({ offices: [office("Sector-12", 12), office("Aevum", 18), office("Volhaven", 6)] })],
+    });
+    const plan = selectOfficeUpgrade(s, policy)!;
+    for (const o of s.divisions[0].offices) {
+      expect(plan.cost).toBeLessThanOrEqual(officeSizeUpgradeCost(o.size, OFFICE_UPGRADE_STEP));
+    }
   });
 });
 

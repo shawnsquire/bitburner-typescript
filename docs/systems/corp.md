@@ -17,8 +17,8 @@ the `tier` config key.
 | Tier | Name | Adds | RAM at SF4 level 0 |
 |---|---|---|---|
 | 0 | monitor | Status and directive evaluation | about 120 GB |
-| 1 | manage | Employees, sell orders, tea, products, upgrades, materials, research, AdVert, dividends, exports | about 450 GB |
-| 2 | invest | Corp creation, division and city expansion, investment rounds, going public, unlocks, shares | about 600 GB |
+| 1 | manage | Employees, office size, sell orders, tea, products, upgrades, materials, research, AdVert, dividends, exports | about 470 GB |
+| 2 | invest | Corp creation, division and city expansion, investment rounds, going public, unlocks, shares | about 620 GB |
 
 ## Directives
 
@@ -44,13 +44,33 @@ show and cancel them.
 | `dividendRate` | `0.1` | Dividend rate during harvest. |
 | `productInvestPct` | `0.1` | Fraction of funds per new product, split between design and marketing. |
 | `autoTea` | `true` | Buy tea and throw parties when energy or morale drops. |
+| `officeUpgradeReserveMult` | `10` | Grow an office only when corporation funds are at least this many times the upgrade cost. |
+| `officeMaxSize` | `30` | Stop growing offices at this many seats. |
 | `corpName` | `NovaCorp` | Name at creation. |
 | `interval` | `10000` | Fallback sleep (ms) if `nextUpdate` fails. |
+
+## Office size
+
+Every office opens with three seats. Each tick at tier 1 or above the daemon
+looks at every office below `officeMaxSize`, picks the one with the fewest
+seats (ties keep division then city order), and adds three seats (fewer for the
+last step up to the cap) when corporation funds are at least
+`officeUpgradeReserveMult` times the upgrade cost. One upgrade per tick; the
+office is then hired to full and jobs are redistributed in the same tick by the
+normal employee logic. `selectOfficeUpgrade` in `controllers/corp.ts` makes the
+choice; the cost formula is copied from the game and tested against it.
+
+The upgrade spends corporation funds, never the player budget, and runs in
+every directive. It waits for the Smart Supply and Office API unlocks (the API
+throws without the latter) and is skipped while spending is frozen for an
+investment offer. The reserve multiple is what keeps it from starving
+bootstrap: the first step costs about 4.4b, so it needs 44b on hand.
 
 ## Budget
 
 The `corp` bucket funds creation; after investment round 2 the daemon signals
-the bucket done and the corporation funds itself.
+the bucket done and the corporation funds itself. Office upgrades do not draw
+on the bucket.
 
 ## Ports and dashboard
 
@@ -62,20 +82,19 @@ directive.
 
 ## Known gaps
 
-- Office size is never upgraded, so every office stays at three employees.
 - Research is selected as a serial chain although the game's tree is mostly
   siblings, so research points can sit unused.
 
 ## Manual actions
 
-Each is a standalone one-shot costing 20 to 40 GB, for intervening when the
+Each is a standalone one-shot costing 20 to 65 GB, for intervening when the
 daemon is off or the directive is pinned.
 
 | Command |
 |---|
 | `run actions/corp/create-corp.js` |
 | `run actions/corp/expand-division.js`, `expand-city.js` (buys the warehouse too) |
-| `run actions/corp/hire-employees.js`, `buy-materials.js`, `buy-upgrade.js` |
+| `run actions/corp/hire-employees.js`, `upgrade-office.js`, `buy-materials.js`, `buy-upgrade.js` |
 | `run actions/corp/make-product.js`, `set-dividends.js` |
 | `run actions/corp/accept-investment.js`, `go-public.js` |
 

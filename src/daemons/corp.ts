@@ -6,8 +6,8 @@
  * Uses dynamic tier selection based on available RAM.
  *
  *   Tier 0 (monitor):  ~120 GB  - Status publishing, directive evaluation
- *   Tier 1 (manage):   ~450 GB  - Auto: employees, sell orders, tea, products, upgrades, materials
- *   Tier 2 (invest):   ~600 GB  - Auto: create corp, expand divisions, investments, go public
+ *   Tier 1 (manage):   ~470 GB  - Auto: employees, office size, sell orders, tea, products, upgrades, materials
+ *   Tier 2 (invest):   ~620 GB  - Auto: create corp, expand divisions, investments, go public
  *
  * Usage:
  *   run daemons/corp.js
@@ -40,6 +40,7 @@ import {
   generateStatusLine,
   generateNextStep,
   shouldFreezeSpending,
+  selectOfficeUpgrade,
   formatMoney,
   CITIES,
   CREATION_CITY,
@@ -53,13 +54,18 @@ import {
   UPGRADES,
   UNLOCK_PRIORITY,
   CORP_CREATION_COST,
+  OFFICE_UPGRADE_STEP,
+  DEFAULT_OFFICE_MAX_SIZE,
+  DEFAULT_OFFICE_UPGRADE_RESERVE_MULT,
 } from "/controllers/corp";
 import type {
   CorpStateSnapshot,
   DivisionSnapshot,
   WarehouseSnapshot,
+  OfficeSnapshot,
   ProductSnapshot,
   EmployeeContext,
+  OfficeUpgradePolicy,
 } from "/controllers/corp";
 
 const C = COLORS;
@@ -106,6 +112,7 @@ const TIER_0_FUNCTIONS = [
 /** Tier 1: management mutations. */
 const TIER_1_FUNCTIONS = [
   "corporation.hireEmployee",
+  "corporation.upgradeOfficeSize",
   "corporation.setJobAssignment",
   "corporation.sellMaterial",
   "corporation.sellProduct",
@@ -144,7 +151,7 @@ const TIER_2_FUNCTIONS = [
 
 const TIERS: TierConfig[] = [
   { tier: 0, name: "monitor", functions: TIER_0_FUNCTIONS, features: ["status-publishing", "directive-evaluation", "pending-actions"] },
-  { tier: 1, name: "manage", functions: [...TIER_0_FUNCTIONS, ...TIER_1_FUNCTIONS], features: ["employees", "sell-orders", "tea-party", "products", "upgrades", "materials", "research", "advert", "dividends", "exports"] },
+  { tier: 1, name: "manage", functions: [...TIER_0_FUNCTIONS, ...TIER_1_FUNCTIONS], features: ["employees", "office-size", "sell-orders", "tea-party", "products", "upgrades", "materials", "research", "advert", "dividends", "exports"] },
   { tier: 2, name: "invest", functions: [...TIER_0_FUNCTIONS, ...TIER_1_FUNCTIONS, ...TIER_2_FUNCTIONS], features: ["corp-creation", "division-expansion", "investment-acceptance", "go-public", "unlocks", "share-management"] },
 ];
 
@@ -160,6 +167,8 @@ const CONFIG_DEFAULTS: Record<string, string> = {
   productInvestPct: "0.1",
   corpName: "NovaCorp",
   autoTea: "true",
+  officeUpgradeReserveMult: String(DEFAULT_OFFICE_UPGRADE_RESERVE_MULT),
+  officeMaxSize: String(DEFAULT_OFFICE_MAX_SIZE),
   enabled: "true",
 };
 
@@ -239,6 +248,11 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     const autoTea = getConfigBool(ns, "corp", "autoTea", true);
     const dividendRate = getConfigNumber(ns, "corp", "dividendRate", 0.1);
     const countdownSec = getConfigNumber(ns, "corp", "countdownSeconds", 60);
+    const officePolicy: OfficeUpgradePolicy = {
+      reserveMult: getConfigNumber(ns, "corp", "officeUpgradeReserveMult", DEFAULT_OFFICE_UPGRADE_RESERVE_MULT),
+      maxSize: getConfigNumber(ns, "corp", "officeMaxSize", DEFAULT_OFFICE_MAX_SIZE),
+      step: OFFICE_UPGRADE_STEP,
+    };
 
     // Process control messages
     processControlMessages(ns, maxTier);
@@ -275,6 +289,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
     if (maxTier >= 1) {
       autoSellOrders(ns, snapshot);
       autoSmartSupply(ns, snapshot);
+      // Grow offices before autoEmployees so new seats are filled and jobs
+      // redistributed in the same tick (autoEmployees re-reads each office).
+      autoOfficeUpgrades(ns, snapshot, officePolicy);
       autoEmployees(ns, snapshot);
       if (autoTea) autoTeaParty(ns, snapshot);
       autoProducts(ns, snapshot);
@@ -446,9 +463,17 @@ function buildSnapshot(ns: NS): CorpStateSnapshot {
   for (const divName of corp.divisions) {
     const div = ns.corporation.getDivision(divName);
     const warehouses: WarehouseSnapshot[] = [];
+    const offices: OfficeSnapshot[] = [];
     const products: ProductSnapshot[] = [];
 
     for (const city of (div.cities as CityName[])) {
+      // Read the office once; the warehouse entry below reuses it.
+      let numEmployees = 0;
+      try {
+        const o = ns.corporation.getOffice(divName, city);
+        numEmployees = o.numEmployees;
+        offices.push({ city, size: o.size, employees: o.numEmployees });
+      } catch { /* no office yet */ }
       try {
         const wh = ns.corporation.getWarehouse(divName, city);
         const materials: { name: string; stored: number; produced: number; sold: number }[] = [];
@@ -458,13 +483,12 @@ function buildSnapshot(ns: NS): CorpStateSnapshot {
             materials.push({ name: mat, stored: m.stored, produced: m.productionAmount, sold: m.actualSellAmount });
           } catch { /* ignore */ }
         }
-        const office = ns.corporation.getOffice(divName, city);
         warehouses.push({
           city,
           size: wh.size,
           used: wh.sizeUsed,
           materials,
-          employees: office.numEmployees,
+          employees: numEmployees,
         });
       } catch { /* no warehouse yet */ }
     }
@@ -499,6 +523,7 @@ function buildSnapshot(ns: NS): CorpStateSnapshot {
       research: div.researchPoints,
       products,
       warehouses,
+      offices,
       maxProducts: div.maxProducts,
       hasResearch: (rName: string) => {
         try { return ns.corporation.hasResearched(divName, rName as CorpResearchName); } catch { return false; }
@@ -758,6 +783,41 @@ function autoSmartSupply(ns: NS, snapshot: CorpStateSnapshot): void {
     for (const city of (div.cities as CityName[])) {
       try { ns.corporation.setSmartSupply(div.name, city, true); } catch { /* ignore */ }
     }
+  }
+}
+
+/**
+ * Grow the smallest office by one step per tick when corporation funds cover
+ * `officeUpgradeReserveMult` times the cost. Spends corp funds, not the player
+ * budget. Runs in every directive: the reserve multiple and the unlock gates
+ * keep it from starving bootstrap, and harvest still gains from production.
+ */
+function autoOfficeUpgrades(ns: NS, snapshot: CorpStateSnapshot, policy: OfficeUpgradePolicy): void {
+  if (!snapshot.hasCorp) return;
+  if (!snapshot.unlocks["Office API"]) return;  // upgradeOfficeSize throws without it
+  if (!snapshot.unlocks["Smart Supply"]) return;  // Same gate as the other spenders
+  if (shouldFreezeSpending(snapshot)) return;  // Preserve funds for the investment offer
+
+  const plan = selectOfficeUpgrade(snapshot, policy);
+  if (!plan) return;
+
+  try {
+    // The game's own cost is authoritative; the controller's copy only chooses the office.
+    const cost = ns.corporation.getOfficeSizeUpgradeCost(plan.division, plan.city as CityName, plan.increase);
+    if (snapshot.funds < policy.reserveMult * cost) return;
+
+    // upgradeOfficeSize returns void and silently no-ops when funds are short,
+    // so confirm the size actually grew before counting the spend.
+    ns.corporation.upgradeOfficeSize(plan.division, plan.city as CityName, plan.increase);
+    const after = getOffice(ns, plan.division, plan.city);
+    if (!after || after.size <= plan.currentSize) return;
+
+    snapshot.funds -= cost;
+    const office = snapshot.divisions.find(d => d.name === plan.division)?.offices.find(o => o.city === plan.city);
+    if (office) office.size = after.size;
+    ns.print(`${C.green}Office ${plan.division}/${plan.city}: ${plan.currentSize} → ${after.size} seats (${formatMoney(cost)})${C.reset}`);
+  } catch (e) {
+    ns.print(`${C.red}Failed to upgrade office ${plan.division}/${plan.city}: ${e}${C.reset}`);
   }
 }
 

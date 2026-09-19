@@ -155,23 +155,22 @@ async function handleNeighbour(ns: NS, self: string, n: string, policy: Policy, 
 }
 
 /**
- * Try to reuse a vaulted password: `connectToSession` first (cheaper, and
- * works even without a direct connection), falling back to one
- * `authenticate` call if admin rights were cleared by a restart while the
- * password itself is still correct. Returns true when nothing more should
- * be done this tick (session restored, or a transient failure to retry
- * next tick), false when the vault entry is actually stale and the caller
- * should fall through to the solver.
+ * Reuse a vaulted password to restore access after this agent's session (or
+ * a whole prior agent) was lost. A restart clears a server's sessions and
+ * backdoor but keeps its admin rights and password, so `connectToSession`
+ * with the vaulted password succeeds on the first call; `authenticate` is a
+ * fallback only for the rare case where the session port rejects it. Returns
+ * true when nothing more should be done this tick (session restored, or a
+ * transient failure to retry next tick), false when the password no longer
+ * works (a stale vault entry) and the caller should fall through to the solver.
  *
- * A `connectToSession` AuthFailure followed by a successful `authenticate`
- * with the SAME password unambiguously means admin rights were cleared --
- * which only a restart does, and a restart kills every script on the host,
- * agent included. The coordinator only re-seeds darkweb and stasis-linked
- * hosts, so without replicating here a restarted (but not re-fingerprinted)
- * neighbour would silently and permanently drop out of the swarm: next
- * tick `hasSession` is true and neither branch above ever runs again. This
- * goes beyond design section 2 step 3's "push nothing more" (which is about
- * events, not replication) -- a deliberate addition to close that gap.
+ * On success we re-exec the agent (see the call sites below): a restart kills
+ * every script on the host, agent included, and the coordinator only re-seeds
+ * darkweb and stasis-linked hosts, so without this a restarted (but not
+ * re-fingerprinted) neighbour would silently and permanently drop out of the
+ * swarm. `getServerDetails().hasSession` short-circuits `handleNeighbour` once
+ * a session exists, so this path runs only when access must be (re)established
+ * -- once per neighbour and again after each of its restarts, not every tick.
  */
 async function restoreSession(
   ns: NS,
@@ -182,12 +181,18 @@ async function restoreSession(
   events: ReportEvent[],
 ): Promise<boolean> {
   const r = ns.dnet.connectToSession(host, password);
-  if (r.success) return true;
+  if (r.success) {
+    // Session (re)established. If the host had restarted, its old agent was
+    // killed with it -- re-exec to revive the swarm here. preventDuplicates
+    // makes this a no-op when an agent is already running.
+    await replicate(ns, self, host);
+    return true;
+  }
   if (r.code !== CODE.AuthFailure) return true; // e.g. ServiceUnavailable -- try again next tick
 
   const auth = await ns.dnet.authenticate(host, password);
   if (auth.success) {
-    await replicate(ns, self, host); // admin was cleared by a restart -- re-seed in case the old agent died with it
+    await replicate(ns, self, host);
     return true;
   }
   if (auth.code !== CODE.AuthFailure) return true; // RequestTimeOut/ServiceUnavailable -- try again next tick

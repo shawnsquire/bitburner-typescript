@@ -115,7 +115,7 @@ async function agentLoop(ns: NS): Promise<void> {
     }
 
     const combined = capBacklog([...backlog, ...events]);
-    const batch: ReportBatch = { from: self, pid: ns.pid, depth: 0, at: Date.now(), events: combined };
+    const batch: ReportBatch = { from: self, pid: ns.pid, depth: 0, at: Date.now(), events: combined, agent: true };
     const sent = tryWriteBatch(ns, batch);
     backlog = sent ? [] : combined;
 
@@ -340,8 +340,12 @@ function launchLocalWorkers(ns: NS, self: string, policy: Policy): void {
   }
   if (flags.phishThreads > 0) {
     // Phishing income scales with thread count -- it must run at phishThreads
-    // threads, not one. dnet-phish.js takes no thread argument.
-    ns.run(DNET_WORKERS.phish, { threads: flags.phishThreads, preventDuplicates: true }, self);
+    // threads, not one. The count also rides along as an argument so the
+    // running worker can notice when the coordinator resizes it (e.g. shrinks
+    // phishing to free RAM for a newly-needed charge/stasis worker) and exit so
+    // this relaunch takes effect -- preventDuplicates alone would keep the old,
+    // wrongly-sized worker alive.
+    ns.run(DNET_WORKERS.phish, { threads: flags.phishThreads, preventDuplicates: true }, self, flags.phishThreads);
   }
   if (flags.lab && policy.labName) {
     // The walker runs here on `self` (the runner, adjacent to the lab) and

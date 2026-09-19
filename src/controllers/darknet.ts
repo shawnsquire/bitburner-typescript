@@ -28,6 +28,36 @@ import type { DarknetCell, DarknetCellState, DarknetStatus } from "/types/ports"
 import type { Fingerprint, Policy, ReportBatch, SeenDetails, Vault, WorkerFlags } from "/lib/darknet/protocol";
 import { AGENT_VERSION, CODE, DNET_WORKER_RAM, LAB_HOSTS, LAB_MODEL_ID, fingerprintOf, sameFingerprint } from "/lib/darknet/protocol";
 
+/**
+ * The deepest the darknet can ever grow (`MAX_NET_DEPTH`,
+ * `game:src/DarkNet/Enums.ts:8`). Used as the "keep climbing" upper bound for
+ * `netDepthOf` before the current lab (and thus the real depth) is known.
+ */
+const MAX_NET_DEPTH = 40;
+
+/**
+ * How long a resident agent may go without a report before the coordinator
+ * treats it as dead and lets a fresh poll demote its cell (and `reseed`
+ * revive it). This is deliberately generous: one agent tick crack-loops every
+ * neighbour, and a single hard feedback model can burn up to `maxAttempts`
+ * multi-second `authenticate` calls, so a busy-but-alive agent can legitimately
+ * go minutes between batches. `agentIntervalMs * 3` (6 s at the default) would
+ * constantly false-demote such agents -- churning their phish workers and
+ * wastefully re-seeding live hosts. A restarted *neighbour* is revived far
+ * faster than this by the adjacent agent's `restoreSession`; this floor only
+ * bounds how long the coordinator's own `darkweb`/stasis/lab re-seed backstop
+ * waits on a genuinely dead agent.
+ */
+const AGENT_LIVENESS_FLOOR_MS = 300_000;
+
+/**
+ * How long the policy keeps flagging the seed host to fire the storm once the
+ * pre-storm pause elapses. A window (not a single tick) so the seed host's
+ * agent, polling only every `agentIntervalMs`, reliably catches it; firing is
+ * latched per agent process, so a multi-tick window still fires exactly once.
+ */
+const STORM_FIRE_WINDOW_MS = 10_000;
+
 // === MODEL ===
 
 export interface CellRecord {
@@ -55,6 +85,14 @@ export interface DarknetModel {
   stuckSince: number | null;
   pauseUntil: number;
   stormPending: boolean;
+  /**
+   * While `now < stormFireUntil`, the policy flags the seed host's agent to
+   * fire the storm. It is a short *window* rather than a single tick so that
+   * the seed host's agent -- which polls only every `agentIntervalMs` and may
+   * miss any one publish -- reliably catches it. Firing is latched per agent
+   * process, so seeing the flag across several ticks still fires exactly once.
+   */
+  stormFireUntil: number;
 }
 
 export interface DarknetConfig {
@@ -111,6 +149,7 @@ export function createModel(lastNodeReset: number): DarknetModel {
     stuckSince: null,
     pauseUntil: 0,
     stormPending: false,
+    stormFireUntil: 0,
   };
 }
 
@@ -136,6 +175,27 @@ function dropEdgesTouching(m: DarknetModel, host: string): void {
   for (const key of m.edges) {
     const [a, b] = key.split("|");
     if (a === host || b === host) m.edges.delete(key);
+  }
+}
+
+/**
+ * Prune `host`'s edges to exactly its current neighbours. An agent batch's
+ * `seen` events enumerate the *complete* set of `host`'s direct neighbours
+ * (`probe()` returns them all), so any existing edge from `host` to a server
+ * NOT in that set is stale -- the server has since moved (the game reshuffles
+ * the net) and is no longer adjacent. Without this the edge graph is
+ * append-only, and `selectLabHost`/carrier charging pick a host that used to
+ * be adjacent to the lab/carrier, whose `dnet-lab`/`dnet-charge` then fails
+ * with DirectConnectionRequired (351) every tick. Called only when at least
+ * one neighbour was reported, so a tick where `probe()` threw (no `seen`
+ * events) does not wrongly strip every edge.
+ */
+function pruneEdgesFrom(m: DarknetModel, host: string, current: Set<string>): void {
+  for (const key of m.edges) {
+    const [a, b] = key.split("|");
+    if (a !== host && b !== host) continue;
+    const other = a === host ? b : a;
+    if (!current.has(other)) m.edges.delete(key);
   }
 }
 
@@ -186,10 +246,25 @@ function pickDeepest(cells: CellRecord[]): CellRecord | null {
   return best;
 }
 
+/**
+ * How deep the darknet extends this run: the current labyrinth's depth
+ * (`getNetDepth()` in game = the active lab's depth). Until an agent has
+ * probed adjacent to the lab, `limits.labName` is unknown -- and the lab
+ * sits at the very bottom of the net, so it can't be seen until the swarm
+ * has already crossed every air gap to reach it. Defaulting low would make
+ * the carrier and stuck logic (which both bail once
+ * `nextGapRow(deepestAdmin) >= netDepth`) treat the very first air gap as
+ * the end of the net and halt the swarm there permanently. So with full
+ * access but no lab identified yet, assume the maximum possible depth
+ * (`MAX_NET_DEPTH`): the swarm keeps crossing gaps until it actually reaches
+ * the lab, at which point `labName` is known and this narrows to the exact
+ * depth. Reaching the bottom and seeing the lab coincide, so there is no
+ * meaningful window where this overshoots a real, shallower frontier.
+ */
 function netDepthOf(limits: Limits): number {
   if (limits.access !== "full") return 5;
-  if (!limits.labName) return 5;
-  return LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.depth ?? 5;
+  if (!limits.labName) return MAX_NET_DEPTH;
+  return LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.depth ?? MAX_NET_DEPTH;
 }
 
 /** First multiple of 8 strictly greater than `depth` (the next air-gap row to cross). */
@@ -220,12 +295,19 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
   // zero-value default means moneyPerHour is always 0.
   if (m.income.since === 0) m.income.since = now;
 
-  // Every batch proves its origin host currently carries a live agent,
-  // regardless of what (if anything) this tick's events say about it.
+  // An *agent* batch proves its origin host currently carries a live agent,
+  // regardless of what (if anything) this tick's events say about it. A batch
+  // from one of the host's local workers (phish/harvest/stasis/lab/charge)
+  // does not: those can outlive a crashed agent, and treating their reports as
+  // agent liveness would leave the dead agent un-reseeded and the host's
+  // neighbours forever un-probed. Worker batches still fold their events below
+  // (income, caches, freed RAM); they just don't refresh agent liveness.
   const fromCell = ensureCell(m, batch.from);
-  fromCell.agentPid = batch.pid;
-  fromCell.agentSeenAt = batch.at;
-  fromCell.state = m.stasisHosts.includes(batch.from) ? "anchor" : "agent";
+  if (batch.agent) {
+    fromCell.agentPid = batch.pid;
+    fromCell.agentSeenAt = batch.at;
+    fromCell.state = m.stasisHosts.includes(batch.from) ? "anchor" : "agent";
+  }
 
   for (const event of batch.events) {
     switch (event.t) {
@@ -306,7 +388,12 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
       case "cache": {
         ensureCell(m, event.host).cacheSeen = false;
         m.income.cachesOpened += 1;
-        if (event.file === "the_great_work.cache") m.income.augsAwarded += 1;
+        // The labyrinth reward cache is named `the_great_work_<nnn>.cache`
+        // (a random 3-digit suffix, `generateCacheFilename` in
+        // `game:src/DarkNet/effects/cacheFiles.ts`), possibly with a path
+        // prefix -- match on the stem, not an exact filename, or the queued
+        // reward augmentation is never counted and `augPending` never trips.
+        if (event.file.includes("the_great_work")) m.income.augsAwarded += 1;
         break;
       }
 
@@ -352,6 +439,13 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
           m.vault.entries[m.lab.name] = { password: event.password, fingerprint: labCell.fingerprint, seenAt: batch.at };
           vaultChanged = true;
           if (labCell.state !== "agent" && labCell.state !== "anchor") labCell.state = "admin";
+          // Clearing a lab drops a `the_great_work` reward cache onto the lab
+          // server (design section 7). Flag it so that once the coordinator
+          // re-seeds an agent onto the now-admin lab, `computePolicy` runs a
+          // harvest worker there to `openCache` it and queue the reward aug.
+          // The lab has no blocked RAM and reports no other cache, so without
+          // this flag the harvest gate never fires and the reward is stranded.
+          if (event.cleared) labCell.cacheSeen = true;
         }
         break;
       }
@@ -363,6 +457,20 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
         break;
       }
     }
+  }
+
+  // An agent batch's `seen` events are `batch.from`'s complete current
+  // neighbour set, so prune any now-stale edge from `batch.from` to a host it
+  // no longer borders (a moved server). Skip when the batch reported no
+  // neighbours (a probe() failure), which would otherwise strip every edge.
+  if (batch.agent) {
+    const seenHosts = new Set<string>();
+    for (const e of batch.events) {
+      if (e.t !== "seen") continue;
+      seenHosts.add(e.host);
+      for (const n of e.neighbours) seenHosts.add(n);
+    }
+    if (seenHosts.size > 0) pruneEdgesFrom(m, batch.from, seenHosts);
   }
 
   return { contracts, vaultChanged };
@@ -402,7 +510,8 @@ export function refreshFromDetails(m: DarknetModel, host: string, details: SeenD
   // Death is normal (design doc section 2): a restart or delete kills an
   // agent silently, so a resident marker older than a few missed ticks is
   // stale and should fall back to whatever the fresh poll says.
-  const agentTimedOut = cell.agentSeenAt > 0 && now - cell.agentSeenAt > config.agentIntervalMs * 3;
+  const livenessWindow = Math.max(config.agentIntervalMs * 3, AGENT_LIVENESS_FLOOR_MS);
+  const agentTimedOut = cell.agentSeenAt > 0 && now - cell.agentSeenAt > livenessWindow;
   if (recycled || agentTimedOut || (cell.state !== "agent" && cell.state !== "anchor")) {
     if (recycled || agentTimedOut) cell.agentPid = 0;
     cell.state = baseState;
@@ -659,7 +768,6 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     m.stormPending = true;
   }
 
-  let stormFiring = false;
   // Arming the pause (and firing the storm once it elapses) both require a
   // real seed host. Without one, `stormPending` stays true but inert rather
   // than cycling pause on/off every tick with nothing to fire at.
@@ -667,12 +775,15 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     if (m.pauseUntil === 0) {
       m.pauseUntil = now + 30_000;
     } else if (now >= m.pauseUntil) {
-      stormFiring = true;
+      // Open a firing window (see STORM_FIRE_WINDOW_MS) instead of firing for a
+      // single tick, so the seed host's agent doesn't miss the flag.
+      m.stormFireUntil = now + STORM_FIRE_WINDOW_MS;
       m.stormPending = false;
       m.pauseUntil = 0;
     }
   }
   const pause = now < m.pauseUntil;
+  const stormFiring = now < m.stormFireUntil;
 
   const labHost = selectLabHost(m, limits);
   const labCha = limits.labName ? LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.cha ?? Infinity : Infinity;
@@ -685,7 +796,8 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     anyAgentAlive = true;
 
     const maxRam = cell.details?.maxRam ?? 0;
-    const harvest = config.harvest && ((cell.details?.blockedRam ?? 0) > 0 || cell.cacheSeen) && player.karma >= config.harvestKarmaFloor;
+    const blockedRam = cell.details?.blockedRam ?? 0;
+    const harvest = config.harvest && (blockedRam > 0 || cell.cacheSeen) && player.karma >= config.harvestKarmaFloor;
 
     const wantsLink = stasisTargets.includes(cell.host);
     const hasLink = m.stasisHosts.includes(cell.host);
@@ -715,7 +827,13 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     if (lab) reserved += DNET_WORKER_RAM.lab;
     if (stasis === true) reserved += DNET_WORKER_RAM.stasis;
 
-    const freeForPhish = Math.max(0, maxRam - reserved);
+    // Size phishing to the RAM that is actually free right now, not `maxRam`:
+    // the game charges a host's blocked RAM as *used* (`applyRamBlocks`), so a
+    // phish launch sized to include blocked RAM would exceed the host's real
+    // free space and `ns.run` would return pid 0 every tick until the block is
+    // cleared -- no phishing income at all on a blocked host. As `dnet-harvest`
+    // frees the block, `blockedRam` shrinks and phishing scales up to match.
+    const freeForPhish = Math.max(0, maxRam - blockedRam - reserved);
     const phishThreads = config.phish ? Math.min(config.phishMaxThreads, Math.floor(freeForPhish / DNET_WORKER_RAM.phish)) : 0;
 
     workers[cell.host] = {

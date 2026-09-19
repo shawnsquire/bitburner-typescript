@@ -5,8 +5,11 @@
  * (docs/design/2026-09-19-darknet.md Section 5). The call scales its money
  * and charisma XP reward off the calling script's own thread count
  * (`handlePhishingAttack`, `src/DarkNet/effects/phishing.ts`), which is set
- * by the agent's `ns.run(..., {threads: policy.workers[self].phishThreads})`
- * -- there is no thread argument to pass here.
+ * by the agent's `ns.run(..., {threads: policy.workers[self].phishThreads})`.
+ * That thread count also rides along as `ns.args[1]` -- not to scale the
+ * reward (the `{threads}` above does that), but so this worker can tell when
+ * the coordinator has resized it and exit to let the agent relaunch at the
+ * new size.
  *
  * The reward is only visible in the result's `message` string, parsed by
  * the pure `parsePhishResult` below. Totals are batched home every
@@ -15,7 +18,7 @@
  * is re-checked every call to exit promptly once the coordinator zeroes
  * this host's `phishThreads` or restarts the agent bundle.
  *
- * Usage: run workers/dnet-phish.js <self>
+ * Usage: run workers/dnet-phish.js <self> <threads>
  */
 import type { NS } from "@ns";
 import { AGENT_VERSION, ReportBatch } from "/lib/darknet/protocol";
@@ -59,6 +62,12 @@ export function main(ns: NS): Promise<void> {
 
 async function phishLoop(ns: NS): Promise<void> {
   const self = ns.args[0] as string;
+  // The thread count this worker was launched with (see dnet-agent's
+  // launchLocalWorkers). Exit when the coordinator's desired count no longer
+  // matches it -- in either direction -- so the agent's relaunch installs the
+  // new size. This is how phishing gives RAM back when a higher-priority worker
+  // (charge/stasis/lab) is added later, and reclaims it as a RAM block clears.
+  const launchedThreads = (ns.args[1] as number) ?? 0;
 
   let money = 0;
   let cache = false;
@@ -79,7 +88,8 @@ async function phishLoop(ns: NS): Promise<void> {
     }
 
     const policy = peekPolicy(ns);
-    if (!policy || policy.version !== AGENT_VERSION || !policy.workers[self]?.phishThreads) {
+    const want = policy?.workers[self]?.phishThreads ?? 0;
+    if (!policy || policy.version !== AGENT_VERSION || want !== launchedThreads) {
       if (sinceReport > 0) sendReport(ns, self, money, cache);
       return;
     }

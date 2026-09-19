@@ -45,8 +45,12 @@ function details(overrides: Partial<SeenDetails> = {}): SeenDetails {
   };
 }
 
+// Defaults to an *agent* batch (agent: true), since most tests here model an
+// agent's own report. A worker batch (harvest/phish/...) is built by passing
+// `{ agent: false }` -- those prove a live worker, not a live agent, and so do
+// not refresh the origin cell's agent-liveness bookkeeping.
 function batch(from: string, events: ReportEvent[], overrides: Partial<ReportBatch> = {}): ReportBatch {
-  return { from, pid: 111, depth: 1, at: 1000, events, ...overrides };
+  return { from, pid: 111, depth: 1, at: 1000, events, agent: true, ...overrides };
 }
 
 function seenEvent(host: string, overrides: Partial<SeenDetails> = {}, neighbours: string[] = []): ReportEvent {
@@ -117,6 +121,19 @@ describe("applyReport: agent residency", () => {
     m.stasisHosts.push("n00dl3s");
     applyReport(m, batch("n00dl3s", []), 1000);
     expect(m.cells["n00dl3s"].state).toBe("anchor");
+  });
+
+  it("does NOT mark agent liveness for a worker batch (agent unset)", () => {
+    const m = createModel(0);
+    // A phish worker's batch proves a live worker, not a live agent: it must
+    // not refresh the host's agent bookkeeping, or a crashed agent whose phish
+    // still loops would look alive forever and never be re-seeded.
+    applyReport(m, batch("h1", [{ t: "phish", host: "h1", money: 100, cache: false }], { agent: false }), 1000);
+    expect(m.cells["h1"].state).not.toBe("agent");
+    expect(m.cells["h1"].agentPid).toBe(0);
+    expect(m.cells["h1"].agentSeenAt).toBe(0);
+    // ...but the worker's event is still folded.
+    expect(m.income.money).toBe(100);
   });
 });
 
@@ -193,6 +210,28 @@ describe("applyReport: seen", () => {
     const m = createModel(0);
     applyReport(m, batch("home-agent", [seenEvent("th3_l4byr1nth", { modelId: "(The Labyrinth)" })]), 1);
     expect(m.edges.has(edgeKey("home-agent", "th3_l4byr1nth"))).toBe(true);
+  });
+
+  it("prunes a stale edge when an agent no longer reports a neighbour it has moved away from", () => {
+    const m = createModel(0);
+    applyReport(m, batch("A", [seenEvent("B"), seenEvent("C")]), 1);
+    expect(m.edges.has(edgeKey("A", "B"))).toBe(true);
+    expect(m.edges.has(edgeKey("A", "C"))).toBe(true);
+    // Next tick A borders only B (C moved). An agent batch's seen set is A's
+    // complete current neighbour list, so the now-stale A-C edge is pruned --
+    // otherwise selectLabHost/charge could pick C and loop on 351.
+    applyReport(m, batch("A", [seenEvent("B")]), 2);
+    expect(m.edges.has(edgeKey("A", "B"))).toBe(true);
+    expect(m.edges.has(edgeKey("A", "C"))).toBe(false);
+  });
+
+  it("does NOT prune edges on a probe-failure tick (agent batch with no seen events)", () => {
+    const m = createModel(0);
+    applyReport(m, batch("A", [seenEvent("B")]), 1);
+    // A tick where probe() threw yields an agent batch with zero seen events;
+    // pruning to an empty set would wrongly strip every edge.
+    applyReport(m, batch("A", []), 2);
+    expect(m.edges.has(edgeKey("A", "B"))).toBe(true);
   });
 
   it("does not create a self-loop edge", () => {
@@ -279,7 +318,9 @@ describe("applyReport: cache / ramfreed / phish", () => {
   it("cache increments cachesOpened, clears cacheSeen, and counts augsAwarded on the great-work cache", () => {
     const m = createModel(0);
     m.cells["lab1"] = { host: "lab1", details: null, fingerprint: null, state: "admin", lastSeen: 0, agentPid: 0, agentSeenAt: 0, attempts: 0, cacheSeen: true };
-    applyReport(m, batch("agent1", [{ t: "cache", host: "lab1", file: "the_great_work.cache", message: "", karmaLoss: 0 }]), 1);
+    // The game names the reward cache `the_great_work_<nnn>.cache` (random
+    // suffix), so the match must be on the stem, not an exact filename.
+    applyReport(m, batch("agent1", [{ t: "cache", host: "lab1", file: "the_great_work_482.cache", message: "", karmaLoss: 0 }]), 1);
     expect(m.income.cachesOpened).toBe(1);
     expect(m.income.augsAwarded).toBe(1);
     expect(m.cells["lab1"].cacheSeen).toBe(false);
@@ -346,6 +387,10 @@ describe("applyReport: lab", () => {
     expect(m.lab.cleared).toBe(true);
     expect(m.vault.entries["th3_l4byr1nth"].password).toBe("labpw");
     expect(result.vaultChanged).toBe(true);
+    // Clearing drops a reward cache on the lab; flag it so a re-seeded agent's
+    // harvest opens it (design section 7). Also gives the lab cell admin state.
+    expect(m.cells["th3_l4byr1nth"].cacheSeen).toBe(true);
+    expect(m.cells["th3_l4byr1nth"].state).toBe("admin");
   });
 });
 
@@ -404,9 +449,21 @@ describe("refreshFromDetails", () => {
     const m = createModel(0);
     applyReport(m, batch("h1", []), 1000);
     expect(m.cells["h1"].state).toBe("agent");
-    refreshFromDetails(m, "h1", details({ hasAdmin: true }), 1000 + DEFAULT_CONFIG.agentIntervalMs * 3 + 1, DEFAULT_CONFIG);
+    // The liveness window is a generous floor (300s), well above one slow tick,
+    // so a busy-but-alive agent is not false-demoted; a genuinely dead agent
+    // is demoted (and its agentPid zeroed, so `reseed` revives it) once past it.
+    refreshFromDetails(m, "h1", details({ hasAdmin: true }), 1000 + 300_000 + 1, DEFAULT_CONFIG);
     expect(m.cells["h1"].state).toBe("admin");
     expect(m.cells["h1"].agentPid).toBe(0);
+  });
+
+  it("does not demote a slow-but-alive agent inside the liveness floor", () => {
+    const m = createModel(0);
+    applyReport(m, batch("h1", []), 1000);
+    // A single hard tick can run minutes; well short of the 300s floor.
+    refreshFromDetails(m, "h1", details({ hasAdmin: true }), 1000 + 60_000, DEFAULT_CONFIG);
+    expect(m.cells["h1"].state).toBe("agent");
+    expect(m.cells["h1"].agentPid).toBe(111);
   });
 
   it("keeps a fresh resident agent as agent", () => {
@@ -471,6 +528,16 @@ describe("selectCarriers", () => {
     setCell(m, "deep", "admin", { depth: 6, difficulty: 6 });
     // th3_l4byr1nth is depth 7, so the "next gap row" (8) is already >= netDepth.
     expect(selectCarriers(m, { stasisLimit: 1, access: "full", labName: "th3_l4byr1nth" })).toEqual([]);
+  });
+
+  it("keeps crossing gaps when the lab (and thus the real net depth) is not yet known", () => {
+    const m = createModel(0);
+    // deepest admin at depth 6 -> next gap row 8 -> band [5,7]
+    setCell(m, "deep", "admin", { depth: 6, difficulty: 8 });
+    setCell(m, "carrierOk", "admin", { depth: 5, difficulty: 7 });
+    // With no lab identified, netDepth defaults to MAX (40), not a low value
+    // that would treat the very first gap as the net's end and stop the swarm.
+    expect(selectCarriers(m, { stasisLimit: 1, access: "full", labName: null })).toEqual(["carrierOk"]);
   });
 });
 
@@ -605,13 +672,28 @@ describe("computePolicy", () => {
     expect(Object.keys(policy.workers)).toEqual(["resident"]);
   });
 
-  it("sizes phishThreads from free RAM after the agent and any other reserved workers", () => {
+  it("sizes phishThreads from free RAM after the agent, reserved workers, and the RAM block", () => {
     const m = createModel(0);
     agentCell(m, "host1", { maxRam: 32, blockedRam: 5 });
     const cfg: DarknetConfig = { ...DEFAULT_CONFIG, phishMaxThreads: 1000 };
     const policy = computePolicy(m, cfg, player, noAccess, 0);
-    // reserved = agent(6.25) + harvest(4.9) = 11.15; free = 32-11.15=20.85; /3.6 = 5.79 -> 5
-    expect(policy.workers["host1"].phishThreads).toBe(5);
+    // blockedRam counts as used RAM in-game, so phishing must exclude it:
+    // reserved = agent(6.25) + harvest(4.9) = 11.15; free = 32 - 5(block) -
+    // 11.15 = 15.85; /3.6 = 4.40 -> 4. Sizing to maxRam here would launch 5
+    // threads (18 GB) into ~15.85 GB free and fail every tick.
+    expect(policy.workers["host1"].phishThreads).toBe(4);
+  });
+
+  it("grows phishThreads back as the RAM block clears", () => {
+    const m = createModel(0);
+    const cell = agentCell(m, "host1", { maxRam: 32, blockedRam: 20 });
+    const cfg: DarknetConfig = { ...DEFAULT_CONFIG, phishMaxThreads: 1000 };
+    // Heavily blocked: free = 32 - 20 - 11.15 = 0.85 -> 0 phish threads.
+    expect(computePolicy(m, cfg, player, noAccess, 0).workers["host1"].phishThreads).toBe(0);
+    // Block cleared: free = 32 - 11.15 = 20.85 -> 5 threads.
+    cell.details = { ...cell.details!, blockedRam: 0 };
+    cell.cacheSeen = true; // keep harvest reserved so the comparison is apples-to-apples
+    expect(computePolicy(m, cfg, player, noAccess, 0).workers["host1"].phishThreads).toBe(5);
   });
 
   it("caps phishThreads at phishMaxThreads", () => {
@@ -650,8 +732,17 @@ describe("computePolicy", () => {
     expect(policy.workers["seedHost"].storm).toBe(true);
     expect(m.stormPending).toBe(false);
 
-    // Fires only once; the next tick is back to normal.
+    // The storm flag is published for a short WINDOW (not a single tick) so the
+    // seed host's agent, which polls only every agentIntervalMs, reliably
+    // catches it. The agent latches its own firing, so the multi-tick flag
+    // still fires exactly once.
     policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 30_001);
+    expect(policy.workers["seedHost"].storm).toBe(true);
+    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 39_999);
+    expect(policy.workers["seedHost"].storm).toBe(true);
+
+    // Once the window elapses the flag drops.
+    policy = computePolicy(m, DEFAULT_CONFIG, player, noAccess, 40_001);
     expect(policy.workers["seedHost"].storm).toBe(false);
   });
 

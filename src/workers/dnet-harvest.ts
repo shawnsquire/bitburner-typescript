@@ -48,6 +48,11 @@ async function harvestLoop(ns: NS): Promise<void> {
     // and give up on that rather than spinning against a host that's gone.
     let rounds = 0;
     let prevRemaining = Infinity;
+    // Set when a reallocation round frees nothing (charisma too low for this
+    // host's difficulty). We stop reallocating but still fall through to open
+    // any cache files -- those don't require the block to be cleared -- then
+    // exit, rather than returning here and stranding the caches.
+    let blockStalled = false;
     for (;;) {
       const res = await ns.dnet.memoryReallocation();
       const remaining = ns.dnet.getBlockedRam();
@@ -78,18 +83,13 @@ async function harvestLoop(ns: NS): Promise<void> {
       if (remaining >= prevRemaining) {
         // getRamBlockRemoved rounds to 0.00 GB per call when charisma is too
         // low relative to this host's difficulty -- a "success" round that
-        // freed nothing. Looping forever would hold this worker's slot
-        // without ever finishing; report and give up instead.
-        sendReport(ns, self, [
-          {
-            t: "error",
-            host: self,
-            op: "memoryReallocation",
-            code: res.code,
-            message: `no progress: ${remaining} GB still blocked`,
-          },
-        ]);
-        return;
+        // freed nothing. This is an expected charisma gate, not an error:
+        // report the block that remains (so the model's blockedRam is current)
+        // and stop reallocating, but still open any caches below before
+        // exiting. Retrying is left to a future launch once charisma rises.
+        sendReport(ns, self, [{ t: "ramfreed", host: self, remaining }]);
+        blockStalled = true;
+        break;
       }
       prevRemaining = remaining;
 
@@ -136,9 +136,11 @@ async function harvestLoop(ns: NS): Promise<void> {
     // when a new cache or a fresh RAM block appears. If a cache is still
     // sitting there but nothing opened this pass (a persistently failing
     // file), stop anyway instead of hammering the report port forever -- the
-    // agent's next tick will try again.
+    // agent's next tick will try again. A charisma-gated stalled block also
+    // exits here, after the cache pass above, rather than looping back into a
+    // reallocation round that would only stall again.
     const stillCached = ns.ls(self, ".cache").length > 0;
-    if (ns.dnet.getBlockedRam() <= 0 && (!stillCached || !openedAny)) return;
+    if (blockStalled || (ns.dnet.getBlockedRam() <= 0 && (!stillCached || !openedAny))) return;
   }
 }
 

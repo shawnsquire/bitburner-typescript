@@ -130,7 +130,7 @@ attempt.
 | `BigMo%od` | no | `password % n` for 11 chosen moduli, solved by CRT. |
 | `PHP 5.4` | no | Sorted-digit hint; permutation search with swap hill-climbing on RMS deviation. |
 | `KingOfTheHill` | no | Coarse scan then golden-section search on the reported hill. |
-| `2G_cellular` | no | Confirmed-prefix length from the mismatch-index message, or from `elapsedMs` when heartbleed is off — one of two feedback solvers that also work blind. |
+| `2G_cellular` | no | Confirmed-prefix length from the mismatch-index message (heartbleed on). With heartbleed off it falls back to **relative** response-time timing — the correct next character runs ~50ms slower than the others at each position — since the response-time base is charisma/intelligence-dependent, not a fixed value. Timing carries in-game scheduling jitter the harness does not model, so the blind fallback is best-effort; prefer heartbleed. |
 | `OpenWebAccessPoint` | no | Regex match on captured traffic, or longest common substring across captures at higher difficulty. |
 
 `tools/test-darknet.mjs` loads the game's own `ServerGenerator.ts`,
@@ -169,8 +169,9 @@ decisions, and one section per subsystem).
   of the BitNode. Set `heartbleed=false` in `/config/darknet.txt` before
   starting the daemon in a BN15 run if the achievement matters — every
   non-blind solver then gives up instead (`2G_cellular` and
-  `AccountsManager_4.2` are the two exceptions; they still solve blind, from
-  timing and from a counting-up fallback respectively).
+  `AccountsManager_4.2` are the two exceptions with a blind fallback:
+  `AccountsManager_4.2` counts up from 0, and `2G_cellular` uses relative
+  response-time timing — best-effort in-game, see its solver-table row).
 - **The per-neighbour `maxAttempts` cap (default 120) can be too low for the
   hardest feedback-based servers, and the agent does not persist solver state
   across ticks.** `driveSolver` (`workers/dnet-agent.ts`) keeps its solver
@@ -207,6 +208,24 @@ decisions, and one section per subsystem).
   once `policy.workers[self].storm` is set and latches success for the
   process lifetime; the coordinator only ever decides *when* to arm that flag
   in the policy, it never calls the dnet function itself.
+- **A fully RAM-blocked host cannot host an agent, so it is not colonized
+  until its owner's processes free some RAM.** The game blocks up to a host's
+  entire `maxRam` (`getRamBlock`, `ramblock.ts`), and blocked RAM counts as
+  used, so `replicate` (`workers/dnet-agent.ts`) finds `< 6.25 GB` free and
+  cannot `exec` an agent there. Freeing the block needs `memoryReallocation`
+  run from the adjacent agent, which would push that agent over its 6.25 GB
+  pin, so it is not done. The cracking agent still holds a session on the
+  blocked host (from `authenticate`), so the vault keeps its password; once the
+  owner's processes release RAM the next replication attempt colonizes it.
+  Largest hosts (and their biggest caches) can therefore sit idle for a while.
+- **A charisma-gated RAM block causes brief harvest churn.** When charisma is
+  too low for a host's difficulty, `memoryReallocation` frees ~0 GB/round;
+  `dnet-harvest.ts` detects the stall, opens any cache files (which do not need
+  the block cleared), reports the remaining block and exits. Because the
+  coordinator's harvest gate still sees `blockedRam > 0`, it relaunches harvest
+  next tick, which stalls and exits again — a low-cost cycle that continues
+  until charisma rises enough to make progress. The reward/data caches are
+  collected regardless; only the block clearing waits on charisma.
 - **Deferred** (see the design doc's Decisions section, still true of the
   shipped code): terminal backdoors (stasis anchors already give remote
   seeding, and the instability tax from more backdoored hosts is steep);

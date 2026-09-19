@@ -232,10 +232,23 @@ function readControlCommands(ns: NS, model: DarknetModel): boolean {
 function reseed(ns: NS, model: DarknetModel, lastSeedAttempt: Record<string, number>, config: DarknetConfig, forceReseed: boolean, now: number): void {
   const throttleMs = config.agentIntervalMs * RESEED_THROTTLE_MULT;
   const targets = new Set<string>(["darkweb", ...model.stasisHosts]);
+  // A cleared labyrinth (design section 7) is now an admin host with a known
+  // vault password and an unopened `the_great_work` reward cache. Seed an agent
+  // onto it -- via the same connectToSession + scp + exec path as a stasis host
+  // -- so `computePolicy` runs a harvest worker there to `openCache` the reward
+  // and queue the augmentation. Without this the reward is stranded forever.
+  if (model.lab?.cleared && model.lab.name && model.vault.entries[model.lab.name]) {
+    targets.add(model.lab.name);
+  }
 
   for (const host of targets) {
     const cell = model.cells[host];
-    const alive = cell?.state === "agent" || cell?.state === "anchor";
+    // Liveness is read off `agentPid` -- which `applyReport` sets from an
+    // *agent* batch and `refreshFromDetails` zeroes once the agent times out --
+    // not off `cell.state`: a stasis host stays `anchor` and a cleared lab
+    // stays `admin` whether or not their agent is still alive, so the state
+    // alone can't distinguish a live resident from one whose agent has died.
+    const alive = !!cell && cell.agentPid !== 0 && cell.state !== "offline";
     if (alive && !forceReseed) continue;
 
     const attemptedAt = lastSeedAttempt[host] ?? 0;

@@ -271,6 +271,13 @@ function buildRound(modelId, builder, difficulty) {
 function runRound(solver, server, details, cap, noHeartbleed) {
   let feedback = null;
   let attempts = 0;
+  // The game's TimingAttack response time is base + 50ms per already-correct
+  // character, where the base depends on the player's charisma/intelligence
+  // (`getResponseTime`, effects.ts) -- NOT a fixed 1000ms. Vary it per round so
+  // the 2G solver's no-heartbleed timing path is forced to be base-independent
+  // (it may only use the *relative* difference between candidates); the 50ms
+  // step is real and preserved.
+  const timingBase = 400 + Math.floor(Math.random() * 3200);
   try {
     let state = solver.start(details);
     for (;;) {
@@ -282,7 +289,7 @@ function runRound(solver, server, details, cap, noHeartbleed) {
       if (attempts > cap) {
         return { ok: false, attempts, reason: "cap" };
       }
-      const responseTime = 1000 + getSharedChars(server.password, step.attempt) * 50;
+      const responseTime = timingBase + getSharedChars(server.password, step.attempt) * 50;
       const response = checkPassword(server, step.attempt, 1, responseTime);
       if (response.code === 200) {
         return { ok: true, attempts, reason: null };

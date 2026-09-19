@@ -232,16 +232,19 @@ describe("cellular-2g (2G_cellular)", () => {
     expect(attempt).toBe(password);
   });
 
-  it("builds a password from scripted elapsedMs alone (no usable message)", () => {
+  it("builds a password from relative elapsedMs alone, independent of the base (no usable message)", () => {
     const password = "70951";
     const d = details({ passwordLength: password.length, passwordFormat: "numeric" });
+    // Base of 2500ms, NOT 1000: in-game the response-time base depends on
+    // charisma/intelligence, so the solver may only use the +50ms-per-correct
+    // -character difference between candidates, never an absolute formula.
     const { attempt } = runToSuccess(
       cellular2g,
       d,
       password,
       (pw, a) => ({
         message: "Unauthorized",
-        elapsedMs: 1000 + sharedCharsLength(pw, a) * 50,
+        elapsedMs: 2500 + sharedCharsLength(pw, a) * 50,
       }),
       1000,
     );

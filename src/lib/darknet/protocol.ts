@@ -117,6 +117,14 @@ export interface ReportBatch {
   depth: number;
   at: number;
   events: ReportEvent[];
+  /**
+   * True only for a batch sent by the agent process itself; the local workers
+   * (harvest/phish/stasis/lab/charge) leave it unset. The coordinator uses it
+   * to track *agent* liveness specifically: a host whose agent has died but
+   * whose phish worker is still looping must not look alive, or its dead agent
+   * is never re-seeded and its neighbours are never cracked.
+   */
+  agent?: boolean;
 }
 
 /** Cap on events an agent keeps buffered across failed batch writes before dropping the oldest. */

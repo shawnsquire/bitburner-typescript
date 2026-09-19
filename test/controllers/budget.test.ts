@@ -8,6 +8,12 @@ import {
   computeAllowances,
   handleCompletion,
   isBucketCapReached,
+  WSE_TIX_API_COST,
+  WSE_4S_TIX_API_COST,
+  WSE_ACCESS_BUCKET,
+  DEFAULT_WSE_CARVEOUT_MULT,
+  nextWseApiCost,
+  computeCarveout,
 } from "/controllers/budget";
 
 describe("createDefaultPersistedState", () => {
@@ -165,5 +171,110 @@ describe("isBucketCapReached", () => {
     expect(isBucketCapReached(999, 1000)).toBe(false);
     expect(isBucketCapReached(1000, 1000)).toBe(true);
     expect(isBucketCapReached(1001, 1000)).toBe(true);
+  });
+});
+
+describe("nextWseApiCost", () => {
+  it("wants the 5b TIX API first", () => {
+    expect(nextWseApiCost(false, false)).toBe(WSE_TIX_API_COST);
+    expect(WSE_TIX_API_COST).toBe(5_000_000_000);
+  });
+
+  it("wants the 25b 4S TIX API once the TIX API is owned", () => {
+    expect(nextWseApiCost(true, false)).toBe(WSE_4S_TIX_API_COST);
+    expect(WSE_4S_TIX_API_COST).toBe(25_000_000_000);
+  });
+
+  it("wants nothing once both are owned", () => {
+    expect(nextWseApiCost(true, true)).toBe(0);
+  });
+});
+
+describe("computeCarveout", () => {
+  const cost = WSE_TIX_API_COST;
+
+  it("grants nothing below the threshold", () => {
+    expect(computeCarveout(cost * DEFAULT_WSE_CARVEOUT_MULT - 1, cost)).toBe(0);
+    expect(computeCarveout(cost, cost)).toBe(0);
+    expect(computeCarveout(0, cost)).toBe(0);
+  });
+
+  it("grants the full price exactly at the threshold and above it", () => {
+    expect(computeCarveout(cost * DEFAULT_WSE_CARVEOUT_MULT, cost)).toBe(cost);
+    expect(computeCarveout(cost * 100, cost)).toBe(cost);
+  });
+
+  it("honours a custom multiplier", () => {
+    expect(computeCarveout(cost * 3 - 1, cost, 3)).toBe(0);
+    expect(computeCarveout(cost * 3, cost, 3)).toBe(cost);
+    expect(computeCarveout(cost, cost, 1)).toBe(cost);
+  });
+
+  it("grants nothing when nothing is pending or the multiplier is invalid", () => {
+    expect(computeCarveout(1e12, 0)).toBe(0);
+    expect(computeCarveout(1e12, cost, 0)).toBe(0);
+    expect(computeCarveout(1e12, cost, NaN)).toBe(0);
+  });
+});
+
+describe("computeAllowances with the wse-access carve-out", () => {
+  const weights = { ...DEFAULT_WEIGHTS };
+  const activeFlags = Object.fromEntries(Object.keys(weights).map(b => [b, true]));
+  const holdings = { portfolioValue: 0, corpFunds: 0 };
+  const cost = WSE_TIX_API_COST;
+  const cash = cost * DEFAULT_WSE_CARVEOUT_MULT; // 10b: at the default threshold
+
+  function allowancesFor(c: number, flags = activeFlags, rush: string | null = null, w = weights) {
+    const carveouts = { [WSE_ACCESS_BUCKET]: computeCarveout(c, cost) };
+    return computeAllowances(c, holdings, w, flags, rush, carveouts);
+  }
+
+  it("below the threshold wse-access keeps its weighted 5% allowance", () => {
+    const result = allowancesFor(cash - 1);
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo((cash - 1) * 0.05, 5);
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBeLessThan(cost);
+  });
+
+  it("at the threshold wse-access is granted the full price regardless of weight", () => {
+    const result = allowancesFor(cash);
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBe(cost);
+    expect(result[WSE_ACCESS_BUCKET].maxAllocation).toBe(cost);
+  });
+
+  it("never lowers an allowance that already exceeds the carve-out", () => {
+    const result = allowancesFor(cost * 100); // 5% of 500b = 25b > 5b
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo(cost * 5, 5);
+  });
+
+  it("does not change any other bucket's allowance", () => {
+    const withCarveout = allowancesFor(cash);
+    const without = computeAllowances(cash, holdings, weights, activeFlags, null);
+    for (const bucket of Object.keys(weights)) {
+      if (bucket === WSE_ACCESS_BUCKET) continue;
+      expect(withCarveout[bucket].allowance).toBe(without[bucket].allowance);
+    }
+  });
+
+  it("post-done (after signalDone) the bucket gets nothing even with plenty of cash", () => {
+    const flags = { ...activeFlags };
+    handleCompletion(WSE_ACCESS_BUCKET, flags);
+    const result = allowancesFor(cost * 100, flags);
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBe(0);
+  });
+
+  it("does not apply while another bucket is rushed", () => {
+    const result = allowancesFor(cost * 100, activeFlags, "hacknet");
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBe(0);
+    expect(result.hacknet.allowance).toBe(cost * 100);
+  });
+
+  it("does not apply to a bucket whose weight is 0 (frozen or released)", () => {
+    const result = allowancesFor(cost * 100, activeFlags, null, { ...weights, [WSE_ACCESS_BUCKET]: 0 });
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBe(0);
+  });
+
+  it("omitting the carveouts argument leaves the original behaviour intact", () => {
+    const result = computeAllowances(cash, holdings, weights, activeFlags, null);
+    expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo(cash * 0.05, 5);
   });
 });

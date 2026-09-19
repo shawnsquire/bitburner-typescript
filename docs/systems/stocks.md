@@ -55,8 +55,13 @@ Publishes `StocksStatus` on `STATUS_PORTS.stocks`. Control port
 `STOCKS_CONTROL_PORT` accepts `reload-config` and `reset-pnl`. Consumes
 `STATUS_PORTS.hack` for smart mode. Budget buckets: `stocks` for capital
 (a holder bucket, measured against net worth) and `wse-access` for buying the
-TIX API (5b) and 4S data (25b). The default `wse-access` weight of 5 percent of
-cash means those purchases wait for 100b and 500b cash respectively.
+TIX API (5b) and 4S data (25b). The budget daemon carves out the full price of
+the next API once cash reaches `wseCarveoutMult` times it (default 2, in
+`/config/budget.txt`), so the TIX API is bought at 10b cash and 4S at 50b
+instead of the 100b and 500b the bucket's 5 percent weight alone would allow.
+The daemon reads `hasTIX` and `has4S` from this daemon's status port to know
+which price is pending; see `docs/systems/budget.md`. The 4S TIX price is the
+base 25b and ignores the BitNode multiplier on it.
 
 ## Dashboard
 

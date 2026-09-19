@@ -27,6 +27,10 @@ import {
   computeAllowances,
   handleCompletion,
   HoldingsInfo,
+  WSE_ACCESS_BUCKET,
+  DEFAULT_WSE_CARVEOUT_MULT,
+  nextWseApiCost,
+  computeCarveout,
 } from "/controllers/budget";
 
 const C = COLORS;
@@ -210,14 +214,17 @@ function checkDoneMarkers(ns: NS): void {
 
 // === HOLDINGS READERS ===
 
-function readHoldings(ns: NS): HoldingsInfo {
+/** Holdings plus the price of the next stock API the stocks daemon wants (0 = owns both or unknown). */
+function readHoldings(ns: NS): HoldingsInfo & { pendingWseCost: number } {
   let portfolioValue = 0;
   let corpFunds = 0;
+  let pendingWseCost = 0;
 
-  // Read stocks portfolio value from status port
+  // Read stocks portfolio value and API ownership from status port
   const stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, 30_000);
   if (stocksStatus) {
     portfolioValue = stocksStatus.portfolioValue;
+    pendingWseCost = nextWseApiCost(stocksStatus.hasTIX, stocksStatus.has4S);
   }
 
   // Read corp funds from status port
@@ -226,7 +233,7 @@ function readHoldings(ns: NS): HoldingsInfo {
     corpFunds = corpStatus.funds;
   }
 
-  return { portfolioValue, corpFunds };
+  return { portfolioValue, corpFunds, pendingWseCost };
 }
 
 // === DAEMON LOOP ===
@@ -236,6 +243,7 @@ async function daemon(ns: NS): Promise<void> {
 
   writeDefaultConfig(ns, "budget", {
     interval: "2000",
+    wseCarveoutMult: String(DEFAULT_WSE_CARVEOUT_MULT),
   });
 
   const interval = getConfigNumber(ns, "budget", "interval", 2000);
@@ -299,9 +307,14 @@ async function daemon(ns: NS): Promise<void> {
     // 4. Read holdings from other daemon status ports
     const holdings = readHoldings(ns);
 
-    // 5. Compute allowances
+    // 5. Compute allowances. The wse-access carve-out grants the full price of the next
+    //    stock API once cash covers wseCarveoutMult times that price (see docs/systems/budget.md).
+    const wseCarveoutMult = getConfigNumber(ns, "budget", "wseCarveoutMult", DEFAULT_WSE_CARVEOUT_MULT);
+    const carveouts = {
+      [WSE_ACCESS_BUCKET]: computeCarveout(currentCash, holdings.pendingWseCost, wseCarveoutMult),
+    };
     const allowances = computeAllowances(
-      currentCash, holdings, state.weights, state.activeFlags, state.rushBucket,
+      currentCash, holdings, state.weights, state.activeFlags, state.rushBucket, carveouts,
     );
 
     // 6. If rush bucket is no longer active, cancel rush

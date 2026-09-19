@@ -30,6 +30,38 @@ export const DEFAULT_WEIGHTS: Record<string, number> = {
   "wse-access": 5,
 };
 
+// === WSE ACCESS CARVE-OUT ===
+
+/** Game constants (StockMarketConstants in the game source); base prices before BitNode multipliers. */
+export const WSE_TIX_API_COST = 5_000_000_000;
+export const WSE_4S_TIX_API_COST = 25_000_000_000;
+
+/** Bucket the stocks daemon charges API purchases to. */
+export const WSE_ACCESS_BUCKET = "wse-access";
+
+/** Cash must be at least this many times the pending API price before the carve-out applies. */
+export const DEFAULT_WSE_CARVEOUT_MULT = 2;
+
+/**
+ * Price of the next stock API the stocks daemon will try to buy, or 0 when it owns both.
+ * Order mirrors daemons/stocks.ts: TIX API first, then the 4S Market Data TIX API.
+ */
+export function nextWseApiCost(hasTIX: boolean, has4S: boolean): number {
+  if (!hasTIX) return WSE_TIX_API_COST;
+  if (!has4S) return WSE_4S_TIX_API_COST;
+  return 0;
+}
+
+/**
+ * One-off carve-out: when cash covers `mult` times the pending price, grant the full price
+ * for this cycle regardless of the bucket's weight. Returns 0 when nothing is pending or
+ * cash is below the threshold. Pure; the caller feeds the result into computeAllowances.
+ */
+export function computeCarveout(cash: number, pendingCost: number, mult: number = DEFAULT_WSE_CARVEOUT_MULT): number {
+  if (!(pendingCost > 0) || !(mult > 0)) return 0;
+  return cash >= pendingCost * mult ? pendingCost : 0;
+}
+
 // === PERSISTED STATE ===
 
 export interface PersistedBudgetState {
@@ -124,6 +156,11 @@ export interface HoldingsInfo {
  *
  * Holders: allowance = max(0, netWorth * weight% - currentHoldingValue)
  * Spenders: allowance = cash * weight%
+ *
+ * `carveouts` (bucket -> amount) lifts a bucket's allowance up to that amount for this
+ * cycle. It only applies while the bucket's effective weight is above zero, so a bucket
+ * that is done, frozen, set to 0, or sidelined by another bucket's rush gets nothing.
+ * Weights are independent caps on cash, so a carve-out never reduces another bucket.
  */
 export function computeAllowances(
   cash: number,
@@ -131,6 +168,7 @@ export function computeAllowances(
   weights: Record<string, number>,
   activeFlags: Record<string, boolean>,
   rushBucket: string | null,
+  carveouts: Record<string, number> = {},
 ): Record<string, AllowanceResult> {
   const netWorth = cash + holdings.portfolioValue + holdings.corpFunds;
   const effectiveWeights = computeEffectiveWeights(weights, activeFlags, rushBucket);
@@ -155,6 +193,12 @@ export function computeAllowances(
       // Spenders: percentage of cash
       maxAllocation = cash * ew;
       allowance = maxAllocation;
+    }
+
+    const carveout = carveouts[bucket] ?? 0;
+    if (ew > 0 && carveout > 0) {
+      allowance = Math.max(allowance, carveout);
+      maxAllocation = Math.max(maxAllocation, carveout);
     }
 
     results[bucket] = { allowance, maxAllocation, currentHolding, isHolder };

@@ -52,7 +52,13 @@ async function harvestLoop(ns: NS): Promise<void> {
       const res = await ns.dnet.memoryReallocation();
       const remaining = ns.dnet.getBlockedRam();
 
-      if (res.code === CODE.NoBlockRAM || remaining <= 0) {
+      // NoBlockRAM is a trustworthy terminal state on its own. Check the
+      // call's success BEFORE trusting `remaining`, because getBlockedRam()
+      // returns 0 as a failure sentinel when the host has vanished
+      // (ServiceUnavailable) -- reading that 0 as "block cleared" would send a
+      // false `ramfreed` and swallow the intended `error`. Only trust
+      // `remaining <= 0` once we know the reallocation call actually succeeded.
+      if (res.code === CODE.NoBlockRAM) {
         sendReport(ns, self, [{ t: "ramfreed", host: self, remaining }]);
         break;
       }
@@ -62,6 +68,11 @@ async function harvestLoop(ns: NS): Promise<void> {
           { t: "error", host: self, op: "memoryReallocation", code: res.code, message: res.message },
         ]);
         return;
+      }
+
+      if (remaining <= 0) {
+        sendReport(ns, self, [{ t: "ramfreed", host: self, remaining }]);
+        break;
       }
 
       if (remaining >= prevRemaining) {

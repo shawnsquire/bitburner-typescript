@@ -17,7 +17,7 @@ import { getPservStatus, PservConfig, PservCallbacks, runPservCycle } from "/con
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, PservStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool } from "/lib/config";
-import { getBudgetBalance, notifyPurchase, reportCap, reactivateBucket, setBudgetWeight, signalDone } from "/lib/budget";
+import { getBudgetBalance, notifyPurchase, reportCap, reportNext, reactivateBucket, setBudgetWeight, signalDone } from "/lib/budget";
 import { DEFAULT_WEIGHTS } from "/controllers/budget";
 
 /**
@@ -254,7 +254,15 @@ export async function main(ns: NS): Promise<void> {
     // Run the purchase/upgrade cycle (or skip if monitor-only)
     const result = config.autoBuy
       ? await runPservCycle(ns, config, callbacks)
-      : { bought: 0, upgraded: 0, waitingFor: null };
+      : { bought: 0, upgraded: 0, waitingFor: null, waitingCost: null, waitingLabel: null };
+
+    // The purchase the cycle is waiting for becomes the budget daemon's savings goal.
+    reportNext(
+      ns,
+      "servers",
+      config.autoBuy && result.waitingCost !== null ? result.waitingCost : 0,
+      result.waitingLabel ?? "",
+    );
 
     // Compute formatted status for the dashboard
     const pservStatus = computePservStatus(ns, config.reserve, config.autoBuy, config.maxRam);

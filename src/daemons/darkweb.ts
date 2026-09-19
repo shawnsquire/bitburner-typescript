@@ -14,11 +14,11 @@
  */
 import { NS } from "@ns";
 import { COLORS } from "/lib/utils";
-import { analyzeDarkwebPrograms, getDarkwebStatus, purchaseTorRouter, formatMoney } from "/controllers/darkweb";
+import { analyzeDarkwebPrograms, getDarkwebStatus, purchaseTorRouter, formatMoney, TOR_ROUTER_COST } from "/controllers/darkweb";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, DarkwebStatus } from "/types/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
-import { canAfford, notifyPurchase, reportCap, signalDone } from "/lib/budget";
+import { canAfford, notifyPurchase, reportCap, reportNext, signalDone } from "/lib/budget";
 
 /**
  * Build a DarkwebStatus object with formatted values for the dashboard.
@@ -82,7 +82,7 @@ function printStatus(ns: NS, status: DarkwebStatus, purchasedThisCycle: string[]
 
   if (!status.hasTorRouter) {
     ns.print(`${C.yellow}TOR Router not owned${C.reset}`);
-    ns.print(`${C.dim}Cost: ${formatMoney(200000)}${C.reset}`);
+    ns.print(`${C.dim}Cost: ${formatMoney(TOR_ROUTER_COST)}${C.reset}`);
     return;
   }
 
@@ -185,7 +185,7 @@ export async function main(ns: NS): Promise<void> {
     if (!hasTor) {
       const bought = purchaseTorRouter(ns, budgetCheck);
       if (bought) {
-        notifyPurchase(ns, "programs", 200_000, "TOR Router");
+        notifyPurchase(ns, "programs", TOR_ROUTER_COST, "TOR Router");
         ns.tprint(`${COLORS.green}Purchased TOR Router!${COLORS.reset}`);
         hasTor = true;
       }
@@ -208,13 +208,21 @@ export async function main(ns: NS): Promise<void> {
       }
     }
 
-    // Report remaining cost cap to budget daemon
+    // Report the remaining cost cap and the next purchase (the savings goal) to the
+    // budget daemon. Before TOR the next purchase is the router itself.
+    const status = getDarkwebStatus(ns);
     if (hasTor) {
-      const status = getDarkwebStatus(ns);
       const remainingCost = status.cannotAfford.reduce((sum, p) => sum + p.cost, 0);
       if (remainingCost > 0) {
         reportCap(ns, "programs", remainingCost);
       }
+    }
+    if (!hasTor) {
+      reportNext(ns, "programs", TOR_ROUTER_COST, "TOR Router");
+    } else if (status.nextProgram) {
+      reportNext(ns, "programs", status.nextProgram.cost, status.nextProgram.name);
+    } else {
+      reportNext(ns, "programs", 0, "");
     }
 
     // Compute formatted status for the dashboard

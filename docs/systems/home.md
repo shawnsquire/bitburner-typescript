@@ -32,5 +32,6 @@ Exits once RAM and cores are both at their maximum. The BitNode option
 ## Ports and dashboard
 
 Publishes `HomeStatus` on `STATUS_PORTS.home`. Reports remaining upgrade cost
-to the budget daemon as the bucket cap. Dashboard: Servers group, Home tab,
+to the budget daemon as the bucket cap, and the next upgrade (RAM before cores)
+as the bucket's savings goal with `reportNext` while `autoBuy` is on. Dashboard: Servers group, Home tab,
 with an auto-buy toggle.

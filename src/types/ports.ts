@@ -680,7 +680,17 @@ export interface BitnodeStatus {
   moneyComplete: boolean;
   /** True when either the hacking or the all-combat-skills requirement is met. */
   hackingComplete: boolean;
+  /** Daedalus invite requirements (augs, money, skill) all met. Not the w0r1d_d43m0n requirement. */
   allComplete: boolean;
+  /**
+   * Hacking level needed to hack w0r1d_d43m0n: the server's own value once it is
+   * reachable (after The Red Pill), otherwise 3000 x the BitNode's WorldDaemonDifficulty.
+   */
+  worldDaemonRequired: number;
+  /** True when hacking >= worldDaemonRequired. Hacking only; combat skills cannot hack a server. */
+  worldDaemonComplete: boolean;
+  /** True when worldDaemonRequired was read from the server, false when estimated from the BitNode table. */
+  worldDaemonRequiredLive?: boolean;
 }
 
 // === FACTION MANAGER STATUS ===

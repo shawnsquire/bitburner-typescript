@@ -79,6 +79,9 @@ function bitnodeStatus(overrides: Partial<BitnodeStatus>): BitnodeStatus {
     moneyComplete: false,
     hackingComplete: false,
     allComplete: false,
+    // w0r1d_d43m0n needs 3000 x WorldDaemonDifficulty (6000 in BN9); default to "not yet".
+    worldDaemonRequired: 6000,
+    worldDaemonComplete: false,
     ...overrides,
   };
 }
@@ -196,7 +199,7 @@ describe("ruleBitnodeExit", () => {
 
   it("recommends destroying the bitnode once Daedalus rep is sufficient", () => {
     const ctx = emptyContext();
-    ctx.bitnode = bitnodeStatus({ allComplete: true });
+    ctx.bitnode = bitnodeStatus({ allComplete: true, worldDaemonComplete: true });
     ctx.faction = joinedDaedalusFaction();
     ctx.rep = repStatus({ targetFaction: "Daedalus", repGapPositive: false });
     expect(ruleBitnodeExit(ctx)?.id).toBe("bitnode-exit");
@@ -204,7 +207,7 @@ describe("ruleBitnodeExit", () => {
 
   it("waits while the rep daemon still shows a Daedalus rep gap", () => {
     const ctx = emptyContext();
-    ctx.bitnode = bitnodeStatus({ allComplete: true });
+    ctx.bitnode = bitnodeStatus({ allComplete: true, worldDaemonComplete: true });
     ctx.faction = joinedDaedalusFaction();
     ctx.rep = repStatus({ targetFaction: "Daedalus", repGapPositive: true });
     expect(ruleBitnodeExit(ctx)).toBeNull();
@@ -212,7 +215,7 @@ describe("ruleBitnodeExit", () => {
 
   it("treats the rep daemon having moved off Daedalus as TRP already purchased", () => {
     const ctx = emptyContext();
-    ctx.bitnode = bitnodeStatus({ allComplete: true });
+    ctx.bitnode = bitnodeStatus({ allComplete: true, worldDaemonComplete: true });
     ctx.faction = joinedDaedalusFaction();
     ctx.rep = repStatus({ targetFaction: "SomeOtherFaction", repGapPositive: true });
     expect(ruleBitnodeExit(ctx)?.id).toBe("bitnode-exit");
@@ -220,7 +223,7 @@ describe("ruleBitnodeExit", () => {
 
   it("defaults to 'not enough rep' when the rep daemon hasn't reported yet", () => {
     const ctx = emptyContext();
-    ctx.bitnode = bitnodeStatus({ allComplete: true });
+    ctx.bitnode = bitnodeStatus({ allComplete: true, worldDaemonComplete: true });
     ctx.faction = joinedDaedalusFaction();
     ctx.rep = repStatus({ targetFaction: "Daedalus" }); // repGapPositive left undefined
     expect(ruleBitnodeExit(ctx)).toBeNull();
@@ -228,8 +231,51 @@ describe("ruleBitnodeExit", () => {
 
   it("does not fire before all bitnode requirements are complete", () => {
     const ctx = emptyContext();
-    ctx.bitnode = bitnodeStatus({ allComplete: false });
+    ctx.bitnode = bitnodeStatus({ allComplete: false, worldDaemonComplete: true });
     ctx.faction = joinedDaedalusFaction();
+    expect(ruleBitnodeExit(ctx)).toBeNull();
+  });
+
+  // The Daedalus invite (hacking 2500) is not the w0r1d_d43m0n requirement
+  // (3000 x WorldDaemonDifficulty, 6000 in BN9); the rule must wait for the latter.
+  it("does not fire while hacking is below the w0r1d_d43m0n requirement even with Daedalus done", () => {
+    const ctx = emptyContext();
+    ctx.bitnode = bitnodeStatus({
+      allComplete: true,
+      hacking: 3100,
+      hackingComplete: true,
+      worldDaemonRequired: 6000,
+      worldDaemonComplete: false,
+    });
+    ctx.faction = joinedDaedalusFaction();
+    ctx.rep = repStatus({ targetFaction: "Daedalus", repGapPositive: false });
+    expect(ruleBitnodeExit(ctx)).toBeNull();
+  });
+
+  it("fires once hacking reaches the w0r1d_d43m0n requirement and names the level", () => {
+    const ctx = emptyContext();
+    ctx.bitnode = bitnodeStatus({
+      allComplete: true,
+      hacking: 6000,
+      hackingComplete: true,
+      worldDaemonRequired: 6000,
+      worldDaemonComplete: true,
+    });
+    ctx.faction = joinedDaedalusFaction();
+    ctx.rep = repStatus({ targetFaction: "Daedalus", repGapPositive: false });
+    const rec = ruleBitnodeExit(ctx);
+    expect(rec?.id).toBe("bitnode-exit");
+    expect(rec?.reason).toContain("6000");
+  });
+
+  it("stays quiet when an older rep daemon publishes no worldDaemonComplete field", () => {
+    const ctx = emptyContext();
+    const legacy = bitnodeStatus({ allComplete: true }) as Partial<BitnodeStatus>;
+    delete legacy.worldDaemonComplete;
+    delete legacy.worldDaemonRequired;
+    ctx.bitnode = legacy as BitnodeStatus;
+    ctx.faction = joinedDaedalusFaction();
+    ctx.rep = repStatus({ targetFaction: "Daedalus", repGapPositive: false });
     expect(ruleBitnodeExit(ctx)).toBeNull();
   });
 });

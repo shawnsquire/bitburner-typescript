@@ -57,6 +57,7 @@ const BASE_FUNCTIONS = [
   "fileExists",
   "kill", // via lib/ram-utils freeRamForTarget, called unconditionally when RAM is short
   "spawn", // self-respawn on tier upgrade, runs regardless of current tier
+  "getServerRequiredHackingLevel", // w0r1d_d43m0n requirement in computeBitnodeStatus (every tier)
 ];
 
 const REP_TIERS: RepTierConfig[] = [
@@ -181,6 +182,36 @@ const BITNODE_REQUIREMENTS = {
   combat: 1500,
 };
 
+// w0r1d_d43m0n itself needs more than the invite: its requiredHackingSkill is 3000
+// (game: src/Server/data/servers.ts) times the BitNode's WorldDaemonDifficulty
+// (src/Server/ServerHelpers.ts, applied at server creation). The server is only
+// linked into the network once The Red Pill is installed (src/Prestige.ts), and
+// ns.getServerRequiredHackingLevel throws "Invalid host" for an unlinked server, so
+// before then the value is estimated from this table (src/BitNode/BitNode.tsx,
+// getBitNodeMultipliers). BN1 and BN8 keep the default of 1; BN12 is 1.02^lvl where
+// lvl is the Source-File 12 level plus one.
+const WORLD_DAEMON_HOST = "w0r1d_d43m0n";
+const WORLD_DAEMON_BASE_HACKING = 3000;
+const WORLD_DAEMON_DIFFICULTY: Record<number, number> = {
+  1: 1, 2: 5, 3: 2, 4: 3, 5: 1.5, 6: 2, 7: 2, 8: 1, 9: 2, 10: 2, 11: 1.5, 13: 3, 14: 5, 15: 2,
+};
+
+/** Required hacking for w0r1d_d43m0n: live from the server when reachable, else estimated. */
+function getWorldDaemonRequired(ns: NS): { required: number; live: boolean } {
+  try {
+    const live = ns.getServerRequiredHackingLevel(WORLD_DAEMON_HOST);
+    if (Number.isFinite(live) && live > 0) return { required: live, live: true };
+  } catch {
+    // Not reachable yet (no Red Pill installed); fall through to the estimate.
+  }
+  const info = ns.getResetInfo();
+  const node = info.currentNode;
+  const difficulty = node === 12
+    ? Math.pow(1.02, (info.ownedSF.get(12) ?? 0) + 1)
+    : (WORLD_DAEMON_DIFFICULTY[node] ?? 1);
+  return { required: WORLD_DAEMON_BASE_HACKING * difficulty, live: false };
+}
+
 // === FACTION BACKDOOR SERVERS ===
 
 const FACTION_BACKDOOR_SERVERS: Record<string, string> = {
@@ -275,6 +306,7 @@ function computeBitnodeStatus(ns: NS, installedAugsCount?: number): BitnodeStatu
   // Skill requirement is hacking OR all combat skills; hackingComplete reports the combined result.
   const hackingComplete =
     player.skills.hacking >= BITNODE_REQUIREMENTS.hacking || combatMin >= BITNODE_REQUIREMENTS.combat;
+  const worldDaemon = getWorldDaemonRequired(ns);
 
   return {
     augmentations: installedAugs,
@@ -291,6 +323,9 @@ function computeBitnodeStatus(ns: NS, installedAugsCount?: number): BitnodeStatu
     moneyComplete,
     hackingComplete,
     allComplete: augsComplete && moneyComplete && hackingComplete,
+    worldDaemonRequired: worldDaemon.required,
+    worldDaemonComplete: player.skills.hacking >= worldDaemon.required,
+    worldDaemonRequiredLive: worldDaemon.live,
   };
 }
 
@@ -693,7 +728,8 @@ function printHighTierStatus(
     `${C.cyan}BITNODE${C.reset}  ` +
       `${bitnodeStatus.augsComplete ? C.green : C.dim}Augs:${bitnodeStatus.augmentations}/${bitnodeStatus.augmentationsRequired}${C.reset}  ` +
       `${bitnodeStatus.moneyComplete ? C.green : C.dim}$:${bitnodeStatus.moneyFormatted}/${bitnodeStatus.moneyRequiredFormatted}${C.reset}  ` +
-      `${bitnodeStatus.hackingComplete ? C.green : C.dim}Hack:${bitnodeStatus.hacking}/${bitnodeStatus.hackingRequired}${C.reset}` +
+      `${bitnodeStatus.hackingComplete ? C.green : C.dim}Hack:${bitnodeStatus.hacking}/${bitnodeStatus.hackingRequired}${C.reset}  ` +
+      `${bitnodeStatus.worldDaemonComplete ? C.green : C.dim}WD:${bitnodeStatus.hacking}/${Math.ceil(bitnodeStatus.worldDaemonRequired)}${bitnodeStatus.worldDaemonRequiredLive ? "" : "?"}${C.reset}` +
       (bitnodeStatus.allComplete ? `  ${C.green}READY${C.reset}` : "")
   );
 }

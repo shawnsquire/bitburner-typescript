@@ -1,7 +1,9 @@
 /**
  * Bitnode Completion Status Component
  *
- * Displays fl1ght.exe requirements: augmentations, money, and hacking skill.
+ * Displays fl1ght.exe requirements (augmentations, money, hacking skill) and the
+ * w0r1d_d43m0n hacking requirement (3000 x the BitNode's WorldDaemonDifficulty;
+ * a trailing "?" marks an estimate made before the server is reachable).
  * Status data is computed and published by daemons/rep.ts (computeBitnodeStatus)
  * to STATUS_PORTS.bitnode; this component only renders it.
  */
@@ -60,6 +62,13 @@ export function BitnodeStatusBar({ status }: BitnodeStatusBarProps): React.React
         <span style={checkStyle(status.hackingComplete)}>{status.hackingComplete ? "[x]" : "[ ]"}</span>
         <span style={{ color: "#888" }}>Hack:</span>
         <span style={valueStyle(status.hackingComplete)}>{status.hacking}/{status.hackingRequired}</span>
+      </span>
+      <span style={itemStyle}>
+        <span style={checkStyle(status.worldDaemonComplete)}>{status.worldDaemonComplete ? "[x]" : "[ ]"}</span>
+        <span style={{ color: "#888" }}>WD:</span>
+        <span style={valueStyle(status.worldDaemonComplete)}>
+          {status.hacking}/{Math.ceil(status.worldDaemonRequired)}{status.worldDaemonRequiredLive ? "" : "?"}
+        </span>
       </span>
     </div>
   );

@@ -93,14 +93,35 @@ export const BLADEBURNER_CITIES = [
   "Sector-12", "Aevum", "Volhaven", "Chongqing", "New Tokyo", "Ishima",
 ] as const;
 
-/** Skill upgrade priority groups (earlier = higher priority, pick lowest-level within group) */
-// Skills outside this list (Tracer, Datamancer, Cyber's Edge, Hands of Midas) are never
-// auto-bought; use the buySkill config key or the dashboard. Deliberate, see docs/systems/blade.md.
+/**
+ * Skill upgrade priority groups (earlier = higher priority, pick lowest-level within group).
+ * A lower group is only bought when nothing in a higher group is affordable, so SP flows
+ * top-down and later groups get the change. Base cost and per-level cost increase are
+ * from the game's src/Bladeburner/data/Skills.ts; every level costs base + level * inc.
+ *
+ * 1. Blade's Intuition (+3% success, all), Digital Observer (+4% success, ops/BlackOps),
+ *    Overclock (-1% action time, hard cap 90). Success chance and speed are what the
+ *    daemon gates on and what earns rank.
+ * 2. Reaper (+2% all combat stats), Evasive System (+4% dex/agi). Feed success chance and
+ *    stamina for every action type.
+ * 3. Cloak (+5.5% stealth success, inc 1.1), Short-Circuit (+5.5% retirement
+ *    success), Datamancer (+5% estimate accuracy, inc 1.0 is the cheapest of all twelve;
+ *    the daemon thresholds on successMin, so narrowing the estimate spread raises the
+ *    number that gates actions and cuts Field Analysis time), Hands of Midas (+10%
+ *    contract money, inc 2.5; contracts are the daemon's preferred action).
+ * 4. Hyperdrive (+10% exp). Indirect: faster combat stats.
+ * 5. Tracer (+4% contract success, the contract analogue of Digital Observer) and
+ *    Cyber's Edge (+2% max stamina and stamina regen, steepest inc of all twelve at 3.0).
+ *    Both only buy throughput the daemon already gets by gating on chance and resting
+ *    at 50%, so they are last and capped at 25 (about 680 SP total for Tracer, 925 for
+ *    Cyber's Edge) so the alternation never sinks late-game SP into them.
+ */
 const SKILL_PRIORITY: { names: string[]; maxLevel?: number; maxLevels?: Record<string, number> }[] = [
   { names: ["Blade's Intuition", "Digital Observer", "Overclock"], maxLevels: { "Overclock": 90 } },
   { names: ["Reaper", "Evasive System"] },
-  { names: ["Cloak", "Short-Circuit"] },
+  { names: ["Cloak", "Short-Circuit", "Datamancer", "Hands of Midas"] },
   { names: ["Hyperdrive"] },
+  { names: ["Tracer", "Cyber's Edge"], maxLevel: 25 },
 ];
 
 // === DECISION FUNCTIONS ===

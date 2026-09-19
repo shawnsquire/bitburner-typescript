@@ -44,10 +44,23 @@ you earn. There is no control port; the dashboard writes config keys.
 
 ## Skills
 
-Auto-purchase follows a priority list of eight skills: Blade's Intuition,
-Digital Observer, Overclock, Reaper, Evasive System, Cloak, Short-Circuit,
-Hyperdrive. Tracer, Datamancer, Cyber's Edge and Hands of Midas are never
-bought automatically; use `buySkill` or the dashboard's per-skill buttons.
+Auto-purchase covers all twelve skills in five priority groups. A group is
+only bought from when nothing in a higher group is affordable, so skill
+points flow top-down and the lower groups get the change. Within a group the
+lowest-level skill is bought first, which alternates the members. Effects,
+base cost and per-level cost increase come from the game's
+`src/Bladeburner/data/Skills.ts`; each level costs base + level x inc.
+
+| Group | Skills | Why here |
+|---|---|---|
+| 1 | Blade's Intuition, Digital Observer, Overclock (cap 90) | Success chance and action speed are what the daemon gates on and what earns rank. |
+| 2 | Reaper, Evasive System | Combat stats feed success chance and stamina for every action. |
+| 3 | Cloak, Short-Circuit, Datamancer, Hands of Midas | Datamancer narrows the success estimate; the daemon thresholds on the low estimate, so accuracy raises the gating number and cuts Field Analysis time. It also has the cheapest scaling of all twelve (inc 1.0). Hands of Midas is +10% contract money and contracts are the preferred action. |
+| 4 | Hyperdrive | Experience gain is indirect. |
+| 5 | Tracer, Cyber's Edge (both cap 25) | Tracer is +4% contract success, Cyber's Edge +2% max stamina and regen. Both only add throughput the daemon already secures by gating on chance and resting at 50%, and Cyber's Edge has the steepest scaling (inc 3.0). The cap (about 680 SP total for Tracer, 925 for Cyber's Edge at BitNode skill-cost multiplier 1) keeps late-game points from draining into them. |
+
+`buySkill` and the dashboard's per-skill buttons still buy any skill outright,
+cap or not.
 
 ## Ports and dashboard
 

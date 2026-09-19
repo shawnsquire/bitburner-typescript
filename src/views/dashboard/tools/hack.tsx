@@ -289,12 +289,12 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
         optimalThreads: 0, // Not computing optimal anymore since we're showing actual
         threadsSaturated: totalThreads > 0,
         moneyPercent,
-        moneyDisplay: `${ns.formatNumber(moneyAvailable)} / ${ns.formatNumber(moneyMax)}`,
+        moneyDisplay: `${ns.format.number(moneyAvailable)} / ${ns.format.number(moneyMax)}`,
         securityDelta: securityDelta > 0 ? `+${securityDelta.toFixed(1)}` : "0",
         securityClean: securityDelta <= 2,
         eta: formatTimeCondensed(waitTime),
         expectedMoney,
-        expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.formatNumber(expectedMoney)}` : "-",
+        expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.format.number(expectedMoney)}` : "-",
         totalThreads,
         completionEta,
         hackThreads: jobs.hack,
@@ -310,9 +310,9 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
     const saturationPercent = targets.length > 0 ? (activeTargets / targets.length) * 100 : 0;
 
     return {
-      totalRam: ns.formatRam(totalRam),
+      totalRam: ns.format.ram(totalRam),
       serverCount: servers.length,
-      totalThreads: ns.formatNumber(totalThreadsCount),
+      totalThreads: ns.format.number(totalThreadsCount),
       activeTargets,
       totalTargets: targets.length,
       saturationPercent,
@@ -323,7 +323,7 @@ function formatHackStatus(ns: NS): FormattedHackStatus | null {
       weakeningCount,
       targets: formattedTargets,
       totalExpectedMoney,
-      totalExpectedMoneyFormatted: `$${ns.formatNumber(totalExpectedMoney)}`,
+      totalExpectedMoneyFormatted: `$${ns.format.number(totalExpectedMoney)}`,
       needHigherLevel,
     };
   } catch {

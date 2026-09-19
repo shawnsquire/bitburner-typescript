@@ -23,7 +23,7 @@ function formatDarkwebStatus(ns: NS): FormattedDarkwebStatus | null {
           return {
             name,
             cost,
-            costFormatted: ns.formatNumber(cost),
+            costFormatted: ns.format.number(cost),
             owned: ns.fileExists(name, "home"),
           };
         }).sort((a, b) => a.cost - b.cost)
@@ -36,7 +36,7 @@ function formatDarkwebStatus(ns: NS): FormattedDarkwebStatus | null {
       ? {
           name: raw.nextProgram.name,
           cost: raw.nextProgram.cost,
-          costFormatted: ns.formatNumber(raw.nextProgram.cost),
+          costFormatted: ns.format.number(raw.nextProgram.cost),
         }
       : null;
 
@@ -46,7 +46,7 @@ function formatDarkwebStatus(ns: NS): FormattedDarkwebStatus | null {
       totalPrograms: programs.length,
       nextProgram,
       moneyUntilNext: raw.moneyUntilNext,
-      moneyUntilNextFormatted: ns.formatNumber(raw.moneyUntilNext),
+      moneyUntilNextFormatted: ns.format.number(raw.moneyUntilNext),
       canAffordNext: nextProgram ? playerMoney >= nextProgram.cost : false,
       programs,
       allOwned,

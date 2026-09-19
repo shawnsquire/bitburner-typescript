@@ -47,13 +47,13 @@ export function ensureRamAndExec(
   });
 
   if (killed.length > 0) {
-    const summary = killed.map((k) => `${k.filename} (pid ${k.pid}, ${ns.formatRam(k.ram)})`);
+    const summary = killed.map((k) => `${k.filename} (pid ${k.pid}, ${ns.format.ram(k.ram)})`);
     ns.tprint(`INFO: Killed ${killed.length} process(es) to free RAM: ${summary.join(", ")}`);
   }
 
   if (!sufficient) {
     available = ns.getServerMaxRam(host) - ns.getServerUsedRam(host);
-    ns.tprint(`ERROR: Could not free enough RAM for ${scriptPath} (need ${ns.formatRam(requiredRam)}, have ${ns.formatRam(available)})`);
+    ns.tprint(`ERROR: Could not free enough RAM for ${scriptPath} (need ${ns.format.ram(requiredRam)}, have ${ns.format.ram(available)})`);
     return 0;
   }
 

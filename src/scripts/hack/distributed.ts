@@ -58,7 +58,7 @@ export async function main(ns: NS): Promise<void> {
 
     if (!config.oneShot) {
       const waitTime = Math.max(Math.min(result.shortestWait, 30000), 1000);
-      ns.print(`${COLORS.white}Waiting ${ns.tFormat(waitTime)}...${COLORS.reset}`);
+      ns.print(`${COLORS.white}Waiting ${ns.format.time(waitTime)}...${COLORS.reset}`);
       await ns.sleep(config.interval + waitTime);
     }
   } while (!config.oneShot);

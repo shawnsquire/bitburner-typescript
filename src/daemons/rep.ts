@@ -18,7 +18,7 @@
  *   run daemons/rep.js --no-kill          # Don't kill other scripts
  *   run daemons/rep.js --faction CyberSec # Target specific faction
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 import { COLORS, makeBar, formatTime } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
 import { writeDefaultConfig, getConfigString, getConfigNumber, getConfigBool, setConfigValue } from "/lib/config";
@@ -272,8 +272,8 @@ function computeBitnodeStatus(ns: NS, installedAugsCount?: number): BitnodeStatu
     augmentationsRequired: BITNODE_REQUIREMENTS.augmentations,
     money: player.money,
     moneyRequired: BITNODE_REQUIREMENTS.money,
-    moneyFormatted: ns.formatNumber(player.money),
-    moneyRequiredFormatted: ns.formatNumber(BITNODE_REQUIREMENTS.money),
+    moneyFormatted: ns.format.number(player.money),
+    moneyRequiredFormatted: ns.format.number(BITNODE_REQUIREMENTS.money),
     hacking: player.skills.hacking,
     hackingRequired: BITNODE_REQUIREMENTS.hacking,
     augsComplete,
@@ -326,7 +326,7 @@ function computeTier1Status(ns: NS, currentRam: number, nextTierRam: number): Re
     allFactions: basicData.map((f) => ({
       name: f.name,
       currentRep: f.currentRep,
-      currentRepFormatted: ns.formatNumber(f.currentRep),
+      currentRepFormatted: ns.format.number(f.currentRep),
       favor: f.favor,
     })),
   };
@@ -390,22 +390,22 @@ function computeTier2Status(
     allFactions: basicData.map((f) => ({
       name: f.name,
       currentRep: f.currentRep,
-      currentRepFormatted: ns.formatNumber(f.currentRep),
+      currentRepFormatted: ns.format.number(f.currentRep),
       favor: f.favor,
     })),
     ...(targetFactionOverride ? { focusedFaction: targetFactionOverride } : {}),
     targetFaction,
     nextAugName: targetAug,
     repRequired,
-    repRequiredFormatted: ns.formatNumber(repRequired),
+    repRequiredFormatted: ns.format.number(repRequired),
     currentRep,
-    currentRepFormatted: ns.formatNumber(currentRep),
+    currentRepFormatted: ns.format.number(currentRep),
     repGap,
-    repGapFormatted: ns.formatNumber(repGap),
+    repGapFormatted: ns.format.number(repGap),
     repGapPositive: repGap > 0,
     repProgress,
     nextAugCost: augPrice,
-    nextAugCostFormatted: ns.formatNumber(augPrice),
+    nextAugCostFormatted: ns.format.number(augPrice),
     canAffordNextAug: player.money >= augPrice,
     favor,
     favorToUnlock,
@@ -533,25 +533,25 @@ function computeHighTierStatus(
     allFactions: factionData.map((f) => ({
       name: f.name,
       currentRep: f.currentRep,
-      currentRepFormatted: ns.formatNumber(f.currentRep),
+      currentRepFormatted: ns.format.number(f.currentRep),
       favor: f.favor,
     })),
     ...(targetFactionOverride ? { focusedFaction: targetFactionOverride } : {}),
     targetFaction,
     nextAugName: target?.aug?.name ?? null,
     repRequired,
-    repRequiredFormatted: ns.formatNumber(repRequired),
+    repRequiredFormatted: ns.format.number(repRequired),
     currentRep,
-    currentRepFormatted: ns.formatNumber(currentRep),
+    currentRepFormatted: ns.format.number(currentRep),
     repGap,
-    repGapFormatted: ns.formatNumber(repGap),
+    repGapFormatted: ns.format.number(repGap),
     repGapPositive: repGap > 0,
     repProgress,
     installedAugs: installedAugs.length,
     repGainRate,
     eta,
     nextAugCost,
-    nextAugCostFormatted: ns.formatNumber(nextAugCost),
+    nextAugCostFormatted: ns.format.number(nextAugCost),
     canAffordNextAug: player.money >= nextAugCost,
     favor: targetFactionFavor,
     favorToUnlock,
@@ -560,8 +560,8 @@ function computeHighTierStatus(
       factionName: item.faction.name,
       nextAugName: item.nextAug.name,
       progress: item.progress,
-      currentRep: ns.formatNumber(item.faction.currentRep),
-      requiredRep: ns.formatNumber(item.nextAug.repReq),
+      currentRep: ns.format.number(item.faction.currentRep),
+      requiredRep: ns.format.number(item.nextAug.repReq),
     })),
     isWorkingForFaction: workStatus.isWorkingForFaction,
     isOptimalWork: workStatus.isOptimalWork,
@@ -582,7 +582,7 @@ function printLowTierStatus(ns: NS, status: RepStatus): void {
 
   ns.print(`${C.cyan}=== Rep Daemon (${status.tierName}) ===${C.reset}`);
   ns.print(
-    `${C.dim}Tier ${status.tier} | RAM: ${ns.formatRam(status.currentRamUsage)}${C.reset}`
+    `${C.dim}Tier ${status.tier} | RAM: ${ns.format.ram(status.currentRamUsage)}${C.reset}`
   );
 
   if (status.allFactions && status.allFactions.length > 0) {
@@ -608,7 +608,7 @@ function printLowTierStatus(ns: NS, status: RepStatus): void {
     ns.print("");
     ns.print(
       `${C.yellow}Upgrade available: ${C.reset}` +
-        `${C.white}${ns.formatRam(status.nextTierRam)}${C.reset} ${C.dim}for next tier${C.reset}`
+        `${C.white}${ns.format.ram(status.nextTierRam)}${C.reset} ${C.dim}for next tier${C.reset}`
     );
   }
 }
@@ -647,7 +647,7 @@ function printHighTierStatus(
     ns.print(
       `${C.white}ETA:${C.reset} ${C.cyan}${status.eta}${C.reset}` +
         ((status.repGainRate ?? 0) > 0
-          ? ` ${C.dim}@ ${ns.formatNumber(status.repGainRate ?? 0)}/s${C.reset}`
+          ? ` ${C.dim}@ ${ns.format.number(status.repGainRate ?? 0)}/s${C.reset}`
           : "") +
         `  ${C.dim}|${C.reset}  ` +
         (status.canAffordNextAug
@@ -951,7 +951,7 @@ async function runFullMode(
             currentWork?.type !== "CLASS" // Don't interrupt gym/university training
           ) {
             ns.singularity.workForFaction(
-              workTargetFaction,
+              workTargetFaction as FactionName,
               bestWork,
               ns.singularity.isFocused()
             );
@@ -1098,8 +1098,8 @@ export async function main(ns: NS): Promise<void> {
     const actual = ns.ramOverride(requiredRam);
     if (actual < requiredRam) {
       ns.tprint(
-        `WARN: Could not allocate ${ns.formatRam(requiredRam)} RAM, ` +
-          `got ${ns.formatRam(actual)}. Downgrading tier.`
+        `WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM, ` +
+          `got ${ns.format.ram(actual)}. Downgrading tier.`
       );
       // Find the tier we can actually run
       const result = selectBestTier(actual, sf4Level, tierRamCosts);
@@ -1110,7 +1110,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   ns.tprint(
-    `INFO: Rep daemon: ${selectedTier.name} tier (${ns.formatRam(requiredRam)} RAM)`
+    `INFO: Rep daemon: ${selectedTier.name} tier (${ns.format.ram(requiredRam)} RAM)`
   );
 
   // Run appropriate mode

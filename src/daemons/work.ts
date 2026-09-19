@@ -235,11 +235,11 @@ function computeWorkStatus(
         skillDisplay: getSkillDisplayName(rawStatus.recommendedAction.skill),
         expMult: rawStatus.recommendedAction.expMult,
         expMultFormatted: rawStatus.recommendedAction.type === "crime"
-          ? ns.formatNumber(rawStatus.recommendedAction.expMult)
+          ? ns.format.number(rawStatus.recommendedAction.expMult)
           : `${rawStatus.recommendedAction.expMult}x`,
         needsTravel: rawStatus.recommendedAction.needsTravel,
         travelCost: rawStatus.recommendedAction.travelCost,
-        travelCostFormatted: ns.formatNumber(TRAVEL_COST),
+        travelCostFormatted: ns.format.number(TRAVEL_COST),
       }
     : null;
 
@@ -249,11 +249,11 @@ function computeWorkStatus(
         currentSkill: rawStatus.balanceRotation.currentSkill,
         currentSkillDisplay: getSkillDisplayName(rawStatus.balanceRotation.currentSkill),
         currentValue: rawStatus.balanceRotation.currentValue,
-        currentValueFormatted: ns.formatNumber(rawStatus.balanceRotation.currentValue, 0),
+        currentValueFormatted: ns.format.number(rawStatus.balanceRotation.currentValue, 0),
         lowestSkill: rawStatus.balanceRotation.lowestSkill,
         lowestSkillDisplay: getSkillDisplayName(rawStatus.balanceRotation.lowestSkill),
         lowestValue: rawStatus.balanceRotation.lowestValue,
-        lowestValueFormatted: ns.formatNumber(rawStatus.balanceRotation.lowestValue, 0),
+        lowestValueFormatted: ns.format.number(rawStatus.balanceRotation.lowestValue, 0),
         timeSinceSwitch: rawStatus.balanceRotation.timeSinceSwitch,
         timeUntilEligible: rawStatus.balanceRotation.timeUntilEligible,
         timeUntilEligibleFormatted: rawStatus.balanceRotation.timeUntilEligible > 0
@@ -265,7 +265,7 @@ function computeWorkStatus(
           skill: sv.skill,
           display: getSkillDisplayName(sv.skill),
           value: sv.value,
-          valueFormatted: ns.formatNumber(sv.value, 0),
+          valueFormatted: ns.format.number(sv.value, 0),
         })),
       }
     : null;
@@ -277,16 +277,16 @@ function computeWorkStatus(
         chance: rawStatus.currentCrime.chance,
         chanceFormatted: `${(rawStatus.currentCrime.chance * 100).toFixed(1)}%`,
         moneyPerMin: rawStatus.currentCrime.moneyPerMin,
-        moneyPerMinFormatted: ns.formatNumber(rawStatus.currentCrime.moneyPerMin),
+        moneyPerMinFormatted: ns.format.number(rawStatus.currentCrime.moneyPerMin),
         combatExpPerMin:
           rawStatus.currentCrime.strExpPerMin +
           rawStatus.currentCrime.defExpPerMin +
           rawStatus.currentCrime.dexExpPerMin +
           rawStatus.currentCrime.agiExpPerMin,
         karmaPerMin: rawStatus.currentCrime.karmaPerMin,
-        karmaPerMinFormatted: ns.formatNumber(Math.abs(rawStatus.currentCrime.karmaPerMin)),
+        karmaPerMinFormatted: ns.format.number(Math.abs(rawStatus.currentCrime.karmaPerMin)),
         killsPerMin: rawStatus.currentCrime.killsPerMin,
-        killsPerMinFormatted: ns.formatNumber(rawStatus.currentCrime.killsPerMin),
+        killsPerMinFormatted: ns.format.number(rawStatus.currentCrime.killsPerMin),
       }
     : null;
 
@@ -328,8 +328,8 @@ function computeWorkStatus(
           bestCrime: bestCrimeName,
           currentValue: current.value,
           bestValue: best.value,
-          currentValueFormatted: ns.formatNumber(current.value),
-          bestValueFormatted: ns.formatNumber(best.value),
+          currentValueFormatted: ns.format.number(current.value),
+          bestValueFormatted: ns.format.number(best.value),
           metric: current.metric,
         };
       }
@@ -357,7 +357,7 @@ function computeWorkStatus(
     focusLabel,
     playerCity: rawStatus.playerCity,
     playerMoney: rawStatus.playerMoney,
-    playerMoneyFormatted: ns.formatNumber(rawStatus.playerMoney),
+    playerMoneyFormatted: ns.format.number(rawStatus.playerMoney),
     isFocused,
     skills: {
       strength: rawStatus.skills.strength,
@@ -366,12 +366,12 @@ function computeWorkStatus(
       agility: rawStatus.skills.agility,
       hacking: rawStatus.skills.hacking,
       charisma: rawStatus.skills.charisma,
-      strengthFormatted: ns.formatNumber(rawStatus.skills.strength, 0),
-      defenseFormatted: ns.formatNumber(rawStatus.skills.defense, 0),
-      dexterityFormatted: ns.formatNumber(rawStatus.skills.dexterity, 0),
-      agilityFormatted: ns.formatNumber(rawStatus.skills.agility, 0),
-      hackingFormatted: ns.formatNumber(rawStatus.skills.hacking, 0),
-      charismaFormatted: ns.formatNumber(rawStatus.skills.charisma, 0),
+      strengthFormatted: ns.format.number(rawStatus.skills.strength, 0),
+      defenseFormatted: ns.format.number(rawStatus.skills.defense, 0),
+      dexterityFormatted: ns.format.number(rawStatus.skills.dexterity, 0),
+      agilityFormatted: ns.format.number(rawStatus.skills.agility, 0),
+      hackingFormatted: ns.format.number(rawStatus.skills.hacking, 0),
+      charismaFormatted: ns.format.number(rawStatus.skills.charisma, 0),
     },
     activityDisplay,
     activityType,
@@ -399,7 +399,7 @@ function printStatus(ns: NS, status: WorkStatus): void {
     `${C.dim}Focus:${C.reset} ${C.green}${status.focusLabel}${C.reset}` +
     `  ${C.dim}|${C.reset}  ${C.dim}City:${C.reset} ${C.white}${status.playerCity}${C.reset}` +
     `  ${C.dim}|${C.reset}  ${C.green}$${status.playerMoneyFormatted}${C.reset}` +
-    `  ${C.dim}|${C.reset}  ${C.dim}RAM:${C.reset} ${ns.formatRam(status.currentRamUsage)}`
+    `  ${C.dim}|${C.reset}  ${C.dim}RAM:${C.reset} ${ns.format.ram(status.currentRamUsage)}`
   );
   ns.print("");
 
@@ -719,7 +719,7 @@ export async function main(ns: NS): Promise<void> {
   if (selectedTier.tier > 0) {
     const actual = ns.ramOverride(requiredRam);
     if (actual < requiredRam) {
-      ns.tprint(`WARN: Could not allocate ${ns.formatRam(requiredRam)} RAM for work daemon`);
+      ns.tprint(`WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM for work daemon`);
       const fallback = selectBestTier(actual, tierRamCosts);
       ns.ramOverride(fallback.ramCost);
       requiredRam = fallback.ramCost;
@@ -727,7 +727,7 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 
-  ns.tprint(`INFO: Work daemon: ${selectedTier.name} tier (${ns.formatRam(requiredRam)} RAM)`);
+  ns.tprint(`INFO: Work daemon: ${selectedTier.name} tier (${ns.format.ram(requiredRam)} RAM)`);
 
   if (selectedTier.tier === 0) {
     await runMonitorMode(ns, requiredRam, tierRamCosts);

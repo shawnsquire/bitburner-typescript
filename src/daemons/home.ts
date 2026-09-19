@@ -134,7 +134,7 @@ export async function main(ns: NS): Promise<void> {
   if (ramCost > currentScriptRam) {
     const actual = ns.ramOverride(ramCost);
     if (actual < ramCost) {
-      ns.tprint(`WARN: Home daemon could not allocate ${ns.formatRam(ramCost)}, got ${ns.formatRam(actual)}. Running tier 0.`);
+      ns.tprint(`WARN: Home daemon could not allocate ${ns.format.ram(ramCost)}, got ${ns.format.ram(actual)}. Running tier 0.`);
       const fallback = selectBestTier(actual, tierRamCosts);
       ns.ramOverride(fallback.ramCost);
     }
@@ -179,10 +179,10 @@ export async function main(ns: NS): Promise<void> {
         if (cash >= ramUpgradeCost) {
           const success = ns.singularity.upgradeHomeRam();
           if (success) {
-            notifyPurchase(ns, "home", ramUpgradeCost, `RAM → ${ns.formatRam(currentRam * 2)}`);
+            notifyPurchase(ns, "home", ramUpgradeCost, `RAM → ${ns.format.ram(currentRam * 2)}`);
             ramUpgradesBought++;
             totalSpent += ramUpgradeCost;
-            ns.print(`  ${C.green}BOUGHT${C.reset} RAM upgrade → ${ns.formatRam(currentRam * 2)}`);
+            ns.print(`  ${C.green}BOUGHT${C.reset} RAM upgrade → ${ns.format.ram(currentRam * 2)}`);
           }
         }
       }
@@ -232,17 +232,17 @@ export async function main(ns: NS): Promise<void> {
       unavailableFeatures: getUnavailableFeatures(tier.tier),
 
       currentRam: updatedRam,
-      currentRamFormatted: ns.formatRam(updatedRam),
+      currentRamFormatted: ns.format.ram(updatedRam),
       maxRam: MAX_HOME_RAM,
       currentCores: updatedCores,
       maxCores: MAX_HOME_CORES,
 
       ramUpgradeCost: updatedRamCost,
-      ramUpgradeCostFormatted: updatedRamCost !== null ? ns.formatNumber(updatedRamCost) : null,
+      ramUpgradeCostFormatted: updatedRamCost !== null ? ns.format.number(updatedRamCost) : null,
       ramUpgradeTarget: updatedRamAtMax ? null : updatedRam * 2,
-      ramUpgradeTargetFormatted: updatedRamAtMax ? null : ns.formatRam(updatedRam * 2),
+      ramUpgradeTargetFormatted: updatedRamAtMax ? null : ns.format.ram(updatedRam * 2),
       coreUpgradeCost: updatedCoreCost,
-      coreUpgradeCostFormatted: updatedCoreCost !== null ? ns.formatNumber(updatedCoreCost) : null,
+      coreUpgradeCostFormatted: updatedCoreCost !== null ? ns.format.number(updatedCoreCost) : null,
       ramAtMax: updatedRamAtMax,
       coresAtMax: updatedCoresAtMax,
       allMaxed: updatedAllMaxed,
@@ -251,7 +251,7 @@ export async function main(ns: NS): Promise<void> {
       ramUpgradesBought,
       coreUpgradesBought,
       totalSpent,
-      totalSpentFormatted: ns.formatNumber(totalSpent),
+      totalSpentFormatted: ns.format.number(totalSpent),
     };
 
     publishStatus(ns, STATUS_PORTS.home, status);

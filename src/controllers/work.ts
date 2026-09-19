@@ -6,7 +6,7 @@
  *
  * Import with: import { ... } from '/lib/work';
  */
-import { NS, CityName, GymType, UniversityClassType, CrimeType } from "@ns";
+import { NS, CityName, GymType, UniversityClassType, CrimeType, GymLocationName, UniversityLocationName } from "@ns";
 import { findBestCrime, analyzeAllCrimes, CrimeAnalysis } from "/controllers/crime";
 
 // === CONSTANTS ===
@@ -409,19 +409,19 @@ export function startTraining(
     if (!traveled) {
       return false;
     }
-    ns.tprint(`INFO: Work: traveled to ${option.city} (-$${ns.formatNumber(TRAVEL_COST)})`);
+    ns.tprint(`INFO: Work: traveled to ${option.city} (-$${ns.format.number(TRAVEL_COST)})`);
   }
 
   // Start the appropriate training
   if (option.type === "gym") {
-    const started = ns.singularity.gymWorkout(option.location, option.skill as GymType, preserveFocus);
+    const started = ns.singularity.gymWorkout(option.location as GymLocationName, option.skill as GymType, preserveFocus);
     if (started) {
       ns.tprint(`INFO: Work: started ${option.skill} training at ${option.location}`);
     }
     return started;
   } else if (option.type === "university") {
     const course = option.skill === "hacking" ? HACKING_COURSES[0] : CHARISMA_COURSES[0];
-    const started = ns.singularity.universityCourse(option.location, course as UniversityClassType, preserveFocus);
+    const started = ns.singularity.universityCourse(option.location as UniversityLocationName, course as UniversityClassType, preserveFocus);
     if (started) {
       ns.tprint(`INFO: Work: started ${course} at ${option.location}`);
     }

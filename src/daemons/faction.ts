@@ -15,7 +15,7 @@
  *   run daemons/faction.js --tier join              # Force specific tier
  *   run daemons/faction.js --one-shot               # Run once and exit
  */
-import { NS, CityName } from "@ns";
+import { NS, CityName, FactionName } from "@ns";
 import { COLORS } from "/lib/utils";
 import { calcAvailableAfterKills, freeRamForTarget } from "/lib/ram-utils";
 import { publishStatus } from "/lib/ports";
@@ -209,7 +209,7 @@ function computeStatus(
   if (tier.tier >= 2) {
     status.playerCity = player.city;
     status.playerMoney = player.money;
-    status.playerMoneyFormatted = ns.formatNumber(player.money);
+    status.playerMoneyFormatted = ns.format.number(player.money);
     if (playerStats) {
       status.playerHacking = playerStats.hacking;
       status.playerStrength = playerStats.strength;
@@ -241,7 +241,7 @@ function printStatus(ns: NS, status: FactionStatus): void {
 
   ns.print(`${C.cyan}=== Faction Manager (${status.tierName}) ===${C.reset}`);
   ns.print(
-    `${C.dim}Tier ${status.tier} | RAM: ${ns.formatRam(status.currentRamUsage)}${C.reset}`
+    `${C.dim}Tier ${status.tier} | RAM: ${ns.format.ram(status.currentRamUsage)}${C.reset}`
   );
   ns.print(
     `${C.green}${status.joinedCount}${C.reset} joined  ` +
@@ -275,7 +275,7 @@ function printStatus(ns: NS, status: FactionStatus): void {
     ns.print("");
     ns.print(
       `${C.yellow}Upgrade available: ${C.reset}` +
-      `${C.white}${ns.formatRam(status.nextTierRam)}${C.reset} ${C.dim}for next tier${C.reset}`
+      `${C.white}${ns.format.ram(status.nextTierRam)}${C.reset} ${C.dim}for next tier${C.reset}`
     );
   }
 }
@@ -358,7 +358,7 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 
-  ns.tprint(`INFO: Faction daemon: ${selectedTier.name} tier (${ns.formatRam(requiredRam)} RAM)`);
+  ns.tprint(`INFO: Faction daemon: ${selectedTier.name} tier (${ns.format.ram(requiredRam)} RAM)`);
 
   // State tracking
   const autoJoined: string[] = [];
@@ -420,7 +420,7 @@ export async function main(ns: NS): Promise<void> {
         const ownedAugs = new Set(ns.singularity.getOwnedAugmentations(true));
         factions = factions.map(f => {
           try {
-            const factionAugs = ns.singularity.getAugmentationsFromFaction(f.name);
+            const factionAugs = ns.singularity.getAugmentationsFromFaction(f.name as FactionName);
             const available = factionAugs.filter(a => !ownedAugs.has(a));
             return {
               ...f,
@@ -485,11 +485,11 @@ export async function main(ns: NS): Promise<void> {
     // Auto-join logic (Tier 1+)
     if (selectedTier.tier >= 1) {
       for (const invitation of invitations) {
-        if (player.factions.includes(invitation)) continue;
+        if (player.factions.includes(invitation as FactionName)) continue;
 
         if (isSafeToAutoJoin(invitation, preferredCity, player.factions)) {
           try {
-            const success = ns.singularity.joinFaction(invitation);
+            const success = ns.singularity.joinFaction(invitation as FactionName);
             if (success) {
               autoJoined.push(invitation);
               lastAction = `Joined ${invitation}`;

@@ -261,7 +261,7 @@ function formatCity(ns: NS, city: CityData): BladeCityInfo {
     chaos: city.chaos,
     chaosFormatted: city.chaos.toFixed(1),
     population: city.population,
-    populationFormatted: ns.formatNumber(city.population, 1),
+    populationFormatted: ns.format.number(city.population, 1),
     communities: city.communities,
   };
 }
@@ -326,18 +326,18 @@ async function runMonitorMode(
       currentRamUsage: currentRam,
       inBladeburner: true,
       rank,
-      rankFormatted: ns.formatNumber(rank, 0),
+      rankFormatted: ns.format.number(rank, 0),
       stamina: stam,
       maxStamina: maxStam,
       staminaPercent: maxStam > 0 ? (stam / maxStam) * 100 : 0,
-      staminaFormatted: `${ns.formatNumber(stam, 0)}/${ns.formatNumber(maxStam, 0)}`,
+      staminaFormatted: `${ns.format.number(stam, 0)}/${ns.format.number(maxStam, 0)}`,
       skillPoints: sp,
-      skillPointsFormatted: ns.formatNumber(sp, 0),
+      skillPointsFormatted: ns.format.number(sp, 0),
       city,
       cityChaos: chaos,
       cityChaosFormatted: chaos.toFixed(1),
       cityPopulation: pop,
-      cityPopulationFormatted: ns.formatNumber(pop, 1),
+      cityPopulationFormatted: ns.format.number(pop, 1),
       bonusTime: bt,
       bonusTimeFormatted: formatBonusTime(bt),
       currentAction: actionText,
@@ -676,18 +676,18 @@ function computeFullStatus(
     currentRamUsage: currentRam,
     inBladeburner: true,
     rank,
-    rankFormatted: ns.formatNumber(rank, 0),
+    rankFormatted: ns.format.number(rank, 0),
     stamina: stam,
     maxStamina: maxStam,
     staminaPercent: maxStam > 0 ? (stam / maxStam) * 100 : 0,
-    staminaFormatted: `${ns.formatNumber(stam, 0)}/${ns.formatNumber(maxStam, 0)}`,
+    staminaFormatted: `${ns.format.number(stam, 0)}/${ns.format.number(maxStam, 0)}`,
     skillPoints: sp,
-    skillPointsFormatted: ns.formatNumber(sp, 0),
+    skillPointsFormatted: ns.format.number(sp, 0),
     city,
     cityChaos: chaos,
     cityChaosFormatted: chaos.toFixed(1),
     cityPopulation: pop,
-    cityPopulationFormatted: ns.formatNumber(pop, 1),
+    cityPopulationFormatted: ns.format.number(pop, 1),
     bonusTime: bt,
     bonusTimeFormatted: formatBonusTime(bt),
     currentAction: actionText,
@@ -833,7 +833,7 @@ export async function main(ns: NS): Promise<void> {
   if (selectedTier.tier > 0) {
     const actual = ns.ramOverride(requiredRam);
     if (actual < requiredRam) {
-      ns.tprint(`WARN: Could not allocate ${ns.formatRam(requiredRam)} RAM for blade daemon`);
+      ns.tprint(`WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM for blade daemon`);
       const fallback = selectBestTier(actual, tierRamCosts);
       ns.ramOverride(fallback.ramCost);
       requiredRam = fallback.ramCost;
@@ -841,7 +841,7 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 
-  ns.tprint(`INFO: Blade daemon: ${selectedTier.name} tier (${ns.formatRam(requiredRam)} RAM)`);
+  ns.tprint(`INFO: Blade daemon: ${selectedTier.name} tier (${ns.format.ram(requiredRam)} RAM)`);
 
   if (selectedTier.tier === 0) {
     await runMonitorMode(ns, requiredRam, tierRamCosts);

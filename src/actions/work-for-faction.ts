@@ -7,7 +7,7 @@
  * Usage: run actions/work-for-faction.js --faction CyberSec --type hacking
  *        run actions/work-for-faction.js --faction "Tian Di Hui" --type field
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 
 export const MANUAL_COMMAND = 'ns.singularity.workForFaction("FACTION", "WORK_TYPE", false)';
 
@@ -35,7 +35,7 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  const success = ns.singularity.workForFaction(faction, workType as "hacking" | "field" | "security", focus);
+  const success = ns.singularity.workForFaction(faction as FactionName, workType as "hacking" | "field" | "security", focus);
 
   if (success) {
     ns.tprint(`SUCCESS: Started ${workType} work for ${faction}${focus ? " (focused)" : ""}`);

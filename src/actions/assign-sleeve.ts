@@ -13,7 +13,7 @@
  *   run actions/assign-sleeve.js --sleeve 0 --daemon blade
  *   run actions/assign-sleeve.js --sleeve 0 --daemon none
  */
-import { NS } from "@ns";
+import { NS, FactionName, UniversityLocationName, GymLocationName } from "@ns";
 import { peekStatus } from "/lib/ports";
 import { STATUS_PORTS, RepStatus, WorkStatus } from "/types/ports";
 
@@ -74,7 +74,7 @@ function assignRep(ns: NS, index: number): void {
   }
 
   try {
-    ns.sleeve.setToFactionWork(index, faction, "hacking");
+    ns.sleeve.setToFactionWork(index, faction as FactionName, "hacking");
     ns.toast(`Sleeve ${index}: ${faction} faction work`, "success", 2000);
   } catch {
     ns.toast(`Sleeve ${index}: failed to set faction work for ${faction}`, "error", 2000);
@@ -92,7 +92,7 @@ function assignWork(ns: NS, index: number): void {
     const city = status?.playerCity || "Sector-12";
     const course = focus === "hacking" ? "Algorithms" : "Leadership";
     try {
-      ns.sleeve.setToUniversityCourse(index, getUniversity(city), course);
+      ns.sleeve.setToUniversityCourse(index, getUniversity(city) as UniversityLocationName, course);
       ns.toast(`Sleeve ${index}: ${course} at university`, "success", 2000);
     } catch {
       ns.toast(`Sleeve ${index}: failed to set university course`, "error", 2000);
@@ -106,7 +106,7 @@ function assignWork(ns: NS, index: number): void {
     };
     const stat = (gymStatMap[focus] || "str") as "str" | "def" | "dex" | "agi";
     try {
-      ns.sleeve.setToGymWorkout(index, getGym(city), stat);
+      ns.sleeve.setToGymWorkout(index, getGym(city) as GymLocationName, stat);
       ns.toast(`Sleeve ${index}: ${stat} at gym`, "success", 2000);
     } catch {
       ns.toast(`Sleeve ${index}: failed to set gym workout`, "error", 2000);

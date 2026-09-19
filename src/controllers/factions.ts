@@ -5,7 +5,7 @@
  *
  * Import with: import { analyzeFactions, calculatePurchasePriority, ... } from '/controllers/factions';
  */
-import { NS, Player } from "@ns";
+import { NS, Player, FactionName } from "@ns";
 
 // === CONSTANTS ===
 
@@ -468,7 +468,7 @@ export function startOptimalFactionWork(
     return false;
   }
   const bestWork = selectBestWorkType(ns, player, factionName);
-  return ns.singularity.workForFaction(factionName, bestWork, true);
+  return ns.singularity.workForFaction(factionName as FactionName, bestWork, true);
 }
 
 // === DONATION CONSTANTS ===
@@ -519,7 +519,7 @@ export function canDonateToFaction(ns: NS, faction: string): boolean {
   if (getGangFaction(ns) === faction) {
     return false;
   }
-  const favor = ns.singularity.getFactionFavor(faction);
+  const favor = ns.singularity.getFactionFavor(faction as FactionName);
   return favor >= DONATION_FAVOR_THRESHOLD;
 }
 
@@ -590,7 +590,7 @@ export function calculateNFGDonatePurchasePlan(
       }
     }
   } else {
-    bestFactionRep = ns.singularity.getFactionRep(bestFaction);
+    bestFactionRep = ns.singularity.getFactionRep(bestFaction as FactionName);
   }
 
   // No eligible faction found
@@ -930,7 +930,7 @@ export function getAvailableAugs(
   const results: FactionAugList[] = [];
 
   for (const faction of factions) {
-    const allAugs = ns.singularity.getAugmentationsFromFaction(faction.name);
+    const allAugs = ns.singularity.getAugmentationsFromFaction(faction.name as FactionName);
 
     // Get rep req and price for each aug
     const augs = allAugs

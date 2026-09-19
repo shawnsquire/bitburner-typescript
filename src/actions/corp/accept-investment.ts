@@ -12,11 +12,11 @@ export async function main(ns: NS): Promise<void> {
 
   try {
     const offer = ns.corporation.getInvestmentOffer();
-    ns.tprint(`INFO: Current offer — Round ${offer.round}: ${ns.formatNumber(offer.funds)} for ${ns.formatNumber(offer.shares)} shares`);
+    ns.tprint(`INFO: Current offer — Round ${offer.round}: ${ns.format.number(offer.funds)} for ${ns.format.number(offer.shares)} shares`);
 
     const success = ns.corporation.acceptInvestmentOffer();
     if (success) {
-      ns.tprint(`SUCCESS: Accepted round ${offer.round} investment of ${ns.formatNumber(offer.funds)}`);
+      ns.tprint(`SUCCESS: Accepted round ${offer.round} investment of ${ns.format.number(offer.funds)}`);
     } else {
       ns.tprint("FAILED: Could not accept investment offer");
     }

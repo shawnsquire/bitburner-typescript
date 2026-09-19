@@ -395,7 +395,7 @@ async function runLiteMode(
         karmaProgress,
       };
       publishStatus(ns, STATUS_PORTS.gang, status);
-      ns.print(`${C.yellow}Not in a gang. Karma: ${ns.formatNumber(karma)}/${ns.formatNumber(-karmaRequired)} (${(karmaProgress * 100).toFixed(1)}%)${C.reset}`);
+      ns.print(`${C.yellow}Not in a gang. Karma: ${ns.format.number(karma)}/${ns.format.number(-karmaRequired)} (${(karmaProgress * 100).toFixed(1)}%)${C.reset}`);
       await ns.sleep(5000);
       continue;
     }
@@ -417,11 +417,11 @@ async function runLiteMode(
       faction: info.faction,
       isHacking: info.isHacking,
       respect: info.respect,
-      respectFormatted: ns.formatNumber(info.respect),
+      respectFormatted: ns.format.number(info.respect),
       wantedLevel: info.wantedLevel,
       wantedPenalty: info.wantedPenalty,
       moneyGainRate: info.moneyGainRate * 5,
-      moneyGainRateFormatted: ns.formatNumber(info.moneyGainRate * 5),
+      moneyGainRateFormatted: ns.format.number(info.moneyGainRate * 5),
       territory: info.territory,
       territoryWarfareEngaged: info.territoryWarfareEngaged,
       bonusTime,
@@ -433,7 +433,7 @@ async function runLiteMode(
     publishStatus(ns, STATUS_PORTS.gang, status);
 
     ns.print(`${C.cyan}=== Gang Daemon (lite) ===${C.reset}`);
-    ns.print(`${C.dim}${info.faction} | ${memberNames.length} members | ${ns.formatNumber(info.respect)} respect${C.reset}`);
+    ns.print(`${C.dim}${info.faction} | ${memberNames.length} members | ${ns.format.number(info.respect)} respect${C.reset}`);
 
     // Upgrade check
     cyclesSinceUpgradeCheck++;
@@ -617,13 +617,13 @@ async function runBasicMode(
       faction: info.faction,
       isHacking: info.isHacking,
       respect: info.respect,
-      respectFormatted: ns.formatNumber(info.respect),
+      respectFormatted: ns.format.number(info.respect),
       respectGainRate: info.respectGainRate * 5,
-      respectGainRateFormatted: ns.formatNumber(info.respectGainRate * 5),
+      respectGainRateFormatted: ns.format.number(info.respectGainRate * 5),
       wantedLevel: info.wantedLevel,
       wantedPenalty: info.wantedPenalty,
       moneyGainRate: info.moneyGainRate * 5,
-      moneyGainRateFormatted: ns.formatNumber(info.moneyGainRate * 5),
+      moneyGainRateFormatted: ns.format.number(info.moneyGainRate * 5),
       territory: info.territory,
       territoryWarfareEngaged: info.territoryWarfareEngaged,
       bonusTime,
@@ -633,7 +633,7 @@ async function runBasicMode(
       canRecruit,
       recruitsAvailable,
       respectForNextRecruit: respectForNext,
-      respectForNextRecruitFormatted: ns.formatNumber(respectForNext),
+      respectForNextRecruitFormatted: ns.format.number(respectForNext),
       territoryData: territoryData ?? undefined,
       strategy: config.strategy,
       wantedThreshold: config.wantedThreshold,
@@ -651,7 +651,7 @@ async function runBasicMode(
     // Print status
     ns.print(`${C.cyan}=== Gang Daemon (basic) ===${C.reset}`);
     ns.print(`${C.dim}${info.faction} | ${memberNames.length} members | Strategy: ${config.strategy}${C.reset}`);
-    ns.print(`${C.dim}Respect: ${ns.formatNumber(info.respect)} | Wanted: ${(info.wantedPenalty * 100).toFixed(1)}% | Territory: ${(info.territory * 100).toFixed(1)}%${C.reset}`);
+    ns.print(`${C.dim}Respect: ${ns.format.number(info.respect)} | Wanted: ${(info.wantedPenalty * 100).toFixed(1)}% | Territory: ${(info.territory * 100).toFixed(1)}%${C.reset}`);
     for (const a of assignments) {
       ns.print(`  ${C.white}${a.memberName.padEnd(10)}${C.reset} → ${C.cyan}${a.task}${C.reset} ${C.dim}(${a.reason})${C.reset}`);
     }
@@ -852,7 +852,7 @@ async function runFullMode(
           if (item.cost <= spendingCap) {
             if (ns.gang.purchaseEquipment(name, item.name)) {
               notifyPurchase(ns, "gang", item.cost, `${item.name} for ${name}`);
-              ns.tprint(`INFO: Gang: bought ${item.name} for ${name} (-$${ns.formatNumber(item.cost)})`);
+              ns.tprint(`INFO: Gang: bought ${item.name} for ${name} (-$${ns.format.number(item.cost)})`);
             }
           }
         }
@@ -931,13 +931,13 @@ async function runFullMode(
       faction: info.faction,
       isHacking: info.isHacking,
       respect: info.respect,
-      respectFormatted: ns.formatNumber(info.respect),
+      respectFormatted: ns.format.number(info.respect),
       respectGainRate: info.respectGainRate * 5,
-      respectGainRateFormatted: ns.formatNumber(info.respectGainRate * 5),
+      respectGainRateFormatted: ns.format.number(info.respectGainRate * 5),
       wantedLevel: info.wantedLevel,
       wantedPenalty: info.wantedPenalty,
       moneyGainRate: info.moneyGainRate * 5,
-      moneyGainRateFormatted: ns.formatNumber(info.moneyGainRate * 5),
+      moneyGainRateFormatted: ns.format.number(info.moneyGainRate * 5),
       territory: info.territory,
       territoryWarfareEngaged: info.territoryWarfareEngaged,
       bonusTime,
@@ -947,7 +947,7 @@ async function runFullMode(
       canRecruit,
       recruitsAvailable,
       respectForNextRecruit: respectForNext,
-      respectForNextRecruitFormatted: ns.formatNumber(respectForNext),
+      respectForNextRecruitFormatted: ns.format.number(respectForNext),
       ascensionAlerts: ascensionAlerts.length > 0 ? ascensionAlerts : undefined,
       purchasingEnabled: config.purchasingEnabled,
       availableUpgrades,
@@ -970,8 +970,8 @@ async function runFullMode(
     const phaseLabel = balancedPhase ? ` (${balancedPhase})` : "";
     ns.print(`${C.cyan}=== Gang Daemon (full) ===${C.reset}`);
     ns.print(`${C.dim}${info.faction} | ${memberNames.length} members | Strategy: ${config.strategy}${phaseLabel}${C.reset}`);
-    ns.print(`${C.dim}Respect: ${ns.formatNumber(info.respect)} (+${ns.formatNumber(info.respectGainRate * 5)}/s)${C.reset}`);
-    ns.print(`${C.dim}Wanted: ${(info.wantedPenalty * 100).toFixed(1)}% | Territory: ${(info.territory * 100).toFixed(1)}% | Income: ${ns.formatNumber(info.moneyGainRate * 5)}/s${C.reset}`);
+    ns.print(`${C.dim}Respect: ${ns.format.number(info.respect)} (+${ns.format.number(info.respectGainRate * 5)}/s)${C.reset}`);
+    ns.print(`${C.dim}Wanted: ${(info.wantedPenalty * 100).toFixed(1)}% | Territory: ${(info.territory * 100).toFixed(1)}% | Income: ${ns.format.number(info.moneyGainRate * 5)}/s${C.reset}`);
     if (ascensionAlerts.length > 0) {
       ns.print(`${C.yellow}Ascension alerts: ${ascensionAlerts.map(a => `${a.memberName} (${a.bestStat} x${a.bestGain.toFixed(2)})`).join(", ")}${C.reset}`);
     }
@@ -1037,10 +1037,10 @@ export async function main(ns: NS): Promise<void> {
   if (selectedTier.tier > 0) {
     const actual = ns.ramOverride(requiredRam);
     if (actual < requiredRam) {
-      ns.tprint(`WARN: Could not allocate ${ns.formatRam(requiredRam)} RAM for gang daemon`);
+      ns.tprint(`WARN: Could not allocate ${ns.format.ram(requiredRam)} RAM for gang daemon`);
       const fallback = selectBestTier(actual, tierRamCosts);
       ns.ramOverride(fallback.ramCost);
-      ns.tprint(`INFO: Gang daemon: ${fallback.tier.name} tier (${ns.formatRam(fallback.ramCost)} RAM)`);
+      ns.tprint(`INFO: Gang daemon: ${fallback.tier.name} tier (${ns.format.ram(fallback.ramCost)} RAM)`);
       if (fallback.tier.tier === 0) {
         await runLiteMode(ns, fallback.ramCost, tierRamCosts, spawnArgs);
       } else if (fallback.tier.tier === 1) {
@@ -1052,7 +1052,7 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 
-  ns.tprint(`INFO: Gang daemon: ${selectedTier.name} tier (${ns.formatRam(requiredRam)} RAM)`);
+  ns.tprint(`INFO: Gang daemon: ${selectedTier.name} tier (${ns.format.ram(requiredRam)} RAM)`);
 
   if (selectedTier.tier === 0) {
     await runLiteMode(ns, requiredRam, tierRamCosts, spawnArgs);

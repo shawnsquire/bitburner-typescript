@@ -4,7 +4,7 @@
  * Core logic for analyzing and purchasing darkweb programs.
  * Import with: import { analyzeDarkwebPrograms, ProgramPurchaseResult, ... } from '/controllers/darkweb';
  */
-import { NS } from "@ns";
+import { NS, ProgramName } from "@ns";
 
 // === TYPES ===
 
@@ -119,7 +119,7 @@ export function analyzeDarkwebPrograms(ns: NS, purchase = true, budgetCheck?: (c
         cannotAfford.push(program);
         continue;
       }
-      const success = ns.singularity.purchaseProgram(program.name);
+      const success = ns.singularity.purchaseProgram(program.name as ProgramName);
       if (success) {
         purchased.push(program);
         currentMoney -= program.cost;

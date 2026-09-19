@@ -8,7 +8,7 @@
  *        run actions/purchase-augments.js --dry-run
  *        run actions/purchase-augments.js --max-spend 1e12
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 import { analyzeFactions, calculatePurchasePriority, AUG_COST_MULT, getSequentialPurchaseAugs } from "/controllers/factions";
 
 export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "AUG_NAME")';
@@ -71,31 +71,31 @@ export async function main(ns: NS): Promise<void> {
   let playerMoney = ns.getServerMoneyAvailable("home");
 
   ns.tprint(`\n=== Augmentation Purchase ${dryRun ? "(DRY RUN)" : ""} ===`);
-  ns.tprint(`Available money: ${ns.formatNumber(playerMoney, 1)}`);
+  ns.tprint(`Available money: ${ns.format.number(playerMoney, 1)}`);
   ns.tprint(`Augmentations in plan: ${filteredPlan.length}${onlyAugs ? ` (filtered from ${plan.length})` : ""}\n`);
 
   for (const aug of filteredPlan) {
     if (totalSpent + aug.adjustedCost > maxSpend) {
-      ns.tprint(`  SKIP: ${aug.name} (${ns.formatNumber(aug.adjustedCost, 1)}) — exceeds max spend`);
+      ns.tprint(`  SKIP: ${aug.name} (${ns.format.number(aug.adjustedCost, 1)}) — exceeds max spend`);
       skipped++;
       continue;
     }
 
     if (playerMoney < aug.adjustedCost) {
-      ns.tprint(`  SKIP: ${aug.name} (${ns.formatNumber(aug.adjustedCost, 1)}) — can't afford (have ${ns.formatNumber(playerMoney, 1)})`);
+      ns.tprint(`  SKIP: ${aug.name} (${ns.format.number(aug.adjustedCost, 1)}) — can't afford (have ${ns.format.number(playerMoney, 1)})`);
       skipped++;
       continue;
     }
 
     if (dryRun) {
-      ns.tprint(`  WOULD BUY: ${aug.name} from ${aug.faction} for ${ns.formatNumber(aug.adjustedCost, 1)}`);
+      ns.tprint(`  WOULD BUY: ${aug.name} from ${aug.faction} for ${ns.format.number(aug.adjustedCost, 1)}`);
       totalSpent += aug.adjustedCost;
       playerMoney -= aug.adjustedCost;
       purchased++;
     } else {
-      const success = ns.singularity.purchaseAugmentation(aug.faction, aug.name);
+      const success = ns.singularity.purchaseAugmentation(aug.faction as FactionName, aug.name);
       if (success) {
-        ns.tprint(`  BOUGHT: ${aug.name} from ${aug.faction} for ${ns.formatNumber(aug.adjustedCost, 1)}`);
+        ns.tprint(`  BOUGHT: ${aug.name} from ${aug.faction} for ${ns.format.number(aug.adjustedCost, 1)}`);
         totalSpent += aug.adjustedCost;
         playerMoney = ns.getServerMoneyAvailable("home");
         purchased++;
@@ -111,11 +111,11 @@ export async function main(ns: NS): Promise<void> {
   if (sequentialAugs.length > 0) {
     ns.tprint(`\n--- Sequential Purchase Augs (one at a time) ---`);
     for (const item of sequentialAugs) {
-      const affordStr = item.canAfford ? "CAN AFFORD" : `need $${ns.formatNumber(item.aug.basePrice, 1)}`;
+      const affordStr = item.canAfford ? "CAN AFFORD" : `need $${ns.format.number(item.aug.basePrice, 1)}`;
       ns.tprint(`  ${item.aug.name} from ${item.faction} - ${affordStr}`);
 
       if (!dryRun && item.canAfford) {
-        const success = ns.singularity.purchaseAugmentation(item.faction, item.aug.name);
+        const success = ns.singularity.purchaseAugmentation(item.faction as FactionName, item.aug.name);
         if (success) {
           ns.tprint(`  BOUGHT: ${item.aug.name} from ${item.faction}`);
           purchased++;
@@ -130,6 +130,6 @@ export async function main(ns: NS): Promise<void> {
   ns.tprint(`\n--- Summary ---`);
   ns.tprint(`  ${dryRun ? "Would purchase" : "Purchased"}: ${purchased}`);
   ns.tprint(`  Skipped: ${skipped}`);
-  ns.tprint(`  Total cost: ${ns.formatNumber(totalSpent, 1)}`);
-  ns.tprint(`  Remaining money: ${ns.formatNumber(playerMoney, 1)}`);
+  ns.tprint(`  Total cost: ${ns.format.number(totalSpent, 1)}`);
+  ns.tprint(`  Remaining money: ${ns.format.number(playerMoney, 1)}`);
 }

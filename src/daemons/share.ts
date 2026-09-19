@@ -52,8 +52,8 @@ const ACTIVE_FUNCTIONS = [
   "getSharePower",
   "getServerMaxRam",
   "getServerUsedRam",
-  "formatRam",
-  "formatNumber",
+  "format.ram",
+  "format.number",
 ];
 
 const RAM_BUFFER_PERCENT = 0.05; // 5% safety margin
@@ -113,7 +113,7 @@ function computeShareStatus(ns: NS, targetPercent = 0, interval = 10000): ShareS
   return {
     totalThreads: displayThreads.toLocaleString(),
     sharePower: `${raw.sharePower.toFixed(3)}x`,
-    shareRam: ns.formatRam(raw.shareRam),
+    shareRam: ns.format.ram(raw.shareRam),
     serversWithShare: raw.serversWithShare,
     serverStats,
     cycleStatus,
@@ -349,8 +349,8 @@ export async function main(ns: NS): Promise<void> {
     const actual = ns.ramOverride(activeRam);
     if (actual < activeRam) {
       ns.tprint(
-        `WARN: Could not allocate ${ns.formatRam(activeRam)} for active tier, ` +
-        `falling back to monitor (got ${ns.formatRam(actual)})`
+        `WARN: Could not allocate ${ns.format.ram(activeRam)} for active tier, ` +
+        `falling back to monitor (got ${ns.format.ram(actual)})`
       );
       selectedTier = "monitor";
       ns.ramOverride(monitorRam);
@@ -358,7 +358,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   ns.tprint(
-    `INFO: Share daemon: ${selectedTier} tier (${ns.formatRam(selectedTier === "active" ? activeRam : monitorRam)} RAM)`
+    `INFO: Share daemon: ${selectedTier} tier (${ns.format.ram(selectedTier === "active" ? activeRam : monitorRam)} RAM)`
   );
 
   if (selectedTier === "monitor") {

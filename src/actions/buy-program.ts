@@ -6,7 +6,7 @@
  *
  * Usage: run actions/buy-program.js --program BruteSSH.exe
  */
-import { NS } from "@ns";
+import { NS, ProgramName } from "@ns";
 
 export const MANUAL_COMMAND = 'ns.singularity.purchaseProgram("PROGRAM_NAME")';
 
@@ -30,7 +30,7 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  const success = ns.singularity.purchaseProgram(programName);
+  const success = ns.singularity.purchaseProgram(programName as ProgramName);
 
   if (success) {
     ns.tprint(`SUCCESS: Purchased ${programName}`);

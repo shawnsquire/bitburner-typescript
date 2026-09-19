@@ -12,7 +12,7 @@
  * Usage:
  *   run daemons/corp.js
  */
-import { NS, CityName, CorpIndustryName } from "@ns";
+import { NS, CityName, CorpIndustryName, CorpMaterialName, CorpResearchName, CorpUpgradeName, CorpUnlockName } from "@ns";
 import { COLORS } from "/lib/utils";
 import { publishStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
@@ -107,7 +107,7 @@ const TIER_0_FUNCTIONS = [
 /** Tier 1: management mutations. */
 const TIER_1_FUNCTIONS = [
   "corporation.hireEmployee",
-  "corporation.setAutoJobAssignment",
+  "corporation.setJobAssignment",
   "corporation.sellMaterial",
   "corporation.sellProduct",
   "corporation.setSmartSupply",
@@ -457,7 +457,7 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
         const materials: { name: string; stored: number; produced: number; sold: number }[] = [];
         for (const mat of ["Water", "Food", "Plants", "Chemicals", "Hardware", "Robots", "AI Cores", "Real Estate"]) {
           try {
-            const m = ns.corporation.getMaterial(divName, city, mat);
+            const m = ns.corporation.getMaterial(divName, city, mat as CorpMaterialName);
             materials.push({ name: mat, stored: m.stored, produced: m.productionAmount, sold: m.actualSellAmount });
           } catch { /* ignore */ }
         }
@@ -492,7 +492,7 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
 
     divisions.push({
       name: div.name,
-      type: div.type,
+      type: div.industry,
       cities: div.cities.slice(),
       revenue: div.lastCycleRevenue,
       expenses: div.lastCycleExpenses,
@@ -503,7 +503,7 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
       warehouses,
       maxProducts: div.maxProducts,
       hasResearch: (rName: string) => {
-        try { return ns.corporation.hasResearched(divName, rName); } catch { return false; }
+        try { return ns.corporation.hasResearched(divName, rName as CorpResearchName); } catch { return false; }
       },
     });
   }
@@ -513,15 +513,15 @@ function buildSnapshot(ns: NS, maxTier: number): CorpStateSnapshot {
   const upgradeCosts: Record<string, number> = {};
   for (const u of UPGRADES) {
     try {
-      upgradeLevels[u.name] = ns.corporation.getUpgradeLevel(u.name);
-      upgradeCosts[u.name] = ns.corporation.getUpgradeLevelCost(u.name);
+      upgradeLevels[u.name] = ns.corporation.getUpgradeLevel(u.name as CorpUpgradeName);
+      upgradeCosts[u.name] = ns.corporation.getUpgradeLevelCost(u.name as CorpUpgradeName);
     } catch { /* ignore */ }
   }
 
   // Build unlocks
   const unlocks: Record<string, boolean> = {};
   for (const u of UNLOCK_PRIORITY) {
-    try { unlocks[u.name] = ns.corporation.hasUnlock(u.name); } catch { unlocks[u.name] = false; }
+    try { unlocks[u.name] = ns.corporation.hasUnlock(u.name as CorpUnlockName); } catch { unlocks[u.name] = false; }
   }
 
   // Investment info
@@ -606,7 +606,7 @@ function autoBuyUnlocks(ns: NS, snapshot: CorpStateSnapshot): void {
     if (snapshot.funds < threshold) break;
 
     try {
-      ns.corporation.purchaseUnlock(u.name);
+      ns.corporation.purchaseUnlock(u.name as CorpUnlockName);
       ns.print(`${C.green}Bought unlock: ${u.name}${C.reset}`);
       snapshot.unlocks[u.name] = true;
       snapshot.funds -= u.cost;
@@ -676,7 +676,7 @@ function autoSetupExports(ns: NS, snapshot: CorpStateSnapshot): void {
     for (const city of (fromDiv.cities as CityName[])) {
       if (!toDiv.cities.includes(city)) continue;
       try {
-        ns.corporation.exportMaterial(fromDiv.name, city, toDiv.name, city, material, EXPORT_FORMULA);
+        ns.corporation.exportMaterial(fromDiv.name, city, toDiv.name, city, material as CorpMaterialName, EXPORT_FORMULA);
       } catch { /* already set or error — ignore */ }
     }
   }
@@ -725,7 +725,7 @@ function autoSellOrders(ns: NS, snapshot: CorpStateSnapshot): void {
     const outputs = DIVISION_OUTPUTS[div.type] ?? [];
     for (const city of (div.cities as CityName[])) {
       for (const mat of outputs) {
-        try { ns.corporation.sellMaterial(div.name, city, mat, "MAX", "MP"); } catch { /* ignore */ }
+        try { ns.corporation.sellMaterial(div.name, city, mat as CorpMaterialName, "MAX", "MP"); } catch { /* ignore */ }
       }
     }
 
@@ -746,7 +746,7 @@ function autoSellOrders(ns: NS, snapshot: CorpStateSnapshot): void {
     if (div.hasResearch("Market-TA.II")) {
       for (const city of (div.cities as CityName[])) {
         for (const mat of outputs) {
-          try { ns.corporation.setMaterialMarketTA2(div.name, city, mat, true); } catch { /* ignore */ }
+          try { ns.corporation.setMaterialMarketTA2(div.name, city, mat as CorpMaterialName, true); } catch { /* ignore */ }
         }
       }
     }
@@ -794,11 +794,11 @@ function autoEmployees(ns: NS, snapshot: CorpStateSnapshot): void {
 
       for (const job of EMPLOYEE_JOBS) {
         try {
-          ns.corporation.setAutoJobAssignment(div.name, city, job, dist[job] ?? 0);
+          ns.corporation.setJobAssignment(div.name, city, job, dist[job] ?? 0);
         } catch { /* ignore */ }
       }
       // Clear Intern/Unassigned
-      try { ns.corporation.setAutoJobAssignment(div.name, city, "Intern", 0); } catch { /* ignore */ }
+      try { ns.corporation.setJobAssignment(div.name, city, "Intern", 0); } catch { /* ignore */ }
     }
   }
 }
@@ -865,7 +865,7 @@ function autoResearch(ns: NS, snapshot: CorpStateSnapshot): void {
     const next = getNextResearch(div.research, div.hasResearch);
     if (next) {
       try {
-        ns.corporation.research(div.name, next.name);
+        ns.corporation.research(div.name, next.name as CorpResearchName);
         ns.print(`${C.green}Researched ${next.name} in ${div.name}${C.reset}`);
       } catch { /* not enough points or prereqs */ }
     }
@@ -895,7 +895,7 @@ function autoUpgrades(ns: NS, snapshot: CorpStateSnapshot): void {
   if (candidates.length > 0) {
     const best = candidates[0];
     try {
-      ns.corporation.levelUpgrade(best.name);
+      ns.corporation.levelUpgrade(best.name as CorpUpgradeName);
       ns.print(`${C.green}Upgraded: ${best.name} (score: ${best.score.toFixed(1)})${C.reset}`);
     } catch { /* ignore */ }
   }
@@ -945,12 +945,12 @@ function autoMaterials(ns: NS, snapshot: CorpStateSnapshot): void {
           // Buy in bulk — purchase amount per second, runs for 10s per cycle
           const buyPerSec = Math.ceil(needed / 10);
           try {
-            ns.corporation.buyMaterial(div.name, wh.city as CityName, material, buyPerSec);
+            ns.corporation.buyMaterial(div.name, wh.city as CityName, material as CorpMaterialName, buyPerSec);
           } catch { /* ignore */ }
         } else {
           // Stop buying if we've reached target
           try {
-            ns.corporation.buyMaterial(div.name, wh.city as CityName, material, 0);
+            ns.corporation.buyMaterial(div.name, wh.city as CityName, material as CorpMaterialName, 0);
           } catch { /* ignore */ }
         }
       }
@@ -1045,15 +1045,15 @@ function buildStatus(
     type: div.type,
     cities: div.cities,
     revenue: div.revenue,
-    revenueFormatted: ns.formatNumber(div.revenue),
+    revenueFormatted: ns.format.number(div.revenue),
     expenses: div.expenses,
-    expensesFormatted: ns.formatNumber(div.expenses),
+    expensesFormatted: ns.format.number(div.expenses),
     profit: div.revenue - div.expenses,
-    profitFormatted: ns.formatNumber(div.revenue - div.expenses),
+    profitFormatted: ns.format.number(div.revenue - div.expenses),
     awareness: div.awareness,
     popularity: div.popularity,
     research: div.research,
-    researchFormatted: ns.formatNumber(div.research),
+    researchFormatted: ns.format.number(div.research),
     materialMultiplier: 0,  // TODO: calculate from warehouse materials
     products: div.products.map(p => ({
       name: p.name,
@@ -1097,7 +1097,7 @@ function buildStatus(
     name: u.name,
     level: snapshot.upgradeLevels[u.name] ?? 0,
     cost: snapshot.upgradeCosts[u.name] ?? 0,
-    costFormatted: ns.formatNumber(snapshot.upgradeCosts[u.name] ?? 0),
+    costFormatted: ns.format.number(snapshot.upgradeCosts[u.name] ?? 0),
   }));
 
   // Build unlock list
@@ -1105,7 +1105,7 @@ function buildStatus(
     name: u.name,
     owned: snapshot.unlocks[u.name] ?? false,
     cost: u.cost,
-    costFormatted: ns.formatNumber(u.cost),
+    costFormatted: ns.format.number(u.cost),
   }));
 
   // Pending action with live countdown
@@ -1124,22 +1124,22 @@ function buildStatus(
     directive,
     directivePinned: pinned,
     funds: snapshot.funds,
-    fundsFormatted: ns.formatNumber(snapshot.funds),
+    fundsFormatted: ns.format.number(snapshot.funds),
     revenue: snapshot.revenue,
-    revenueFormatted: ns.formatNumber(snapshot.revenue),
+    revenueFormatted: ns.format.number(snapshot.revenue),
     expenses: snapshot.expenses,
-    expensesFormatted: ns.formatNumber(snapshot.expenses),
+    expensesFormatted: ns.format.number(snapshot.expenses),
     profit,
-    profitFormatted: ns.formatNumber(profit),
+    profitFormatted: ns.format.number(profit),
     statusLine: generateStatusLine(directive, snapshot),
     nextStep: generateNextStep(directive, snapshot),
     pendingAction: pendingActionStatus,
     investmentRound: snapshot.investmentRound,
     currentOffer: snapshot.currentOffer,
-    currentOfferFormatted: ns.formatNumber(snapshot.currentOffer),
+    currentOfferFormatted: ns.format.number(snapshot.currentOffer),
     isPublic: snapshot.isPublic,
     sharePrice: snapshot.sharePrice,
-    sharePriceFormatted: ns.formatNumber(snapshot.sharePrice),
+    sharePriceFormatted: ns.format.number(snapshot.sharePrice),
     dividendRate: snapshot.dividendRate,
     ownedShares: snapshot.ownedShares,
     issuedShares: snapshot.issuedShares,
@@ -1151,6 +1151,6 @@ function buildStatus(
     unlocks,
     autoTea,
     budgetBalance,
-    budgetBalanceFormatted: ns.formatNumber(budgetBalance),
+    budgetBalanceFormatted: ns.format.number(budgetBalance),
   };
 }

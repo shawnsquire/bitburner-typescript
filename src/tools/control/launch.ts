@@ -80,7 +80,7 @@ export async function main(ns: NS): Promise<void> {
     } else if (result.wouldKill.length > 0) {
       ns.tprint(`INFO: Would kill ${result.wouldKill.length} process(es) to launch ${scriptPath}:`);
       for (const proc of result.wouldKill) {
-        ns.tprint(`  - ${proc.filename} (pid ${proc.pid}, ${ns.formatRam(proc.ram)})`);
+        ns.tprint(`  - ${proc.filename} (pid ${proc.pid}, ${ns.format.ram(proc.ram)})`);
       }
       ns.tprint(result.sufficient ? "INFO: This would free enough RAM." : "WARN: Still not enough RAM even after all killable processes.");
     } else {

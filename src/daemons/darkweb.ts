@@ -34,7 +34,7 @@ function computeDarkwebStatus(ns: NS): DarkwebStatus {
     .map((p) => ({
       name: p.name,
       cost: p.cost,
-      costFormatted: ns.formatNumber(p.cost),
+      costFormatted: ns.format.number(p.cost),
       owned: p.owned,
     }));
 
@@ -53,7 +53,7 @@ function computeDarkwebStatus(ns: NS): DarkwebStatus {
     nextProgram = {
       name: raw.nextProgram.name,
       cost: raw.nextProgram.cost,
-      costFormatted: ns.formatNumber(raw.nextProgram.cost),
+      costFormatted: ns.format.number(raw.nextProgram.cost),
     };
     moneyUntilNext = raw.moneyUntilNext;
     canAffordNext = raw.nextProgram.cost <= raw.playerMoney;
@@ -65,7 +65,7 @@ function computeDarkwebStatus(ns: NS): DarkwebStatus {
     totalPrograms,
     nextProgram,
     moneyUntilNext,
-    moneyUntilNextFormatted: ns.formatNumber(moneyUntilNext),
+    moneyUntilNextFormatted: ns.format.number(moneyUntilNext),
     canAffordNext,
     programs,
     allOwned,

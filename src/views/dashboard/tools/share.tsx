@@ -96,7 +96,7 @@ function formatShareStatus(ns: NS): FormattedShareStatus {
   return {
     totalThreads: displayThreads,
     sharePower: `${raw.sharePower.toFixed(3)}x`,
-    shareRam: ns.formatRam(raw.shareRam),
+    shareRam: ns.format.ram(raw.shareRam),
     serversWithShare: cycleStatus === "cycle" ? lastServerStats.length : raw.serversWithShare,
     serverStats,
     cycleStatus,

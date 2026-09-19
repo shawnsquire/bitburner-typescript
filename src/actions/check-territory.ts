@@ -23,7 +23,7 @@ import {
 const STATE_FILE = "/data/territory-rr-index.txt";
 
 export async function main(ns: NS): Promise<void> {
-  // Base + inGang + getGangInformation + getOtherGangInformation + getChanceToWinClash
+  // Base + inGang + getGangInformation + getAllGangInformation + getChanceToWinClash
   ns.ramOverride(10.6);
   ns.disableLog("ALL");
 
@@ -38,7 +38,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   const ourInfo = ns.gang.getGangInformation();
-  const otherGangs = ns.gang.getOtherGangInformation();
+  const otherGangs = ns.gang.getAllGangInformation();
 
   // Get rival names (all gangs except ours)
   const rivalNames = Object.keys(otherGangs).filter(g => g !== ourInfo.faction);

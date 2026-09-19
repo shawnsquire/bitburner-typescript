@@ -26,6 +26,8 @@ import { lzDecompress, lzCompress } from "/lib/contracts/solvers/lz-compression"
 import { caesarCipher } from "/lib/contracts/solvers/caesar-cipher";
 import { vigenereCipher } from "/lib/contracts/solvers/vigenere-cipher";
 import { squareRoot } from "/lib/contracts/solvers/square-root";
+import { totalPrimesInRange } from "/lib/contracts/solvers/total-primes";
+import { largestRectangle } from "/lib/contracts/solvers/largest-rectangle";
 
 // === SOLVER REGISTRY ===
 
@@ -58,6 +60,8 @@ export const SOLVERS: Record<string, (data: any) => any> = {
   "Encryption I: Caesar Cipher": caesarCipher,
   "Encryption II: Vigenère Cipher": vigenereCipher,
   "Square Root": squareRoot,
+  "Total Number of Primes": totalPrimesInRange,
+  "Largest Rectangle in a Matrix": largestRectangle,
 };
 
 // === PUBLIC API ===

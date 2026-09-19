@@ -112,7 +112,7 @@ export function freeRamForTarget(
   const { killed, sufficient } = walkKillTiers(ns, targetRam, { host, excludeDashboard });
 
   if (killed.length > 0) {
-    const summary = killed.map((k) => `${k.filename} (${ns.formatRam(k.ram)})`);
+    const summary = killed.map((k) => `${k.filename} (${ns.format.ram(k.ram)})`);
     ns.tprint(`INFO: Killed ${killed.length} process(es) to free RAM: ${summary.join(", ")}`);
   }
 

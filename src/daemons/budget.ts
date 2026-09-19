@@ -116,7 +116,7 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
     case "purchased":
       if (msg.amount !== undefined && msg.amount > 0) {
         state.lifetimeSpent[msg.bucket] = (state.lifetimeSpent[msg.bucket] ?? 0) + msg.amount;
-        ns.print(`  ${C.green}BUY${C.reset} ${msg.bucket}: ${ns.formatNumber(msg.amount)} (${msg.reason ?? ""})`);
+        ns.print(`  ${C.green}BUY${C.reset} ${msg.bucket}: ${ns.format.number(msg.amount)} (${msg.reason ?? ""})`);
       }
       break;
 
@@ -131,7 +131,7 @@ function handleMessage(ns: NS, msg: BudgetControlMessage): void {
       if (msg.cap !== undefined) {
         // Cap = current lifetimeSpent + remaining cost
         state.caps[msg.bucket] = (state.lifetimeSpent[msg.bucket] ?? 0) + msg.cap;
-        ns.print(`  ${C.cyan}CAP${C.reset} ${msg.bucket}: ${ns.formatNumber(msg.cap)} remaining`);
+        ns.print(`  ${C.cyan}CAP${C.reset} ${msg.bucket}: ${ns.format.number(msg.cap)} remaining`);
       }
       break;
 
@@ -320,32 +320,32 @@ async function daemon(ns: NS): Promise<void> {
       buckets[bucket] = {
         bucket,
         allowance: a.allowance,
-        allowanceFormatted: ns.formatNumber(a.allowance),
+        allowanceFormatted: ns.format.number(a.allowance),
         weight: state.weights[bucket] ?? 0,
         effectiveWeight: (state.activeFlags[bucket] ? state.weights[bucket] : 0) / 100,
         lifetimeSpent: lifetime,
-        lifetimeSpentFormatted: ns.formatNumber(lifetime),
+        lifetimeSpentFormatted: ns.format.number(lifetime),
         isHolder: a.isHolder,
         currentHolding: a.currentHolding,
-        currentHoldingFormatted: ns.formatNumber(a.currentHolding),
+        currentHoldingFormatted: ns.format.number(a.currentHolding),
         maxAllocation: a.maxAllocation,
-        maxAllocationFormatted: ns.formatNumber(a.maxAllocation),
+        maxAllocationFormatted: ns.format.number(a.maxAllocation),
         active: state.activeFlags[bucket] ?? false,
         frozen: state.frozenWeights[bucket] !== undefined,
         cap,
-        capFormatted: cap !== null ? ns.formatNumber(cap) : null,
+        capFormatted: cap !== null ? ns.format.number(cap) : null,
       };
     }
 
     const status: BudgetStatus = {
       totalCash: currentCash,
-      totalCashFormatted: ns.formatNumber(currentCash),
+      totalCashFormatted: ns.format.number(currentCash),
       netWorth,
-      netWorthFormatted: ns.formatNumber(netWorth),
+      netWorthFormatted: ns.format.number(netWorth),
       portfolioValue: holdings.portfolioValue,
-      portfolioValueFormatted: ns.formatNumber(holdings.portfolioValue),
+      portfolioValueFormatted: ns.format.number(holdings.portfolioValue),
       corpFunds: holdings.corpFunds,
-      corpFundsFormatted: ns.formatNumber(holdings.corpFunds),
+      corpFundsFormatted: ns.format.number(holdings.corpFunds),
       buckets,
       rushBucket: state.rushBucket,
       lastUpdated: Date.now(),
@@ -365,8 +365,8 @@ async function daemon(ns: NS): Promise<void> {
     const rushLabel = state.rushBucket ? ` ${C.yellow}RUSH:${state.rushBucket}${C.reset}` : "";
     ns.print(
       `${C.cyan}=== Budget ===${C.reset} ` +
-      `Cash: ${ns.formatNumber(currentCash)} | ` +
-      `NW: ${ns.formatNumber(netWorth)} | ` +
+      `Cash: ${ns.format.number(currentCash)} | ` +
+      `NW: ${ns.format.number(netWorth)} | ` +
       `Active: ${activeCount}/${totalBuckets}${rushLabel}`
     );
 

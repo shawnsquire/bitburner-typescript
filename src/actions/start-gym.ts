@@ -8,7 +8,7 @@
  *        run actions/start-gym.js --stat str
  *        (defaults to Powerhouse Gym if not specified)
  */
-import { NS } from "@ns";
+import { NS, GymLocationName } from "@ns";
 
 export const MANUAL_COMMAND = 'ns.singularity.gymWorkout("Powerhouse Gym", "str", false)';
 
@@ -32,7 +32,7 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  const success = ns.singularity.gymWorkout(gym, stat as "str" | "def" | "dex" | "agi", focus);
+  const success = ns.singularity.gymWorkout(gym as GymLocationName, stat as "str" | "def" | "dex" | "agi", focus);
 
   if (success) {
     ns.tprint(`SUCCESS: Started ${stat} workout at ${gym}${focus ? " (focused)" : ""}`);

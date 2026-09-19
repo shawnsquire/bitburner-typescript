@@ -374,7 +374,7 @@ export function formatDistributedStatus(ns: NS, result: DistributedResult): stri
   lines.push(`${C.cyan}  DISTRIBUTED HACKER - ${new Date().toLocaleTimeString()}${C.reset}`);
   lines.push(`${C.cyan}════════════════════════════════════════${C.reset}`);
   lines.push(
-    `${C.white}Total RAM: ${ns.formatRam(result.totalRam)} across ${result.serverCount} servers${C.reset}`
+    `${C.white}Total RAM: ${ns.format.ram(result.totalRam)} across ${result.serverCount} servers${C.reset}`
   );
   lines.push("");
   lines.push(`${C.white}Target Assignments:${C.reset}`);
@@ -384,8 +384,8 @@ export function formatDistributedStatus(ns: NS, result: DistributedResult): stri
 
     const color = actionColors[assignment.action];
     const server = ns.getServer(assignment.hostname);
-    const money = ns.formatNumber(server.moneyAvailable ?? 0);
-    const maxMoney = ns.formatNumber(server.moneyMax ?? 0);
+    const money = ns.format.number(server.moneyAvailable ?? 0);
+    const maxMoney = ns.format.number(server.moneyMax ?? 0);
     const sec = (server.hackDifficulty ?? 0).toFixed(1);
     const minSec = (server.minDifficulty ?? 0).toFixed(1);
     const saturated = assignment.assignedThreads >= assignment.optimalThreads;

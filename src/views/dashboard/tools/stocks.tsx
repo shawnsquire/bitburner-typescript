@@ -529,7 +529,7 @@ function StocksDetailPanel({
       {/* No TIX state */}
       {!status.hasTIX && (
         <div style={{ marginTop: "12px", color: "#ffaa00", textAlign: "center" }}>
-          Waiting for TIX API access (WSE: $200M, TIX: $5B)
+          Waiting for TIX API access (TIX: $5B)
         </div>
       )}
 

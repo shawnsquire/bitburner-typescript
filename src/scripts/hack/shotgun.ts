@@ -200,8 +200,8 @@ export function formatShotgunStatus(ns: NS, status: ShotgunStatus): string[] {
     weaken: C.blue,
   };
 
-  const money = ns.formatNumber(status.moneyAvailable);
-  const maxMoney = ns.formatNumber(status.moneyMax);
+  const money = ns.format.number(status.moneyAvailable);
+  const maxMoney = ns.format.number(status.moneyMax);
   const sec = status.security.toFixed(1);
   const minSec = status.minSecurity.toFixed(1);
   const color = actionColors[status.action];

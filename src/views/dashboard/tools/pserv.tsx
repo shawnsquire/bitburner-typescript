@@ -22,7 +22,7 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
     return {
       hostname,
       ram,
-      ramFormatted: ns.formatRam(ram),
+      ramFormatted: ns.format.ram(ram),
     };
   });
 
@@ -38,14 +38,14 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
     const smallest = servers.reduce((min, s) => s.ram < min.ram ? s : min);
     if (smallest.ram < raw.maxPossibleRam) {
       const nextRam = smallest.ram * 2;
-      const cost = ns.getPurchasedServerUpgradeCost(smallest.hostname, nextRam);
+      const cost = ns.cloud.getServerUpgradeCost(smallest.hostname, nextRam);
       const playerMoney = ns.getServerMoneyAvailable("home");
       nextUpgrade = {
         hostname: smallest.hostname,
-        currentRam: ns.formatRam(smallest.ram),
-        nextRam: ns.formatRam(nextRam),
+        currentRam: ns.format.ram(smallest.ram),
+        nextRam: ns.format.ram(nextRam),
         cost,
-        costFormatted: ns.formatNumber(cost),
+        costFormatted: ns.format.number(cost),
         canAfford: playerMoney >= cost,
       };
     }
@@ -54,10 +54,10 @@ function formatPservStatus(ns: NS): FormattedPservStatus {
   return {
     serverCount: raw.serverCount,
     serverCap: raw.serverCap,
-    totalRam: ns.formatRam(raw.totalRam),
-    minRam: ns.formatRam(raw.minRam),
-    maxRam: ns.formatRam(raw.maxRam),
-    maxPossibleRam: ns.formatRam(raw.maxPossibleRam),
+    totalRam: ns.format.ram(raw.totalRam),
+    minRam: ns.format.ram(raw.minRam),
+    maxRam: ns.format.ram(raw.maxRam),
+    maxPossibleRam: ns.format.ram(raw.maxPossibleRam),
     allMaxed: raw.allMaxed,
     autoBuy: true,
     maxPossibleRamNum: raw.maxPossibleRam,

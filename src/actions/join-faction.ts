@@ -6,7 +6,7 @@
  *
  * Usage: run actions/join-faction.js --faction CyberSec
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -24,13 +24,13 @@ export async function main(ns: NS): Promise<void> {
 
   // Verify we have an invitation
   const invitations = ns.singularity.checkFactionInvitations();
-  if (!invitations.includes(faction)) {
+  if (!invitations.includes(faction as FactionName)) {
     ns.tprint(`FAILED: No invitation from ${faction}`);
     ns.toast(`No invitation from ${faction}`, "error", 3000);
     return;
   }
 
-  const success = ns.singularity.joinFaction(faction);
+  const success = ns.singularity.joinFaction(faction as FactionName);
 
   if (success) {
     ns.tprint(`SUCCESS: Joined ${faction}`);

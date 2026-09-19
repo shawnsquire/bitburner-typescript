@@ -10,7 +10,7 @@
  *        run actions/purchase-neuroflux.js --dry-run
  *        run actions/purchase-neuroflux.js --max-levels 10
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 import { getNeuroFluxInfo, calculateNeuroFluxPurchasePlan } from "/controllers/factions";
 
 export const MANUAL_COMMAND = 'ns.singularity.purchaseAugmentation("FACTION", "NeuroFlux Governor")';
@@ -44,7 +44,7 @@ export async function main(ns: NS): Promise<void> {
   // Check if we have enough reputation
   if (!nfInfo.hasEnoughRep) {
     ns.tprint(`Not enough reputation to purchase NeuroFlux Governor.`);
-    ns.tprint(`  Need ${ns.formatNumber(nfInfo.repRequired)} rep, have ${ns.formatNumber(nfInfo.bestFactionRep)} with ${factionName}.`);
+    ns.tprint(`  Need ${ns.format.number(nfInfo.repRequired)} rep, have ${ns.format.number(nfInfo.bestFactionRep)} with ${factionName}.`);
     return;
   }
 
@@ -62,7 +62,7 @@ export async function main(ns: NS): Promise<void> {
 
   ns.tprint(`Levels available: ${plan.purchases}`);
   ns.tprint(`Levels to buy: ${levelsToBuy}`);
-  ns.tprint(`Total cost: ${ns.formatNumber(plan.totalCost, 1)}`);
+  ns.tprint(`Total cost: ${ns.format.number(plan.totalCost, 1)}`);
 
   let purchased = 0;
 
@@ -71,7 +71,7 @@ export async function main(ns: NS): Promise<void> {
       ns.tprint(`  WOULD BUY: NeuroFlux Governor level ${nfInfo.currentLevel + i + 1}`);
       purchased++;
     } else {
-      const success = ns.singularity.purchaseAugmentation(factionName, "NeuroFlux Governor");
+      const success = ns.singularity.purchaseAugmentation(factionName as FactionName, "NeuroFlux Governor");
       if (success) {
         purchased++;
         ns.tprint(`  BOUGHT: NeuroFlux Governor level ${nfInfo.currentLevel + purchased}`);
@@ -85,5 +85,5 @@ export async function main(ns: NS): Promise<void> {
   ns.tprint(`\n--- Summary ---`);
   ns.tprint(`  ${dryRun ? "Would purchase" : "Purchased"}: ${purchased} levels`);
   ns.tprint(`  New NFG level: ${nfInfo.currentLevel + purchased}`);
-  ns.tprint(`  Remaining money: ${ns.formatNumber(ns.getServerMoneyAvailable("home"), 1)}`);
+  ns.tprint(`  Remaining money: ${ns.format.number(ns.getServerMoneyAvailable("home"), 1)}`);
 }

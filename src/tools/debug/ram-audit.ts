@@ -91,7 +91,7 @@ export async function main(ns: NS): Promise<void> {
 
   ns.tprint(`\n\x1b[36m=== RAM AUDIT ===\x1b[0m`);
   ns.tprint(`  \x1b[2mTotal files:\x1b[0m ${files.length}`);
-  ns.tprint(`  \x1b[2mTotal RAM:\x1b[0m  ${ns.formatRam(totalRam)}`);
+  ns.tprint(`  \x1b[2mTotal RAM:\x1b[0m  ${ns.format.ram(totalRam)}`);
   if (errorCount > 0) {
     ns.tprint(`  \x1b[31mErrors:\x1b[0m     ${errorCount} files returned 0 GB`);
   }
@@ -100,7 +100,7 @@ export async function main(ns: NS): Promise<void> {
   ns.tprint(`\n  \x1b[36m--- Top ${topN} by RAM ---\x1b[0m`);
   for (let i = 0; i < Math.min(topN, byRam.length); i++) {
     const f = byRam[i];
-    const ramStr = ns.formatRam(f.ram).padStart(10);
+    const ramStr = ns.format.ram(f.ram).padStart(10);
     const color = f.ram >= 100 ? "\x1b[31m" : f.ram >= 10 ? "\x1b[33m" : "\x1b[2m";
     ns.tprint(`    ${color}${ramStr}\x1b[0m  ${f.path}`);
   }
@@ -108,7 +108,7 @@ export async function main(ns: NS): Promise<void> {
   // By folder
   ns.tprint(`\n  \x1b[36m--- By Folder ---\x1b[0m`);
   for (const { folder, count, totalRam: fRam } of folderTotals) {
-    const ramStr = ns.formatRam(fRam).padStart(10);
+    const ramStr = ns.format.ram(fRam).padStart(10);
     ns.tprint(`    ${ramStr}  ${folder}/ (${count} files)`);
   }
 
@@ -118,7 +118,7 @@ export async function main(ns: NS): Promise<void> {
   lines.push("RAM AUDIT REPORT");
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push(`Total files: ${files.length}`);
-  lines.push(`Total RAM: ${ns.formatRam(totalRam)}`);
+  lines.push(`Total RAM: ${ns.format.ram(totalRam)}`);
   lines.push("");
 
   // All files sorted by RAM
@@ -128,7 +128,7 @@ export async function main(ns: NS): Promise<void> {
   lines.push(`${"---".padStart(10)}  ${"----"}`);
 
   for (const f of byRam) {
-    lines.push(`${ns.formatRam(f.ram).padStart(10)}  ${f.path}`);
+    lines.push(`${ns.format.ram(f.ram).padStart(10)}  ${f.path}`);
   }
 
   lines.push("");
@@ -136,10 +136,10 @@ export async function main(ns: NS): Promise<void> {
   lines.push("");
 
   for (const { folder, files: ffiles, totalRam: fRam, count } of folderTotals) {
-    lines.push(`--- ${folder}/ (${count} files, ${ns.formatRam(fRam)}) ---`);
+    lines.push(`--- ${folder}/ (${count} files, ${ns.format.ram(fRam)}) ---`);
     const sorted = [...ffiles].sort((a, b) => b.ram - a.ram);
     for (const f of sorted) {
-      lines.push(`  ${ns.formatRam(f.ram).padStart(10)}  ${f.path}`);
+      lines.push(`  ${ns.format.ram(f.ram).padStart(10)}  ${f.path}`);
     }
     lines.push("");
   }
@@ -160,7 +160,7 @@ export async function main(ns: NS): Promise<void> {
     const tierFiles = byRam.filter(f => f.ram >= tier.min && f.ram < tier.max);
     lines.push(`${tier.label}: ${tierFiles.length} files`);
     for (const f of tierFiles) {
-      lines.push(`  ${ns.formatRam(f.ram).padStart(10)}  ${f.path}`);
+      lines.push(`  ${ns.format.ram(f.ram).padStart(10)}  ${f.path}`);
     }
     lines.push("");
   }

@@ -55,13 +55,13 @@ export async function main(ns: NS): Promise<void> {
     ns.print(`${cyan}${"═".repeat(50)}${reset}`);
     ns.print(`${" ".repeat((HEADER_WIDTH - TITLE.length) / 2)}${white}${TITLE}${reset}`);
     ns.print(`${cyan}${"═".repeat(50)}${reset}`);
-    ns.print(`${dim}Uptime: ${ns.tFormat(uptime)} | Money: ${ns.formatNumber(player.money)} (${moneyGained >= 0 ? green + "+" : red}${ns.formatNumber(moneyGained)}${reset}${dim}/s)${reset}`);
+    ns.print(`${dim}Uptime: ${ns.format.time(uptime)} | Money: ${ns.format.number(player.money)} (${moneyGained >= 0 ? green + "+" : red}${ns.format.number(moneyGained)}${reset}${dim}/s)${reset}`);
 
     // === RAM USAGE ===
     const ramStats = getRamStats(ns);
     const ramPercent = ((ramStats.used / ramStats.total) * 100).toFixed(1);
     const ramBar = makeBar(ramStats.used / ramStats.total, 20);
-    ns.print(`\n${white}RAM Usage:${reset} ${ramBar} ${ramPercent}% (${ns.formatRam(ramStats.used)}/${ns.formatRam(ramStats.total)})`);
+    ns.print(`\n${white}RAM Usage:${reset} ${ramBar} ${ramPercent}% (${ns.format.ram(ramStats.used)}/${ns.format.ram(ramStats.total)})`);
     ns.print(`${dim}Servers: ${ramStats.activeServers}/${ramStats.totalServers} active${reset}`);
 
     // === CATEGORIZE SERVERS ===
@@ -132,12 +132,12 @@ export async function main(ns: NS): Promise<void> {
     }
 
     if (remainingActive > 0) {
-      ns.print(`${dim}... +${remainingActive} more active${reset} ${" ".repeat(38)} ${green}$${ns.formatNumber(remainingExpected)}${reset}`);
+      ns.print(`${dim}... +${remainingActive} more active${reset} ${" ".repeat(38)} ${green}$${ns.format.number(remainingExpected)}${reset}`);
     }
 
     // Totals
     ns.print(`${dim}${"─".repeat(78)}${reset}`);
-    ns.print(`${white}${"TOTAL".padEnd(18)}${reset} ${" ".repeat(12)} ${green}${totalHack.toLocaleString().padStart(7)}${reset} ${yellow}${totalGrow.toLocaleString().padStart(7)}${reset} ${blue}${totalWeaken.toLocaleString().padStart(7)}${reset}   ${green}$${ns.formatNumber(totalExpected)}${reset}`);
+    ns.print(`${white}${"TOTAL".padEnd(18)}${reset} ${" ".repeat(12)} ${green}${totalHack.toLocaleString().padStart(7)}${reset} ${yellow}${totalGrow.toLocaleString().padStart(7)}${reset} ${blue}${totalWeaken.toLocaleString().padStart(7)}${reset}   ${green}$${ns.format.number(totalExpected)}${reset}`);
 
     // Summary footer
     const summaryParts: string[] = [];
@@ -221,17 +221,17 @@ function formatExpected(ns: NS, expectedMoney: number, earliestCompletion: numbe
 
   if (expectedMoney <= 0) {
     if (earliestCompletion && earliestCompletion > Date.now()) {
-      const timeStr = ns.tFormat(earliestCompletion - Date.now(), false);
+      const timeStr = ns.format.time(earliestCompletion - Date.now(), false);
       return `${dim}prep${reset} ${yellow}${timeStr}${reset}`;
     }
     return `${dim}preparing...${reset}`;
   }
 
-  const moneyStr = `${green}$${ns.formatNumber(expectedMoney)}${reset}`;
+  const moneyStr = `${green}$${ns.format.number(expectedMoney)}${reset}`;
 
   if (earliestCompletion && earliestCompletion > Date.now()) {
     const timeRemaining = earliestCompletion - Date.now();
-    const timeStr = ns.tFormat(timeRemaining, false);
+    const timeStr = ns.format.time(timeRemaining, false);
     const timeColor = timeRemaining < 5000 ? cyan : timeRemaining < 30000 ? yellow : dim;
     return `${moneyStr} ${dim}→${reset} ${timeColor}${timeStr}${reset}`;
   }

@@ -8,7 +8,7 @@
  *        run actions/start-university.js --course Algorithms
  *        (defaults to ZB Institute of Technology if not specified)
  */
-import { NS } from "@ns";
+import { NS, UniversityLocationName } from "@ns";
 
 export const MANUAL_COMMAND = 'ns.singularity.universityCourse("ZB Institute of Technology", "Algorithms", false)';
 
@@ -32,7 +32,7 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  const success = ns.singularity.universityCourse(uni, course as "Computer Science" | "Data Structures" | "Networks" | "Algorithms" | "Management" | "Leadership", focus);
+  const success = ns.singularity.universityCourse(uni as UniversityLocationName, course as "Computer Science" | "Data Structures" | "Networks" | "Algorithms" | "Management" | "Leadership", focus);
 
   if (success) {
     ns.tprint(`SUCCESS: Started ${course} at ${uni}${focus ? " (focused)" : ""}`);

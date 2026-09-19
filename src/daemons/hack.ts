@@ -380,12 +380,12 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
       optimalThreads: 0,
       threadsSaturated: totalThreads > 0,
       moneyPercent,
-      moneyDisplay: `${ns.formatNumber(moneyAvailable)} / ${ns.formatNumber(moneyMax)}`,
+      moneyDisplay: `${ns.format.number(moneyAvailable)} / ${ns.format.number(moneyMax)}`,
       securityDelta: securityDelta > 0 ? `+${securityDelta.toFixed(1)}` : "0",
       securityClean: securityDelta <= 2,
       eta: formatTimeCondensed(waitTime),
       expectedMoney,
-      expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.formatNumber(expectedMoney)}` : "-",
+      expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.format.number(expectedMoney)}` : "-",
       totalThreads,
       completionEta,
       hackThreads: jobs.hack,
@@ -398,9 +398,9 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
   const saturationPercent = targets.length > 0 ? (activeTargets / targets.length) * 100 : 0;
 
   return {
-    totalRam: ns.formatRam(totalRam),
+    totalRam: ns.format.ram(totalRam),
     serverCount: servers.length,
-    totalThreads: ns.formatNumber(totalThreadsCount),
+    totalThreads: ns.format.number(totalThreadsCount),
     activeTargets,
     totalTargets: targets.length,
     saturationPercent,
@@ -412,7 +412,7 @@ function computeLegacyHackStatus(ns: NS, homeReserve: number, maxTargets: number
     weakeningCount,
     targets: formattedTargets,
     totalExpectedMoney,
-    totalExpectedMoneyFormatted: `$${ns.formatNumber(totalExpectedMoney)}`,
+    totalExpectedMoneyFormatted: `$${ns.format.number(totalExpectedMoney)}`,
     needHigherLevel,
     mode: "legacy",
   };
@@ -530,12 +530,12 @@ function computeBatchHackStatus(
       optimalThreads: 0,
       threadsSaturated: totalThreads > 0,
       moneyPercent,
-      moneyDisplay: `${ns.formatNumber(moneyAvailable)} / ${ns.formatNumber(moneyMax)}`,
+      moneyDisplay: `${ns.format.number(moneyAvailable)} / ${ns.format.number(moneyMax)}`,
       securityDelta: securityDelta > 0 ? `+${securityDelta.toFixed(1)}` : "0",
       securityClean: securityDelta <= 2,
       eta: completionEta || formatTimeCondensed(weakenTime),
       expectedMoney,
-      expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.formatNumber(expectedMoney)}` : "-",
+      expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.format.number(expectedMoney)}` : "-",
       totalThreads,
       completionEta,
       hackThreads: jobs.hack,
@@ -551,7 +551,7 @@ function computeBatchHackStatus(
       hostname,
       phase: state.phase,
       score: state.score,
-      scoreFormatted: `$${ns.formatNumber(state.score)}/s/GB`,
+      scoreFormatted: `$${ns.format.number(state.score)}/s/GB`,
       hackPercent: state.hackPercent,
       activeBatches: state.activeBatches,
       maxBatches: Math.min(maxBatches, maxTheoreticalBatches),
@@ -560,7 +560,7 @@ function computeBatchHackStatus(
       desyncCount: state.desyncCount,
       prepProgress: state.phase === "prep" ? getPrepProgress(ns, hostname) : 1.0,
       moneyPercent,
-      moneyDisplay: `${ns.formatNumber(moneyAvailable)} / ${ns.formatNumber(moneyMax)}`,
+      moneyDisplay: `${ns.format.number(moneyAvailable)} / ${ns.format.number(moneyMax)}`,
       securityDelta: securityDelta > 0 ? `+${securityDelta.toFixed(1)}` : "0",
       securityClean: securityDelta <= 2,
       incomeRate: 0, // Will be overridden below if we had per-target tracking
@@ -579,9 +579,9 @@ function computeBatchHackStatus(
   const incomePerSec = incomeTracker.getIncomePerSec();
 
   return {
-    totalRam: ns.formatRam(totalRam),
+    totalRam: ns.format.ram(totalRam),
     serverCount: servers.length,
-    totalThreads: ns.formatNumber(totalThreadsCount),
+    totalThreads: ns.format.number(totalThreadsCount),
     activeTargets,
     totalTargets: targetStates.size,
     saturationPercent,
@@ -593,12 +593,12 @@ function computeBatchHackStatus(
     weakeningCount,
     targets: formattedTargets,
     totalExpectedMoney,
-    totalExpectedMoneyFormatted: `$${ns.formatNumber(totalExpectedMoney)}`,
+    totalExpectedMoneyFormatted: `$${ns.format.number(totalExpectedMoney)}`,
     needHigherLevel: null,
     // Batch mode fields
     mode: "batch",
     incomePerSec,
-    incomePerSecFormatted: `$${ns.formatNumber(incomePerSec)}/s`,
+    incomePerSecFormatted: `$${ns.format.number(incomePerSec)}/s`,
     totalBatchesActive,
     totalBatchesLanded,
     totalBatchesFailed,
@@ -875,7 +875,7 @@ async function runStocksMode(ns: NS): Promise<void> {
     const hackStatus: HackStatus = {
       mode: "stocks",
       strategy: "stocks",
-      totalRam: ns.formatRam(allocation.totalFleetRam),
+      totalRam: ns.format.ram(allocation.totalFleetRam),
       serverCount: allocation.hackServers.length,
       totalThreads: String(deployedWorkers.size),
       activeTargets: targets.length,
@@ -962,7 +962,7 @@ async function runLegacyMode(ns: NS): Promise<void> {
       ns.print("ERROR: No valid targets found!");
 
       const emptyStatus: HackStatus = {
-        totalRam: ns.formatRam(0),
+        totalRam: ns.format.ram(0),
         serverCount: 0,
         totalThreads: "0",
         activeTargets: 0,
@@ -1003,7 +1003,7 @@ async function runLegacyMode(ns: NS): Promise<void> {
 
     if (!config.oneShot) {
       const waitTime = Math.max(Math.min(result.shortestWait, 30000), 1000);
-      ns.print(`Waiting ${ns.tFormat(waitTime)}...`);
+      ns.print(`Waiting ${ns.format.time(waitTime)}...`);
       await ns.sleep(config.interval + waitTime);
     }
   } while (!getConfigBool(ns, "hack", "oneShot", false));
@@ -1083,7 +1083,7 @@ async function runBatchMode(ns: NS): Promise<void> {
     if (targetStates.size === 0) {
       ns.print("ERROR: No valid targets found for batch mode!");
       publishStatus(ns, STATUS_PORTS.hack, {
-        totalRam: ns.formatRam(0), serverCount: 0, totalThreads: "0",
+        totalRam: ns.format.ram(0), serverCount: 0, totalThreads: "0",
         activeTargets: 0, totalTargets: 0, saturationPercent: 0,
         shortestWait: "N/A", longestWait: "N/A",
         hackingCount: 0, growingCount: 0, weakeningCount: 0,
@@ -1265,7 +1265,7 @@ async function runXpMode(ns: NS): Promise<void> {
     if (!xpTarget) {
       ns.print("ERROR: No valid XP targets found!");
       const emptyStatus: HackStatus = {
-        totalRam: ns.formatRam(0), serverCount: 0, totalThreads: "0",
+        totalRam: ns.format.ram(0), serverCount: 0, totalThreads: "0",
         activeTargets: 0, totalTargets: 0, saturationPercent: 0,
         shortestWait: "N/A", longestWait: "N/A",
         hackingCount: 0, growingCount: 0, weakeningCount: 0,
@@ -1327,9 +1327,9 @@ async function runXpMode(ns: NS): Promise<void> {
 
     // 6. Publish status
     const hackStatus: HackStatus = {
-      totalRam: ns.formatRam(totalFleetRam),
+      totalRam: ns.format.ram(totalFleetRam),
       serverCount: servers.length,
-      totalThreads: ns.formatNumber(launchedThreads),
+      totalThreads: ns.format.number(launchedThreads),
       activeTargets: 1,
       totalTargets: 1,
       saturationPercent: Math.round(utilization),
@@ -1347,7 +1347,7 @@ async function runXpMode(ns: NS): Promise<void> {
       xpTarget,
       xpThreads: launchedThreads,
       xpRate,
-      xpRateFormatted: `${ns.formatNumber(xpRate)} XP/s`,
+      xpRateFormatted: `${ns.format.number(xpRate)} XP/s`,
     };
     publishStatus(ns, STATUS_PORTS.hack, hackStatus);
 
@@ -1356,10 +1356,10 @@ async function runXpMode(ns: NS): Promise<void> {
     ns.print(`${C.cyan}  XP MODE - ${new Date().toLocaleTimeString()}${C.reset}`);
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
     ns.print(`${C.white}Target: ${C.cyan}${xpTarget}${C.reset} (min sec: ${ns.getServer(xpTarget).minDifficulty?.toFixed(1)})`);
-    ns.print(`${C.white}Launched: ${C.green}${ns.formatNumber(launchedThreads)}${C.reset} threads this tick | Servers: ${servers.length}`);
-    ns.print(`${C.white}Fleet RAM: ${ns.formatRam(totalFleetRam)} | Utilization: ${C.green}${utilization.toFixed(0)}%${C.reset}`);
+    ns.print(`${C.white}Launched: ${C.green}${ns.format.number(launchedThreads)}${C.reset} threads this tick | Servers: ${servers.length}`);
+    ns.print(`${C.white}Fleet RAM: ${ns.format.ram(totalFleetRam)} | Utilization: ${C.green}${utilization.toFixed(0)}%${C.reset}`);
     ns.print(`${C.white}Hack Time: ${formatTimeCondensed(hackTime)}${C.reset}`);
-    ns.print(`${C.white}XP Rate: ${C.green}${ns.formatNumber(xpRate)} XP/s${C.reset} (${ns.formatNumber(xpGained)} total)`);
+    ns.print(`${C.white}XP Rate: ${C.green}${ns.format.number(xpRate)} XP/s${C.reset} (${ns.format.number(xpGained)} total)`);
 
     // 8. Sleep for tick interval (short — waves pipeline automatically)
     if (!cfg.oneShot) {
@@ -1454,12 +1454,12 @@ async function runDrainMode(ns: NS): Promise<void> {
         optimalThreads: threadsNeeded,
         threadsSaturated: threadsAllocated >= threadsNeeded,
         moneyPercent: 100,
-        moneyDisplay: `$${ns.formatNumber(target.moneyAvailable)}`,
+        moneyDisplay: `$${ns.format.number(target.moneyAvailable)}`,
         securityDelta: "0",
         securityClean: true,
         eta: formatTimeCondensed(target.hackTime),
         expectedMoney,
-        expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.formatNumber(expectedMoney)}` : "-",
+        expectedMoneyFormatted: expectedMoney > 0 ? `$${ns.format.number(expectedMoney)}` : "-",
         totalThreads: threadsAllocated,
         completionEta: formatTimeCondensed(target.hackTime),
         hackThreads: threadsAllocated,
@@ -1473,9 +1473,9 @@ async function runDrainMode(ns: NS): Promise<void> {
 
     // 6. Publish status
     const hackStatus: HackStatus = {
-      totalRam: ns.formatRam(totalRam),
+      totalRam: ns.format.ram(totalRam),
       serverCount: allServers.length,
-      totalThreads: ns.formatNumber(totalHackThreads),
+      totalThreads: ns.format.number(totalHackThreads),
       activeTargets,
       totalTargets: drainTargets.length,
       saturationPercent: drainTargets.length > 0 ? (activeTargets / drainTargets.length) * 100 : 0,
@@ -1486,7 +1486,7 @@ async function runDrainMode(ns: NS): Promise<void> {
       weakeningCount: 0,
       targets: drainTargets,
       totalExpectedMoney: totalMoneyAvailable,
-      totalExpectedMoneyFormatted: `$${ns.formatNumber(totalMoneyAvailable)}`,
+      totalExpectedMoneyFormatted: `$${ns.format.number(totalMoneyAvailable)}`,
       needHigherLevel: null,
       strategy: "drain",
     };
@@ -1496,8 +1496,8 @@ async function runDrainMode(ns: NS): Promise<void> {
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
     ns.print(`${C.red}  DRAIN MODE - ${new Date().toLocaleTimeString()}${C.reset}`);
     ns.print(`${C.cyan}════════════════════════════════════════════════════${C.reset}`);
-    ns.print(`${C.white}Targets: ${C.cyan}${activeTargets}${C.reset} / ${drainTargets.length} | Threads: ${C.green}${ns.formatNumber(totalHackThreads)}${C.reset} | RAM: ${ns.formatRam(totalRam)}`);
-    ns.print(`${C.white}Money Available: ${C.green}$${ns.formatNumber(totalMoneyAvailable)}${C.reset}`);
+    ns.print(`${C.white}Targets: ${C.cyan}${activeTargets}${C.reset} / ${drainTargets.length} | Threads: ${C.green}${ns.format.number(totalHackThreads)}${C.reset} | RAM: ${ns.format.ram(totalRam)}`);
+    ns.print(`${C.white}Money Available: ${C.green}$${ns.format.number(totalMoneyAvailable)}${C.reset}`);
     if (shortestHackTime < Number.MAX_SAFE_INTEGER) {
       ns.print(`${C.white}Hack Time: ${formatTimeCondensed(shortestHackTime)} - ${formatTimeCondensed(longestHackTime)}${C.reset}`);
     }

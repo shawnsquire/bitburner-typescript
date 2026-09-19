@@ -11,7 +11,7 @@
 import { NS } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
-  if (!ns.stock.hasTIXAPIAccess()) {
+  if (!ns.stock.hasTixApiAccess()) {
     ns.tprint("ERROR: No TIX API access — cannot sell stocks");
     return;
   }
@@ -26,7 +26,7 @@ export async function main(ns: NS): Promise<void> {
     if (longShares > 0) {
       const gain = ns.stock.sellStock(sym, longShares);
       if (gain > 0) {
-        ns.tprint(`SOLD LONG  ${sym}: ${ns.formatNumber(longShares, 0)} shares for ${ns.formatNumber(gain)}`);
+        ns.tprint(`SOLD LONG  ${sym}: ${ns.format.number(longShares, 0)} shares for ${ns.format.number(gain)}`);
         totalGain += gain;
         positionsSold++;
       }
@@ -35,7 +35,7 @@ export async function main(ns: NS): Promise<void> {
     if (shortShares > 0) {
       const gain = ns.stock.sellShort(sym, shortShares);
       if (gain > 0) {
-        ns.tprint(`SOLD SHORT ${sym}: ${ns.formatNumber(shortShares, 0)} shares for ${ns.formatNumber(gain)}`);
+        ns.tprint(`SOLD SHORT ${sym}: ${ns.format.number(shortShares, 0)} shares for ${ns.format.number(gain)}`);
         totalGain += gain;
         positionsSold++;
       }
@@ -46,7 +46,7 @@ export async function main(ns: NS): Promise<void> {
     ns.tprint("No open positions to sell.");
     ns.toast("No stock positions to sell", "info", 2000);
   } else {
-    ns.tprint(`\nSold ${positionsSold} position(s) for ${ns.formatNumber(totalGain)} total.`);
+    ns.tprint(`\nSold ${positionsSold} position(s) for ${ns.format.number(totalGain)} total.`);
     ns.toast(`Sold ${positionsSold} stock position(s)`, "success", 3000);
   }
 }

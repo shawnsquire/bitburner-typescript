@@ -7,7 +7,7 @@
  * Fixed single-tier RAM model. No tiered pattern.
  * Uses DOM manipulation for game interaction, NS API for data and status publishing.
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 import { publishStatus, peekStatus } from "/lib/ports";
 import { getConfigString, setConfigValue } from "/lib/config";
 import {
@@ -673,7 +673,7 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
 
       if (reward.type === "faction-rep" && reward.faction) {
         try {
-          repBefore = ns.singularity.getFactionRep(reward.faction);
+          repBefore = ns.singularity.getFactionRep(reward.faction as FactionName);
         } catch {
           // API unavailable — fall back to estimated tracking
         }
@@ -687,7 +687,7 @@ async function runSingleInfiltration(ns: NS): Promise<boolean> {
       if (reward.type === "faction-rep" && reward.faction && repBefore !== null) {
         await domUtils.sleep(800); // Wait for rep to apply
         try {
-          const repAfter = ns.singularity.getFactionRep(reward.faction);
+          const repAfter = ns.singularity.getFactionRep(reward.faction as FactionName);
           const actualDelta = repAfter - repBefore;
           const expectedDelta = loc?.reward.tradeRep ?? 0;
 

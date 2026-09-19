@@ -73,6 +73,14 @@ async function daemon(ns: NS): Promise<void> {
   ns.print(`${C.cyan}Contracts daemon started${C.reset} (interval: ${interval}ms, minTries: ${minTries})`);
   ns.print(`${C.cyan}Solvers loaded: ${knownTypes}${C.reset}`);
 
+  // Compare against the game's own list so a new contract type is flagged at startup,
+  // not only when one shows up in the network (getContractTypes costs 0 GB).
+  const missingSolvers = ns.codingcontract.getContractTypes().filter((t) => !SOLVERS[t]);
+  if (missingSolvers.length > 0) {
+    ns.print(`${C.yellow}WARN: no solver for: ${missingSolvers.join(", ")}${C.reset}`);
+    ns.tprint(`WARN: contracts daemon has no solver for: ${missingSolvers.join(", ")} (run npm run test:contracts after adding one)`);
+  }
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
     readControlCommands(ns);

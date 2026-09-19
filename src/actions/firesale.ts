@@ -39,7 +39,7 @@ export async function main(ns: NS): Promise<void> {
       sold++;
     }
     if (sold > 0) {
-      ns.toast(`Sold ${sold} hash batches ($${ns.formatNumber(sold * 1e6)})`, "info", 3000);
+      ns.toast(`Sold ${sold} hash batches ($${ns.format.number(sold * 1e6)})`, "info", 3000);
     }
   } catch {
     // Hacknet servers not available (e.g. no hacknet nodes)

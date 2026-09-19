@@ -41,15 +41,17 @@ export function lzCompress(s: string): string {
   dp[0][0] = "";
 
   for (let i = 0; i <= n; i++) {
+    // A zero-length chunk ("0") switches chunk type without consuming input. Relax both
+    // directions before expanding from position i, otherwise a shorter dp[i][1] found via a
+    // backreference can never feed the literal transitions below (dp[i][0] is expanded first).
+    if (dp[i][0] !== INF && dp[i][0].length + 1 < dp[i][1].length) dp[i][1] = dp[i][0] + "0";
+    if (dp[i][1] !== INF && dp[i][1].length + 1 < dp[i][0].length) dp[i][0] = dp[i][1] + "0";
+
     for (let t = 0; t < 2; t++) {
       if (dp[i][t] === INF) continue;
 
       if (t === 0) {
         // Next chunk must be literal
-        // Length 0 literal (skip) -> switch to backref
-        const skip = dp[i][t] + "0";
-        if (skip.length < dp[i][1].length) dp[i][1] = skip;
-
         // Literal of length 1..9
         for (let len = 1; len <= Math.min(9, n - i); len++) {
           const chunk = dp[i][t] + String(len) + s.substring(i, i + len);
@@ -59,10 +61,6 @@ export function lzCompress(s: string): string {
         }
       } else {
         // Next chunk must be backreference
-        // Length 0 backref (skip) -> switch to literal
-        const skip = dp[i][t] + "0";
-        if (skip.length < dp[i][0].length) dp[i][0] = skip;
-
         // Backref of length 1..9
         for (let len = 1; len <= Math.min(9, n - i); len++) {
           for (let offset = 1; offset <= Math.min(9, i); offset++) {

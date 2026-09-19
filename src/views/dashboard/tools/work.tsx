@@ -117,7 +117,7 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
       focusLabel: ALL_FOCUS_OPTIONS.find((f) => f.value === status.currentFocus)?.label ?? status.currentFocus,
       playerCity: status.playerCity,
       playerMoney: status.playerMoney,
-      playerMoneyFormatted: ns.formatNumber(status.playerMoney),
+      playerMoneyFormatted: ns.format.number(status.playerMoney),
       isFocused,
       skills: {
         strength: status.skills.strength,
@@ -126,12 +126,12 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
         agility: status.skills.agility,
         hacking: status.skills.hacking,
         charisma: status.skills.charisma,
-        strengthFormatted: ns.formatNumber(status.skills.strength, 0),
-        defenseFormatted: ns.formatNumber(status.skills.defense, 0),
-        dexterityFormatted: ns.formatNumber(status.skills.dexterity, 0),
-        agilityFormatted: ns.formatNumber(status.skills.agility, 0),
-        hackingFormatted: ns.formatNumber(status.skills.hacking, 0),
-        charismaFormatted: ns.formatNumber(status.skills.charisma, 0),
+        strengthFormatted: ns.format.number(status.skills.strength, 0),
+        defenseFormatted: ns.format.number(status.skills.defense, 0),
+        dexterityFormatted: ns.format.number(status.skills.dexterity, 0),
+        agilityFormatted: ns.format.number(status.skills.agility, 0),
+        hackingFormatted: ns.format.number(status.skills.hacking, 0),
+        charismaFormatted: ns.format.number(status.skills.charisma, 0),
       },
       activityDisplay,
       activityType,
@@ -145,11 +145,11 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
             skillDisplay: getSkillDisplayName(status.recommendedAction.skill),
             expMult: status.recommendedAction.expMult,
             expMultFormatted: status.recommendedAction.type === "crime"
-              ? ns.formatNumber(status.recommendedAction.expMult)
+              ? ns.format.number(status.recommendedAction.expMult)
               : `${status.recommendedAction.expMult}x`,
             needsTravel: status.recommendedAction.needsTravel,
             travelCost: status.recommendedAction.travelCost,
-            travelCostFormatted: ns.formatNumber(TRAVEL_COST),
+            travelCostFormatted: ns.format.number(TRAVEL_COST),
           }
         : null,
       canTravelToBest: status.canTravelToBest,
@@ -167,11 +167,11 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
             currentSkill: status.balanceRotation.currentSkill,
             currentSkillDisplay: getSkillDisplayName(status.balanceRotation.currentSkill),
             currentValue: status.balanceRotation.currentValue,
-            currentValueFormatted: ns.formatNumber(status.balanceRotation.currentValue, 0),
+            currentValueFormatted: ns.format.number(status.balanceRotation.currentValue, 0),
             lowestSkill: status.balanceRotation.lowestSkill,
             lowestSkillDisplay: getSkillDisplayName(status.balanceRotation.lowestSkill),
             lowestValue: status.balanceRotation.lowestValue,
-            lowestValueFormatted: ns.formatNumber(status.balanceRotation.lowestValue, 0),
+            lowestValueFormatted: ns.format.number(status.balanceRotation.lowestValue, 0),
             timeSinceSwitch: status.balanceRotation.timeSinceSwitch,
             timeUntilEligible: status.balanceRotation.timeUntilEligible,
             timeUntilEligibleFormatted: status.balanceRotation.timeUntilEligible > 0
@@ -183,7 +183,7 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
               skill: sv.skill,
               display: getSkillDisplayName(sv.skill),
               value: sv.value,
-              valueFormatted: ns.formatNumber(sv.value, 0),
+              valueFormatted: ns.format.number(sv.value, 0),
             })),
           }
         : null,
@@ -193,16 +193,16 @@ function formatWorkStatus(ns: NS): FormattedWorkStatus | null {
             chance: status.currentCrime.chance,
             chanceFormatted: `${(status.currentCrime.chance * 100).toFixed(1)}%`,
             moneyPerMin: status.currentCrime.moneyPerMin,
-            moneyPerMinFormatted: ns.formatNumber(status.currentCrime.moneyPerMin),
+            moneyPerMinFormatted: ns.format.number(status.currentCrime.moneyPerMin),
             combatExpPerMin:
               status.currentCrime.strExpPerMin +
               status.currentCrime.defExpPerMin +
               status.currentCrime.dexExpPerMin +
               status.currentCrime.agiExpPerMin,
             karmaPerMin: status.currentCrime.karmaPerMin,
-            karmaPerMinFormatted: ns.formatNumber(Math.abs(status.currentCrime.karmaPerMin)),
+            karmaPerMinFormatted: ns.format.number(Math.abs(status.currentCrime.karmaPerMin)),
             killsPerMin: status.currentCrime.killsPerMin,
-            killsPerMinFormatted: ns.formatNumber(status.currentCrime.killsPerMin),
+            killsPerMinFormatted: ns.format.number(status.currentCrime.killsPerMin),
           }
         : null,
       pendingCrimeSwitch: null,

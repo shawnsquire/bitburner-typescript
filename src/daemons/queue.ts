@@ -138,7 +138,7 @@ async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
   if (availableRam < scriptRam) {
     if (entry.mode === "force") {
       // Walk kill tiers to free RAM
-      ns.print(`${COLORS.yellow}Force mode: freeing RAM for ${entry.script} (need ${ns.formatRam(scriptRam)})${COLORS.reset}`);
+      ns.print(`${COLORS.yellow}Force mode: freeing RAM for ${entry.script} (need ${ns.format.ram(scriptRam)})${COLORS.reset}`);
       killed = freeRamByKillTiers(ns, scriptRam);
 
       // Brief pause to let processes fully terminate
@@ -147,7 +147,7 @@ async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
 
       if (availableRam < scriptRam) {
         // Still not enough even after killing everything
-        ns.print(`${COLORS.red}Cannot free enough RAM for ${entry.script} (need ${ns.formatRam(scriptRam)}, have ${ns.formatRam(availableRam)})${COLORS.reset}`);
+        ns.print(`${COLORS.red}Cannot free enough RAM for ${entry.script} (need ${ns.format.ram(scriptRam)}, have ${ns.format.ram(availableRam)})${COLORS.reset}`);
 
         if (entry.manualFallback) {
           ns.tprint(`${COLORS.yellow}Manual fallback: ${entry.manualFallback}${COLORS.reset}`);
@@ -156,7 +156,7 @@ async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
       }
     } else {
       // Queue mode - skip if not enough RAM
-      ns.print(`${COLORS.dim}Skipping ${entry.script}: need ${ns.formatRam(scriptRam)}, have ${ns.formatRam(availableRam)}${COLORS.reset}`);
+      ns.print(`${COLORS.dim}Skipping ${entry.script}: need ${ns.format.ram(scriptRam)}, have ${ns.format.ram(availableRam)}${COLORS.reset}`);
       return false;
     }
   }
@@ -201,7 +201,7 @@ async function executeEntry(ns: NS, entry: QueueEntry): Promise<boolean> {
           ns.print(`${COLORS.yellow}Failed to relaunch ${k.script}${COLORS.reset}`);
         }
       } else {
-        ns.print(`${COLORS.yellow}Not enough RAM to relaunch ${k.script} (need ${ns.formatRam(relaunchRam)})${COLORS.reset}`);
+        ns.print(`${COLORS.yellow}Not enough RAM to relaunch ${k.script} (need ${ns.format.ram(relaunchRam)})${COLORS.reset}`);
       }
     }
   }
@@ -227,8 +227,8 @@ function printStatus(
     `${C.dim}Round-robin:${C.reset} ${roundRobinIndex + 1}/${STATUS_CHECKS.length}`
   );
   ns.print(
-    `${C.dim}Available RAM:${C.reset} ${ns.formatRam(getAvailableRam(ns))}` +
-    ` / ${ns.formatRam(ns.getServerMaxRam("home"))}`
+    `${C.dim}Available RAM:${C.reset} ${ns.format.ram(getAvailableRam(ns))}` +
+    ` / ${ns.format.ram(ns.getServerMaxRam("home"))}`
   );
 }
 

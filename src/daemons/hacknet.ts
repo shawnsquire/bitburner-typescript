@@ -2,16 +2,16 @@
  * Hacknet Server Daemon (Tiered)
  *
  * Manages Hacknet Servers (BN9 / SF9 unlocked) — purchases, upgrades, and hash spending.
- * All ns.hacknet.* functions cost 0 RAM, so tiers gate features, not RAM.
+ * Each ns.hacknet.* function costs 0.5 GB (v3.0+), so tiers gate both features and RAM.
  *
- *   Tier 0 (monitor):      ~3 GB  - Reads stats, publishes status
- *   Tier 1 (auto-buy):     ~3 GB  - Purchases nodes & upgrades via budget
- *   Tier 2 (hash-spender): ~3 GB  - Auto-spends hashes for money
+ *   Tier 0 (monitor):      ~8 GB   - Reads stats, publishes status, evaluates upgrade ROI
+ *   Tier 1 (auto-buy):     ~11 GB  - Purchases nodes & upgrades via budget
+ *   Tier 2 (hash-spender): ~12 GB  - Auto-spends hashes per strategy
  *
  * Usage:
  *   run daemons/hacknet.js
  */
-import { NS, NodeStats } from "@ns";
+import { NS, NodeStats, HacknetServerHashUpgrade } from "@ns";
 import { COLORS } from "/lib/utils";
 import { publishStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
@@ -36,19 +36,39 @@ const HACKNET_TIERS: HacknetTierConfig[] = [
   {
     tier: 0,
     name: "monitor",
-    functions: [],
+    functions: [
+      "hacknet.numNodes",
+      "hacknet.maxNumNodes",
+      "hacknet.numHashes",
+      "hacknet.hashCapacity",
+      "hacknet.getNodeStats",
+      "hacknet.getPurchaseNodeCost",
+      "hacknet.getLevelUpgradeCost",
+      "hacknet.getRamUpgradeCost",
+      "hacknet.getCoreUpgradeCost",
+      "hacknet.getCacheUpgradeCost",
+    ],
     features: ["server stats", "hash tracking", "upgrade costs"],
   },
   {
     tier: 1,
     name: "auto-buy",
-    functions: [],
+    functions: [
+      "hacknet.purchaseNode",
+      "hacknet.upgradeLevel",
+      "hacknet.upgradeRam",
+      "hacknet.upgradeCore",
+      "hacknet.upgradeCache",
+    ],
     features: ["auto-purchase nodes", "auto-upgrade nodes", "ROI optimization"],
   },
   {
     tier: 2,
     name: "hash-spender",
-    functions: [],
+    functions: [
+      "hacknet.hashCost",
+      "hacknet.spendHashes",
+    ],
     features: ["auto-spend hashes for money"],
   },
 ];
@@ -190,7 +210,7 @@ let hashesSpentTotal = 0;
 let moneyEarnedFromHashes = 0;
 const HASH_SELL_MONEY = 1_000_000; // $1M per sell
 
-const HASH_STRATEGY_MAP: Record<HashSpendStrategy, string> = {
+const HASH_STRATEGY_MAP: Record<HashSpendStrategy, HacknetServerHashUpgrade> = {
   "money": "Sell for Money",
   "study": "Improve Studying",
   "gym": "Improve Gym Training",
@@ -203,9 +223,9 @@ const VALID_STRATEGIES = new Set(Object.keys(HASH_STRATEGY_MAP));
 
 // === DAEMON ===
 
-/** @ram 5 */
+/** @ram 8 */
 export async function main(ns: NS): Promise<void> {
-  ns.ramOverride(5);
+  ns.ramOverride(8);
   ns.disableLog("ALL");
 
   writeDefaultConfig(ns, "hacknet", {
@@ -228,7 +248,7 @@ export async function main(ns: NS): Promise<void> {
   if (ramCost > currentScriptRam) {
     const actual = ns.ramOverride(ramCost);
     if (actual < ramCost) {
-      ns.tprint(`WARN: Hacknet daemon could not allocate ${ns.formatRam(ramCost)}, got ${ns.formatRam(actual)}. Running tier 0.`);
+      ns.tprint(`WARN: Hacknet daemon could not allocate ${ns.format.ram(ramCost)}, got ${ns.format.ram(actual)}. Running tier 0.`);
       const fallback = selectBestTier(actual, tierRamCosts);
       ns.ramOverride(fallback.ramCost);
       tier = fallback.tier;
@@ -273,9 +293,9 @@ export async function main(ns: NS): Promise<void> {
         cores: stats.cores,
         cache: stats.cache ?? 0,
         hashRate,
-        hashRateFormatted: ns.formatNumber(hashRate, 3) + " h/s",
+        hashRateFormatted: ns.format.number(hashRate, 3) + " h/s",
         production: stats.totalProduction,
-        productionFormatted: ns.formatNumber(stats.totalProduction),
+        productionFormatted: ns.format.number(stats.totalProduction),
       });
     }
 
@@ -299,7 +319,7 @@ export async function main(ns: NS): Promise<void> {
               totalSpent += cost;
               nodesBought++;
               purchasesThisTick++;
-              ns.print(`  ${C.green}BOUGHT${C.reset} First hacknet server (${ns.formatNumber(cost)})`);
+              ns.print(`  ${C.green}BOUGHT${C.reset} First hacknet server (${ns.format.number(cost)})`);
               continue; // Re-evaluate with the new node
             }
           }
@@ -366,7 +386,7 @@ export async function main(ns: NS): Promise<void> {
         if (keepBuying) await ns.sleep(5); // Yield between purchases
       }
       if (purchasesThisTick > 1) {
-        ns.print(`  ${C.green}BOUGHT${C.reset} ${purchasesThisTick} upgrades this tick (${ns.formatNumber(totalSpent)})`);
+        ns.print(`  ${C.green}BOUGHT${C.reset} ${purchasesThisTick} upgrades this tick (${ns.format.number(totalSpent)})`);
       }
     }
 
@@ -381,7 +401,7 @@ export async function main(ns: NS): Promise<void> {
         type: cheapest.type,
         serverIndex: cheapest.serverIndex,
         cost: cheapest.cost,
-        costFormatted: ns.formatNumber(cheapest.cost),
+        costFormatted: ns.format.number(cheapest.cost),
       };
     }
 
@@ -391,7 +411,7 @@ export async function main(ns: NS): Promise<void> {
       type: bestRemaining.type,
       serverIndex: bestRemaining.serverIndex,
       cost: bestRemaining.cost,
-      costFormatted: ns.formatNumber(bestRemaining.cost),
+      costFormatted: ns.format.number(bestRemaining.cost),
       canAfford: bestRemaining.cost <= getBudgetBalance(ns, "hacknet") && bestRemaining.cost <= ns.getPlayer().money,
       roi: bestRemaining.roi,
     } : null;
@@ -453,20 +473,20 @@ export async function main(ns: NS): Promise<void> {
       serverCount: updatedNodeCount,
       maxServers: maxNodes,
       totalHashRate,
-      totalHashRateFormatted: ns.formatNumber(totalHashRate, 3) + " h/s",
+      totalHashRateFormatted: ns.format.number(totalHashRate, 3) + " h/s",
       currentHashes: updatedHashes,
       hashCapacity,
       hashUtilization: hashCapacity > 0 ? updatedHashes / hashCapacity : 0,
       totalProduction,
-      totalProductionFormatted: ns.formatNumber(totalProduction),
+      totalProductionFormatted: ns.format.number(totalProduction),
 
       nextNodeCost: updatedNextNodeCost,
-      nextNodeCostFormatted: updatedNextNodeCost !== null ? ns.formatNumber(updatedNextNodeCost) : null,
+      nextNodeCostFormatted: updatedNextNodeCost !== null ? ns.format.number(updatedNextNodeCost) : null,
       cheapestUpgrade,
 
       hashesSpentTotal,
       moneyEarnedFromHashes,
-      moneyEarnedFormatted: ns.formatNumber(moneyEarnedFromHashes),
+      moneyEarnedFormatted: ns.format.number(moneyEarnedFromHashes),
       spendStrategy,
       autoBuy: autoBuy && tier.tier >= 1,
 
@@ -478,7 +498,7 @@ export async function main(ns: NS): Promise<void> {
       nodesBought,
       upgradesBought,
       totalSpent,
-      totalSpentFormatted: ns.formatNumber(totalSpent),
+      totalSpentFormatted: ns.format.number(totalSpent),
     };
 
     publishStatus(ns, STATUS_PORTS.hacknet, status);
@@ -492,30 +512,30 @@ export async function main(ns: NS): Promise<void> {
     if (hashCapacity > 0) {
       const pct = (status.hashUtilization * 100).toFixed(0);
       const hashColor = status.hashUtilization > 0.9 ? C.red : status.hashUtilization > 0.5 ? C.yellow : C.green;
-      ns.print(`  Hashes: ${hashColor}${ns.formatNumber(status.currentHashes)}/${ns.formatNumber(hashCapacity)} (${pct}%)${C.reset}`);
+      ns.print(`  Hashes: ${hashColor}${ns.format.number(status.currentHashes)}/${ns.format.number(hashCapacity)} (${pct}%)${C.reset}`);
     }
     if (tier.tier >= 2 && moneyEarnedFromHashes > 0) {
       ns.print(`  Earned: ${C.green}$${status.moneyEarnedFormatted}${C.reset} from hashes`);
     }
     if (nextNodeCost !== null) {
-      ns.print(`  Next Node: ${C.yellow}${ns.formatNumber(nextNodeCost)}${C.reset}`);
+      ns.print(`  Next Node: ${C.yellow}${ns.format.number(nextNodeCost)}${C.reset}`);
     }
     if (totalSpent > 0) {
-      ns.print(`  Spent: ${ns.formatNumber(totalSpent)} (${nodesBought} nodes, ${upgradesBought} upgrades)`);
+      ns.print(`  Spent: ${ns.format.number(totalSpent)} (${nodesBought} nodes, ${upgradesBought} upgrades)`);
     }
 
     // Per-server breakdown (compact)
     if (servers.length > 0 && servers.length <= 10) {
       ns.print(`\n  ${C.dim}#   Lvl   RAM     Cores  Cache  Rate${C.reset}`);
       for (const s of servers) {
-        ns.print(`  ${String(s.index).padStart(2)}  ${String(s.level).padStart(4)}  ${ns.formatRam(s.ram).padStart(6)}  ${String(s.cores).padStart(5)}  ${String(s.cache).padStart(5)}  ${s.hashRateFormatted}`);
+        ns.print(`  ${String(s.index).padStart(2)}  ${String(s.level).padStart(4)}  ${ns.format.ram(s.ram).padStart(6)}  ${String(s.cores).padStart(5)}  ${String(s.cache).padStart(5)}  ${s.hashRateFormatted}`);
       }
     } else if (servers.length > 10) {
       ns.print(`\n  ${C.dim}${servers.length} servers (showing top 5 by hash rate)${C.reset}`);
       const top = [...servers].sort((a, b) => b.hashRate - a.hashRate).slice(0, 5);
       ns.print(`  ${C.dim}#   Lvl   RAM     Cores  Cache  Rate${C.reset}`);
       for (const s of top) {
-        ns.print(`  ${String(s.index).padStart(2)}  ${String(s.level).padStart(4)}  ${ns.formatRam(s.ram).padStart(6)}  ${String(s.cores).padStart(5)}  ${String(s.cache).padStart(5)}  ${s.hashRateFormatted}`);
+        ns.print(`  ${String(s.index).padStart(2)}  ${String(s.level).padStart(4)}  ${ns.format.ram(s.ram).padStart(6)}  ${String(s.cores).padStart(5)}  ${String(s.cache).padStart(5)}  ${s.hashRateFormatted}`);
       }
     }
 

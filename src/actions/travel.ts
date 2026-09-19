@@ -36,7 +36,7 @@ export async function main(ns: NS): Promise<void> {
   const money = ns.getServerMoneyAvailable("home");
 
   if (money < cost) {
-    ns.tprint(`FAILED: Not enough money to travel. Need $200k, have ${ns.formatNumber(money, 1)}`);
+    ns.tprint(`FAILED: Not enough money to travel. Need $200k, have ${ns.format.number(money, 1)}`);
     return;
   }
 

@@ -72,6 +72,9 @@ const TIERS: StocksTierConfig[] = [
       "stock.getSymbols",
       "stock.getPrice",
       "stock.getPosition",
+      "stock.hasWseAccount",
+      "stock.hasTixApiAccess",
+      "stock.has4SDataTixApi",
     ],
     features: ["price-polling", "position-tracking", "status-publishing"],
   },
@@ -254,45 +257,21 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
   let hasTIX = false;
   let has4S = false;
 
-  // Check what we already have by trying to use the functions
+  // v3.0+: TIX API access is independent from the WSE account. The WSE account and the
+  // non-API "4S Market Data" only unlock the Stock Market UI, so scripts never buy them.
   try {
-    ns.stock.getSymbols();
-    hasTIX = true;
-    hasWSE = true;
+    hasWSE = ns.stock.hasWseAccount();
+    hasTIX = ns.stock.hasTixApiAccess();
+    has4S = ns.stock.has4SDataTixApi();
   } catch {
-    // Don't have TIX API
-  }
-
-  if (hasTIX) {
-    try {
-      ns.stock.getForecast(ns.stock.getSymbols()[0]);
-      has4S = true;
-    } catch {
-      // Don't have 4S
-    }
+    // Stock market not available in this bitnode
   }
 
   const player = ns.getPlayer();
   const money = player.money;
 
-  // Purchase WSE Account ($200M)
-  if (!hasWSE) {
-    const cost = 200_000_000;
-    if (money >= cost && canAfford(ns, "wse-access", cost)) {
-      try {
-        if (ns.stock.purchaseWseAccount()) {
-          hasWSE = true;
-          notifyPurchase(ns, "wse-access", cost, "WSE Account");
-          ns.print(`  ${C.green}PURCHASED${C.reset} WSE Account`);
-        }
-      } catch {
-        // Not available in this bitnode
-      }
-    }
-  }
-
-  // Purchase TIX API ($5B)
-  if (hasWSE && !hasTIX) {
+  // Purchase TIX API ($5B) — no longer requires a WSE account in v3.0+
+  if (!hasTIX) {
     const cost = 5_000_000_000;
     if (money >= cost && canAfford(ns, "wse-access", cost)) {
       try {
@@ -303,21 +282,6 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
         }
       } catch {
         // Not available
-      }
-    }
-  }
-
-  // Purchase 4S Market Data ($1B) — prerequisite for TIX API
-  if (hasTIX && !has4S) {
-    const cost = 1_000_000_000;
-    if (money >= cost && canAfford(ns, "wse-access", cost)) {
-      try {
-        if (ns.stock.purchase4SMarketData()) {
-          notifyPurchase(ns, "wse-access", cost, "4S Market Data");
-          ns.print(`  ${C.green}PURCHASED${C.reset} 4S Market Data`);
-        }
-      } catch {
-        // Not available or already owned
       }
     }
   }
@@ -339,7 +303,7 @@ function tryPurchaseAPIs(ns: NS): { hasWSE: boolean; hasTIX: boolean; has4S: boo
   }
 
   // Signal done for wse-access once all APIs owned
-  if (hasWSE && hasTIX && has4S) {
+  if (hasTIX && has4S) {
     signalDone(ns, "wse-access");
   }
 
@@ -505,7 +469,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       }
       sessionStartOffset = inheritedPnL;
       if (Math.abs(sessionStartOffset) > 0) {
-        ns.print(`  ${C.dim}Session P&L offset: ${ns.formatNumber(sessionStartOffset)} (inherited positions)${C.reset}`);
+        ns.print(`  ${C.dim}Session P&L offset: ${ns.format.number(sessionStartOffset)} (inherited positions)${C.reset}`);
       }
     }
 
@@ -589,7 +553,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             exitReason: "external", forecastAtEntry: tracking?.forecastAtEntry,
           });
           positionTracking.delete(longKey);
-          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} LONG: ~${ns.formatNumber(profit)}`);
+          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} LONG: ~${ns.format.number(profit)}`);
         }
 
         // Short position disappeared externally
@@ -604,7 +568,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             exitReason: "external", forecastAtEntry: tracking?.forecastAtEntry,
           });
           positionTracking.delete(shortKey);
-          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} SHORT: ~${ns.formatNumber(profit)}`);
+          ns.print(`  ${C.yellow}EXTERNAL SELL${C.reset} ${sym} SHORT: ~${ns.format.number(profit)}`);
         }
       }
 
@@ -703,7 +667,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           currentPrice: price,
           direction: "long",
           profit,
-          profitFormatted: ns.formatNumber(profit),
+          profitFormatted: ns.format.number(profit),
           confidence: displayConfidence,
           hackAdjustment: hackAdj || undefined,
         });
@@ -739,7 +703,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(longKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} LONG: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} LONG: ${ns.format.number(saleProfit)}`);
               sold = true;
             }
           }
@@ -758,7 +722,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(longKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.green}SELL LONG${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.green}SELL LONG${C.reset} ${sym}: ${ns.format.number(saleProfit)}`);
             }
           }
         }
@@ -776,7 +740,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
           currentPrice: price,
           direction: "short",
           profit,
-          profitFormatted: ns.formatNumber(profit),
+          profitFormatted: ns.format.number(profit),
           confidence: displayConfidence,
           hackAdjustment: hackAdj || undefined,
         });
@@ -812,7 +776,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(shortKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} SHORT: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.red}STOP ${stopCheck.reason.toUpperCase()}${C.reset} ${sym} SHORT: ${ns.format.number(saleProfit)}`);
               sold = true;
             }
           }
@@ -831,7 +795,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
               });
               positionTracking.delete(shortKey);
               sellCooldowns.set(sym, tickCount);
-              ns.print(`  ${C.yellow}SELL SHORT${C.reset} ${sym}: ${ns.formatNumber(saleProfit)}`);
+              ns.print(`  ${C.yellow}SELL SHORT${C.reset} ${sym}: ${ns.format.number(saleProfit)}`);
             }
           }
         }
@@ -902,7 +866,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             forecastAtEntry: cand.forecast,
           });
           notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} LONG`);
-          ns.print(`  ${C.green}BUY LONG${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
+          ns.print(`  ${C.green}BUY LONG${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.format.number(cost)}`);
           newPositions++;
         }
       } else {
@@ -916,7 +880,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
             forecastAtEntry: cand.forecast,
           });
           notifyPurchase(ns, "stocks", cost * sharesToBuy, `Buy ${cand.sym} SHORT`);
-          ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.formatNumber(cost)}`);
+          ns.print(`  ${C.cyan}BUY SHORT${C.reset} ${cand.sym}: ${sharesToBuy} @ ${ns.format.number(cost)}`);
           newPositions++;
         }
       }
@@ -970,19 +934,19 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       hasTIX: apis.hasTIX,
       has4S: apis.has4S,
       portfolioValue,
-      portfolioValueFormatted: ns.formatNumber(portfolioValue),
+      portfolioValueFormatted: ns.format.number(portfolioValue),
       totalProfit,
-      totalProfitFormatted: ns.formatNumber(totalProfit),
+      totalProfitFormatted: ns.format.number(totalProfit),
       realizedProfit,
-      realizedProfitFormatted: ns.formatNumber(realizedProfit),
+      realizedProfitFormatted: ns.format.number(realizedProfit),
       profitPerSec,
-      profitPerSecFormatted: ns.formatNumber(profitPerSec) + "/s",
+      profitPerSecFormatted: ns.format.number(profitPerSec) + "/s",
       longPositions: longCount,
       shortPositions: shortCount,
       positions: positions.sort((a, b) => Math.abs(b.profit) - Math.abs(a.profit)),
       signals: signals.slice(0, 10),
       tradingCapital: tradingCapital === Infinity ? -1 : tradingCapital,
-      tradingCapitalFormatted: tradingCapital === Infinity ? "unlimited" : ns.formatNumber(tradingCapital),
+      tradingCapitalFormatted: tradingCapital === Infinity ? "unlimited" : ns.format.number(tradingCapital),
       smartMode,
       activeProfile,
       pollInterval,
@@ -994,7 +958,7 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       // Trade history & session analytics
       recentTrades: recentTrades.map(t => ({
         ...t,
-        profitFormatted: ns.formatNumber(t.profit),
+        profitFormatted: ns.format.number(t.profit),
       })),
       sessionStats: sessionTradeCount > 0 ? {
         totalTrades: sessionTradeCount,
@@ -1005,22 +969,22 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
         avgHoldTicks: Math.round(sessionTotalHoldTicks / sessionTradeCount),
         bestTrade: sessionBestTrade,
         worstTrade: sessionWorstTrade,
-        avgProfitFormatted: ns.formatNumber(sessionTotalProfit / sessionTradeCount),
-        bestTradeFormatted: ns.formatNumber(sessionBestTrade),
-        worstTradeFormatted: ns.formatNumber(sessionWorstTrade),
+        avgProfitFormatted: ns.format.number(sessionTotalProfit / sessionTradeCount),
+        bestTradeFormatted: ns.format.number(sessionBestTrade),
+        worstTradeFormatted: ns.format.number(sessionWorstTrade),
         long: {
           trades: longTrades,
           wins: longWins,
           winRate: longTrades > 0 ? longWins / longTrades : 0,
           totalProfit: longTotalProfit,
-          totalProfitFormatted: ns.formatNumber(longTotalProfit),
+          totalProfitFormatted: ns.format.number(longTotalProfit),
         },
         short: {
           trades: shortTrades,
           wins: shortWins,
           winRate: shortTrades > 0 ? shortWins / shortTrades : 0,
           totalProfit: shortTotalProfit,
-          totalProfitFormatted: ns.formatNumber(shortTotalProfit),
+          totalProfitFormatted: ns.format.number(shortTotalProfit),
         },
       } : undefined,
     };
@@ -1031,9 +995,9 @@ async function daemon(ns: NS, maxTier: number, tierName: string): Promise<void> 
       `${C.cyan}=== Stocks ===${C.reset} ` +
       `[${mode.toUpperCase()}] ` +
       `Pos: ${longCount}L/${shortCount}S | ` +
-      `Value: ${ns.formatNumber(portfolioValue)} | ` +
-      `P&L: ${ns.formatNumber(totalProfit)} | ` +
-      `${ns.formatNumber(profitPerSec)}/s`
+      `Value: ${ns.format.number(portfolioValue)} | ` +
+      `P&L: ${ns.format.number(totalProfit)} | ` +
+      `${ns.format.number(profitPerSec)}/s`
     );
 
     await ns.sleep(pollInterval);

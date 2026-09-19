@@ -5,7 +5,7 @@
  *
  * Usage: run actions/corp/buy-upgrade.js --name "Smart Factories"
  */
-import { NS } from "@ns";
+import { NS, CorpUpgradeName } from "@ns";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL");
@@ -22,11 +22,11 @@ export async function main(ns: NS): Promise<void> {
   }
 
   try {
-    const level = ns.corporation.getUpgradeLevel(name);
-    const cost = ns.corporation.getUpgradeLevelCost(name);
-    ns.tprint(`INFO: ${name} — current level ${level}, upgrade cost ${ns.formatNumber(cost)}`);
+    const level = ns.corporation.getUpgradeLevel(name as CorpUpgradeName);
+    const cost = ns.corporation.getUpgradeLevelCost(name as CorpUpgradeName);
+    ns.tprint(`INFO: ${name} — current level ${level}, upgrade cost ${ns.format.number(cost)}`);
 
-    ns.corporation.levelUpgrade(name);
+    ns.corporation.levelUpgrade(name as CorpUpgradeName);
     ns.tprint(`SUCCESS: ${name} upgraded to level ${level + 1}`);
   } catch (e) {
     ns.tprint(`ERROR: ${e}`);

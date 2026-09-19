@@ -166,7 +166,7 @@ export async function main(ns: NS): Promise<void> {
   suggestions.push({
     priority: 1,
     category: "INFO",
-    message: `Home RAM: ${ns.formatRam(homeFree)} free / ${ns.formatRam(homeRam)} total`,
+    message: `Home RAM: ${ns.format.ram(homeFree)} free / ${ns.format.ram(homeRam)} total`,
   });
 
   // Sort by priority descending
@@ -174,7 +174,7 @@ export async function main(ns: NS): Promise<void> {
 
   // Print
   ns.tprint(`\n${C.cyan}=== TASK PRIORITIZER ===${C.reset}`);
-  ns.tprint(`${C.dim}Home RAM: ${ns.formatRam(homeFree)} free / ${ns.formatRam(homeRam)} total${C.reset}`);
+  ns.tprint(`${C.dim}Home RAM: ${ns.format.ram(homeFree)} free / ${ns.format.ram(homeRam)} total${C.reset}`);
   ns.tprint(`${C.dim}Processes: ${processes.length} running${C.reset}\n`);
 
   if (suggestions.length === 0) {

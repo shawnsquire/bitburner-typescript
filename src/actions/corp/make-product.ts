@@ -24,7 +24,7 @@ export async function main(ns: NS): Promise<void> {
 
   try {
     ns.corporation.makeProduct(flags.division, flags.city as any, flags.name, flags.invest, flags.invest);
-    ns.tprint(`SUCCESS: Started developing "${flags.name}" in ${flags.division} (${ns.formatNumber(flags.invest * 2)} total investment)`);
+    ns.tprint(`SUCCESS: Started developing "${flags.name}" in ${flags.division} (${ns.format.number(flags.invest * 2)} total investment)`);
   } catch (e) {
     ns.tprint(`ERROR: ${e}`);
   }

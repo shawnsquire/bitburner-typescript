@@ -11,7 +11,7 @@
  *      run actions/neuroflux-donate.js --confirm    (execute donations and purchases)
  *      run actions/neuroflux-donate.js --reserve 1b (keep 1 billion in reserve)
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 import { COLORS } from "/lib/utils";
 import {
   calculateNFGDonatePurchasePlan,
@@ -57,10 +57,10 @@ export async function executeDonateAndPurchase(
 
     // Step 1: Donate if needed
     if (step.donationNeeded > 0) {
-      const success = ns.singularity.donateToFaction(plan.faction, step.donationNeeded);
+      const success = ns.singularity.donateToFaction(plan.faction as FactionName, step.donationNeeded);
       if (!success) {
         ns.tprint(
-          `${C.red}✗${C.reset} Failed to donate $${ns.formatNumber(step.donationNeeded)} to ${plan.faction}`
+          `${C.red}✗${C.reset} Failed to donate $${ns.format.number(step.donationNeeded)} to ${plan.faction}`
         );
         return {
           purchased,
@@ -74,12 +74,12 @@ export async function executeDonateAndPurchase(
       }
       donationsSpent += step.donationNeeded;
       ns.tprint(
-        `${C.yellow}$${C.reset} Donated ${C.yellow}$${ns.formatNumber(step.donationNeeded)}${C.reset} for ${C.cyan}${ns.formatNumber(step.repGap)}${C.reset} rep`
+        `${C.yellow}$${C.reset} Donated ${C.yellow}$${ns.format.number(step.donationNeeded)}${C.reset} for ${C.cyan}${ns.format.number(step.repGap)}${C.reset} rep`
       );
     }
 
     // Step 2: Purchase NFG
-    const purchaseSuccess = ns.singularity.purchaseAugmentation(plan.faction, "NeuroFlux Governor");
+    const purchaseSuccess = ns.singularity.purchaseAugmentation(plan.faction as FactionName, "NeuroFlux Governor");
     if (!purchaseSuccess) {
       ns.tprint(
         `${C.red}✗${C.reset} Failed to purchase NeuroFlux Governor #${i + 1}`
@@ -98,7 +98,7 @@ export async function executeDonateAndPurchase(
     purchasesSpent += step.purchaseCost;
     purchased++;
     ns.tprint(
-      `${C.green}✓${C.reset} Purchased ${C.white}NeuroFlux Governor${C.reset} #${C.cyan}${i + 1}${C.reset} for ${C.green}$${ns.formatNumber(step.purchaseCost)}${C.reset}`
+      `${C.green}✓${C.reset} Purchased ${C.white}NeuroFlux Governor${C.reset} #${C.cyan}${i + 1}${C.reset} for ${C.green}$${ns.format.number(step.purchaseCost)}${C.reset}`
     );
 
     await ns.sleep(50); // Small delay between operations
@@ -135,7 +135,7 @@ export function displayHeader(
   ns.tprint(`${C.cyan}${"═".repeat(70)}${C.reset}`);
   ns.tprint(`${C.dim}Faction: ${C.white}${faction}${C.reset}`);
   ns.tprint(`${C.dim}Favor: ${favor.toFixed(0)} (min ${DONATION_FAVOR_THRESHOLD} required)${C.reset}`);
-  ns.tprint(`${C.dim}Available: $${ns.formatNumber(availableMoney)}${C.reset}`);
+  ns.tprint(`${C.dim}Available: $${ns.format.number(availableMoney)}${C.reset}`);
   ns.tprint("");
 }
 
@@ -156,13 +156,13 @@ export function displayPurchasePlan(
   // Summary box
   ns.tprint(`${C.dim}${"─".repeat(50)}${C.reset}`);
   ns.tprint(
-    `  Donations: ${C.yellow}$${ns.formatNumber(plan.totalDonationCost).padStart(12)}${C.reset}`
+    `  Donations: ${C.yellow}$${ns.format.number(plan.totalDonationCost).padStart(12)}${C.reset}`
   );
   ns.tprint(
-    `  Purchases: ${C.green}$${ns.formatNumber(plan.totalPurchaseCost).padStart(12)}${C.reset}`
+    `  Purchases: ${C.green}$${ns.format.number(plan.totalPurchaseCost).padStart(12)}${C.reset}`
   );
   ns.tprint(
-    `  Total:     ${C.cyan}$${ns.formatNumber(plan.totalCost).padStart(12)}${C.reset}`
+    `  Total:     ${C.cyan}$${ns.format.number(plan.totalCost).padStart(12)}${C.reset}`
   );
   ns.tprint(`${C.dim}${"─".repeat(50)}${C.reset}`);
   ns.tprint("");
@@ -176,10 +176,10 @@ export function displayPurchasePlan(
   for (let i = 0; i < plan.steps.length; i++) {
     const step = plan.steps[i];
     const donationStr = step.donationNeeded > 0
-      ? `$${ns.formatNumber(step.donationNeeded)}`
+      ? `$${ns.format.number(step.donationNeeded)}`
       : "-";
-    const purchaseStr = `$${ns.formatNumber(step.purchaseCost)}`;
-    const runningStr = `$${ns.formatNumber(step.runningTotal)}`;
+    const purchaseStr = `$${ns.format.number(step.purchaseCost)}`;
+    const runningStr = `$${ns.format.number(step.runningTotal)}`;
 
     ns.tprint(
       `${C.green}${(i + 1).toString().padStart(2)}${C.reset}     ` +
@@ -226,7 +226,7 @@ export async function main(ns: NS): Promise<void> {
     return;
   }
 
-  const favor = ns.singularity.getFactionFavor(plan.faction);
+  const favor = ns.singularity.getFactionFavor(plan.faction as FactionName);
 
   // Display header
   displayHeader(ns, availableMoney, plan.faction, favor, config.confirm);
@@ -234,13 +234,13 @@ export async function main(ns: NS): Promise<void> {
   if (!plan.canExecute || plan.purchases === 0) {
     const currentPrice = ns.singularity.getAugmentationPrice("NeuroFlux Governor");
     const currentRepReq = ns.singularity.getAugmentationRepReq("NeuroFlux Governor");
-    const currentRep = ns.singularity.getFactionRep(plan.faction);
+    const currentRep = ns.singularity.getFactionRep(plan.faction as FactionName);
     const repGap = Math.max(0, currentRepReq - currentRep);
 
     ns.tprint(`${C.yellow}Cannot afford any NeuroFlux Governor upgrades.${C.reset}`);
-    ns.tprint(`${C.dim}Next NFG costs $${ns.formatNumber(currentPrice)}${C.reset}`);
+    ns.tprint(`${C.dim}Next NFG costs $${ns.format.number(currentPrice)}${C.reset}`);
     if (repGap > 0) {
-      ns.tprint(`${C.dim}Would also need donation for ${ns.formatNumber(repGap)} rep${C.reset}`);
+      ns.tprint(`${C.dim}Would also need donation for ${ns.format.number(repGap)} rep${C.reset}`);
     }
     return;
   }
@@ -279,7 +279,7 @@ export async function main(ns: NS): Promise<void> {
   }
 
   ns.tprint(
-    `${C.dim}Donated: $${ns.formatNumber(result.donationsSpent)} | Purchased: $${ns.formatNumber(result.purchasesSpent)} | Total: $${ns.formatNumber(result.totalSpent)}${C.reset}`
+    `${C.dim}Donated: $${ns.format.number(result.donationsSpent)} | Purchased: $${ns.format.number(result.purchasesSpent)} | Total: $${ns.format.number(result.totalSpent)}${C.reset}`
   );
 
   if (result.purchased > 0) {

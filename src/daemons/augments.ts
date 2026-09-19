@@ -104,8 +104,8 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
         faction: item.faction,
         baseCost: item.basePrice,
         adjustedCost,
-        baseCostFormatted: ns.formatNumber(item.basePrice),
-        adjustedCostFormatted: ns.formatNumber(adjustedCost),
+        baseCostFormatted: ns.format.number(item.basePrice),
+        adjustedCostFormatted: ns.format.number(adjustedCost),
         tags: classifyAugTags(ns, item.name, item.prereqs),
       };
     }),
@@ -113,7 +113,7 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
       faction: item.faction,
       augName: item.aug.name,
       cost: item.aug.basePrice,
-      costFormatted: ns.formatNumber(item.aug.basePrice),
+      costFormatted: ns.format.number(item.aug.basePrice),
       canAfford: item.canAfford,
     })),
     neuroFlux: nfInfo.bestFaction
@@ -123,14 +123,14 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
           hasEnoughRep: nfInfo.hasEnoughRep,
           canPurchase: nfPlan.purchases > 0,
           currentRep: nfInfo.bestFactionRep,
-          currentRepFormatted: ns.formatNumber(nfInfo.bestFactionRep),
+          currentRepFormatted: ns.format.number(nfInfo.bestFactionRep),
           repRequired: nfInfo.repRequired,
-          repRequiredFormatted: ns.formatNumber(nfInfo.repRequired),
+          repRequiredFormatted: ns.format.number(nfInfo.repRequired),
           repProgress: nfRepProgress,
           repGap: nfRepGap,
-          repGapFormatted: ns.formatNumber(nfRepGap),
+          repGapFormatted: ns.format.number(nfRepGap),
           currentPrice: nfInfo.currentPrice,
-          currentPriceFormatted: ns.formatNumber(nfInfo.currentPrice),
+          currentPriceFormatted: ns.format.number(nfInfo.currentPrice),
           purchasePlan:
             nfPlan.purchases > 0 || nfPlan.repLimited
               ? {
@@ -138,29 +138,29 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
                   endLevel: nfPlan.endLevel,
                   purchases: nfPlan.purchases,
                   totalCost: nfPlan.totalCost,
-                  totalCostFormatted: ns.formatNumber(nfPlan.totalCost),
+                  totalCostFormatted: ns.format.number(nfPlan.totalCost),
                   repLimited: nfPlan.repLimited,
                   nextRepRequired: nfPlan.nextRepRequired,
-                  nextRepRequiredFormatted: nfPlan.nextRepRequired !== null ? ns.formatNumber(nfPlan.nextRepRequired) : null,
+                  nextRepRequiredFormatted: nfPlan.nextRepRequired !== null ? ns.format.number(nfPlan.nextRepRequired) : null,
                   nextRepGap: nfPlan.nextRepGap,
-                  nextRepGapFormatted: nfPlan.nextRepGap !== null ? ns.formatNumber(nfPlan.nextRepGap) : null,
+                  nextRepGapFormatted: nfPlan.nextRepGap !== null ? ns.format.number(nfPlan.nextRepGap) : null,
                 }
               : null,
           canDonate,
           outrightCost,
-          outrightCostFormatted: outrightCost !== null ? ns.formatNumber(outrightCost) : null,
+          outrightCostFormatted: outrightCost !== null ? ns.format.number(outrightCost) : null,
           donationCostForGap,
-          donationCostForGapFormatted: donationCostForGap !== null ? ns.formatNumber(donationCostForGap) : null,
+          donationCostForGapFormatted: donationCostForGap !== null ? ns.format.number(donationCostForGap) : null,
           donationPlan:
             donatePlan && donatePlan.canExecute
               ? {
                   purchases: donatePlan.purchases,
                   totalDonationCost: donatePlan.totalDonationCost,
-                  totalDonationCostFormatted: ns.formatNumber(donatePlan.totalDonationCost),
+                  totalDonationCostFormatted: ns.format.number(donatePlan.totalDonationCost),
                   totalPurchaseCost: donatePlan.totalPurchaseCost,
-                  totalPurchaseCostFormatted: ns.formatNumber(donatePlan.totalPurchaseCost),
+                  totalPurchaseCostFormatted: ns.format.number(donatePlan.totalPurchaseCost),
                   totalCost: donatePlan.totalCost,
-                  totalCostFormatted: ns.formatNumber(donatePlan.totalCost),
+                  totalCostFormatted: ns.format.number(donatePlan.totalCost),
                 }
               : null,
         }
@@ -168,7 +168,7 @@ function computeAugmentsStatus(ns: NS): AugmentsStatus {
     pendingAugs: pendingAugs.length,
     installedAugs: installedAugs.length,
     playerMoney,
-    playerMoneyFormatted: ns.formatNumber(playerMoney),
+    playerMoneyFormatted: ns.format.number(playerMoney),
   };
 }
 
@@ -186,7 +186,7 @@ function printStatus(ns: NS, status: AugmentsStatus): void {
     const totalCost = status.available.reduce((sum, a) => sum + a.adjustedCost, 0);
     ns.print("");
     ns.print(
-      `${C.cyan}PURCHASE ORDER${C.reset} ${C.dim}(${status.available.length} augs, $${ns.formatNumber(totalCost)} total)${C.reset}`
+      `${C.cyan}PURCHASE ORDER${C.reset} ${C.dim}(${status.available.length} augs, $${ns.format.number(totalCost)} total)${C.reset}`
     );
     for (let i = 0; i < Math.min(status.available.length, 8); i++) {
       const item = status.available[i];

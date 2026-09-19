@@ -80,9 +80,9 @@ function computeNukeStatus(ns: NS): NukeStatus {
     needPorts,
     rooted,
     fleetRam: {
-      totalMaxRam: ns.formatRam(fleetMaxRam),
-      totalUsedRam: ns.formatRam(fleetUsedRam),
-      totalFreeRam: ns.formatRam(fleetFreeRam),
+      totalMaxRam: ns.format.ram(fleetMaxRam),
+      totalUsedRam: ns.format.ram(fleetUsedRam),
+      totalFreeRam: ns.format.ram(fleetFreeRam),
       utilization: Math.round(fleetUtilization),
       serverCount: fleetServerCount,
     },

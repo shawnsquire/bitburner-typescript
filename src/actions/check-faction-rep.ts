@@ -8,7 +8,7 @@
  * Usage: run actions/check-faction-rep.js
  *        run actions/check-faction-rep.js --faction CyberSec
  */
-import { NS } from "@ns";
+import { NS, FactionName } from "@ns";
 import { publishStatus } from "/lib/ports";
 import { STATUS_PORTS, RepStatus } from "/types/ports";
 
@@ -43,8 +43,8 @@ export async function main(ns: NS): Promise<void> {
   let bestFavor = 0;
 
   for (const factionName of targetFactions) {
-    const rep = ns.singularity.getFactionRep(factionName);
-    const favor = ns.singularity.getFactionFavor(factionName);
+    const rep = ns.singularity.getFactionRep(factionName as FactionName);
+    const favor = ns.singularity.getFactionFavor(factionName as FactionName);
 
     if (rep > bestRep) {
       bestRep = rep;
@@ -60,7 +60,7 @@ export async function main(ns: NS): Promise<void> {
     repRequired: 0,
     repRequiredFormatted: "-",
     currentRep: bestRep,
-    currentRepFormatted: ns.formatNumber(bestRep, 1),
+    currentRepFormatted: ns.format.number(bestRep, 1),
     repGap: 0,
     repGapFormatted: "-",
     repGapPositive: false,
@@ -83,5 +83,5 @@ export async function main(ns: NS): Promise<void> {
   };
 
   publishStatus(ns, STATUS_PORTS.rep, status as RepStatus);
-  ns.print(`Published rep status: ${bestFaction} rep=${ns.formatNumber(bestRep, 1)} favor=${bestFavor}`);
+  ns.print(`Published rep status: ${bestFaction} rep=${ns.format.number(bestRep, 1)} favor=${bestFavor}`);
 }

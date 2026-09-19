@@ -1,42 +1,34 @@
-/** HammingCodes: Integer to Encoded Binary — Parity bits at 2^k positions */
+/**
+ * HammingCodes: Integer to Encoded Binary
+ *
+ * Mirrors HammingEncode() in the game source (src/CodingContract/contracts/HammingCode.ts):
+ * data bits go MSB-first into the non-power-of-two positions, the block ends right
+ * after the last data bit (no padding to a power-of-two length), parity bit 2^k is
+ * bit k of the XOR of all set positions, and position 0 is the overall parity.
+ * The game checks for an exact string match, so the length rule matters.
+ */
 export function hammingEncode(value: number): string {
-  const valBin = value.toString(2);
-  const dataBits: number[] = [];
-  for (const ch of valBin) dataBits.push(Number(ch));
+  const dataBits = value.toString(2).split("").map(Number); // MSB first
+  const enc: number[] = [0];
 
-  // Determine total length needed
-  let r = 1;
-  while ((1 << r) < dataBits.length + r + 1) r++;
-  const totalLen = dataBits.length + r + 1; // +1 for overall parity at position 0
-
-  const code = new Array(totalLen + 1).fill(0); // 1-indexed
-  let dataIdx = dataBits.length - 1;
-
-  // Place data bits (skip parity positions: powers of 2 and position 0)
-  for (let pos = totalLen; pos >= 1; pos--) {
-    if ((pos & (pos - 1)) === 0) continue; // power of 2 or 0
-    code[pos] = dataBits[dataIdx--];
+  let next = 0;
+  for (let i = 1; next < dataBits.length; i++) {
+    enc[i] = (i & (i - 1)) !== 0 ? dataBits[next++] : 0;
   }
 
-  // Calculate parity bits
-  for (let p = 0; p < r; p++) {
-    const parityPos = 1 << p;
-    let parity = 0;
-    for (let j = parityPos; j <= totalLen; j++) {
-      if (j & parityPos) parity ^= code[j];
-    }
-    code[parityPos] = parity;
+  let syndrome = 0;
+  for (let i = 0; i < enc.length; i++) {
+    if (enc[i]) syndrome ^= i;
+  }
+  for (let p = 1; p < enc.length; p <<= 1) {
+    enc[p] = syndrome & p ? 1 : 0;
   }
 
-  // Overall parity (position 0)
-  let overall = 0;
-  for (let j = 1; j <= totalLen; j++) overall ^= code[j];
-  code[0] = overall;
+  let ones = 0;
+  for (let i = 0; i < enc.length; i++) ones += enc[i];
+  enc[0] = ones % 2;
 
-  // Build string from positions 0..totalLen
-  let result = "";
-  for (let i = 0; i <= totalLen; i++) result += code[i];
-  return result;
+  return enc.join("");
 }
 
 /** HammingCodes: Encoded Binary to Integer — Detect/correct error, extract data */

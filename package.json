@@ -9,7 +9,9 @@
     "watch:manifest": "node build/gen-manifest.js --watch",
     "watch:all": "concurrently npm:watch:transpile npm:watch:local npm:watch:remote npm:watch:manifest",
     "watch": "npm run watch:init && npm run watch:all",
-    "ram": "node tools/ram-check.mjs"
+    "ram": "node tools/ram-check.mjs",
+    "ram:sync": "node tools/gen-ram-table.mjs",
+    "test:contracts": "node tools/test-contracts.mjs"
   },
   "author": "hydroflame, Hoekstraa, based on work by SlyCedix",
   "devDependencies": {

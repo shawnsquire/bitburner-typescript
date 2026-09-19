@@ -38,7 +38,12 @@ export interface PservConfig {
 export interface PservCycleResult {
   bought: number;
   upgraded: number;
+  /** Human sentence for the log, e.g. "Need 1.10m for 8GB server". */
   waitingFor: string | null;
+  /** Price of the purchase the cycle is waiting for (the budget savings goal), null when not waiting. */
+  waitingCost: number | null;
+  /** Short label for that purchase, e.g. "8GB server" or "pserv-0 → 16GB". */
+  waitingLabel: string | null;
 }
 
 /** Callbacks for budget integration. All optional for backward compatibility. */
@@ -228,6 +233,8 @@ export async function runPservCycle(
   let bought = 0;
   let upgraded = 0;
   let waitingFor: string | null = null;
+  let waitingCost: number | null = null;
+  let waitingLabel: string | null = null;
 
   // === PHASE 1: FILL EMPTY SLOTS (batch) ===
   const emptySlots = SERVER_CAP - ns.cloud.getServerNames().length;
@@ -255,7 +262,9 @@ export async function runPservCycle(
       }
     } else {
       const needed = ns.cloud.getServerCost(minRam);
-      waitingFor = `Need ${ns.format.number(needed)} for ${ns.format.ram(minRam)} server`;
+      waitingCost = needed;
+      waitingLabel = `${ns.format.ram(minRam)} server`;
+      waitingFor = `Need ${ns.format.number(needed)} for ${waitingLabel}`;
       ns.print(`${C.yellow}WAITING: ${waitingFor}${C.reset}`);
     }
   }
@@ -293,6 +302,8 @@ export async function runPservCycle(
     if (targetRam <= smallest.ram) {
       const nextRam = smallest.ram * 2;
       const needed = ns.cloud.getServerUpgradeCost(smallest.hostname, nextRam);
+      waitingCost = needed;
+      waitingLabel = `${smallest.hostname} → ${ns.format.ram(nextRam)}`;
       waitingFor = `Need ${ns.format.number(needed)} to upgrade ${smallest.hostname} (${ns.format.ram(smallest.ram)} → ${ns.format.ram(nextRam)})`;
       ns.print(`${C.yellow}WAITING: ${waitingFor}${C.reset}`);
       keepUpgrading = false;
@@ -315,5 +326,5 @@ export async function runPservCycle(
     await ns.sleep(5);
   }
 
-  return { bought, upgraded, waitingFor };
+  return { bought, upgraded, waitingFor, waitingCost, waitingLabel };
 }

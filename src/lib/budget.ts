@@ -5,7 +5,7 @@
  * If the budget daemon isn't running, these functions gracefully degrade
  * (consumers assume unlimited budget).
  *
- * Import with: import { getBudgetBalance, canAfford, notifyPurchase, signalDone, reportCap, setBudgetWeight } from "/lib/budget";
+ * Import with: import { getBudgetBalance, canAfford, notifyPurchase, signalDone, reportCap, reportNext, getPaybackHorizon, setBudgetWeight } from "/lib/budget";
  */
 import { NS } from "@ns";
 import { peekStatus } from "/lib/ports";
@@ -122,4 +122,30 @@ export function reportCap(ns: NS, bucket: string, remainingCost: number): void {
     cap: remainingCost,
   };
   port.write(JSON.stringify(msg));
+}
+
+/**
+ * Report the price of the next purchase this bucket wants, so the budget daemon can
+ * save toward it (see docs/systems/budget.md "Savings goal"). Call every cycle; the
+ * daemon drops an item not refreshed within two minutes. A cost of 0 clears it.
+ */
+export function reportNext(ns: NS, bucket: string, cost: number, label: string): void {
+  const port = ns.getPortHandle(BUDGET_CONTROL_PORT);
+  const msg: BudgetControlMessage = {
+    action: "report-next",
+    bucket,
+    amount: cost,
+    reason: label,
+  };
+  port.write(JSON.stringify(msg));
+}
+
+/**
+ * Max seconds a purchase may take to pay for itself, from the budget config.
+ * Returns Infinity when the budget daemon is not publishing or the horizon is disabled.
+ */
+export function getPaybackHorizon(ns: NS): number {
+  const status = peekStatus<BudgetStatus>(ns, STATUS_PORTS.budget, 30_000);
+  const horizon = status?.paybackHorizon;
+  return typeof horizon === "number" && horizon > 0 ? horizon : Infinity;
 }

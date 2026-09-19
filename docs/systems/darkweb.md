@@ -33,6 +33,9 @@ instead of holding the RAM. It also exits once every program is owned.
 
 - TOR costs 200k and is bought first.
 - Programs are bought in price order while the `programs` budget bucket allows.
+- Every cycle the daemon reports its next purchase (the TOR router, then the
+  cheapest unowned program) with `reportNext`, so the budget daemon can save
+  toward it (`docs/systems/budget.md`, "Savings goal").
   Program names and prices come from the game's darkweb item table.
 - `purchaseProgram` returning `false` is treated as a failed purchase, not a crash.
 

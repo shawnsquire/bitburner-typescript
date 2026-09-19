@@ -33,6 +33,10 @@ is 0, as in BitNode 9); `getPservStatus` reports this as `purchasingDisabled`.
   open slots within budget.
 - Upgrades target the smallest server first; the cost is the game's upgrade
   cost (price of the new size minus the current one).
+- When a cycle cannot afford anything it reports the blocking purchase (the
+  next server, or the smallest server's upgrade) with `reportNext`, so the
+  budget daemon can save toward it. The `reserve` config key above is cash the
+  daemon keeps untouched and is unrelated to the budget daemon's goal reserve.
 - Spending goes through the `servers` budget bucket. The daemon reports the
   cost left to reach the cap, and signals done when everything is maxed;
   disabling `autoBuy` releases the bucket's weight.

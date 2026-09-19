@@ -96,7 +96,9 @@ kill-for-RAM) and `[optional]` (launched only if RAM is free).
 gang, hacknet, home, corp). Consumers use `lib/budget.ts`: `getBudgetBalance`
 before spending, `notifyPurchase` after, `signalDone` when a bucket has nothing
 left to buy (persisted in `/data/budget-done.txt` so it survives restarts),
-`reactivateBucket` to undo that, `reportCap` to publish remaining cost. If the
+`reactivateBucket` to undo that, `reportCap` to publish remaining cost, and
+`reportNext` to name the next purchase so the daemon can reserve cash toward the
+cheapest pending one (the savings goal, `docs/systems/budget.md`). If the
 budget daemon is not running, consumers see `Infinity` and spend freely.
 
 ### Focus

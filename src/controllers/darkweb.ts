@@ -6,6 +6,9 @@
  */
 import { NS, ProgramName } from "@ns";
 
+/** Price of the TOR router (game constant CONSTANTS.TorRouterCost). */
+export const TOR_ROUTER_COST = 200_000;
+
 // === TYPES ===
 
 export interface DarkwebProgram {
@@ -96,7 +99,7 @@ export function analyzeDarkwebPrograms(ns: NS, purchase = true, budgetCheck?: (c
       ownedCount: 0,
       playerMoney,
       nextProgram: null,
-      moneyUntilNext: 200000, // TOR router cost
+      moneyUntilNext: TOR_ROUTER_COST,
       hasTorRouter: false,
     };
   }
@@ -160,7 +163,7 @@ export function getDarkwebStatus(ns: NS): ProgramPurchaseResult {
  * If budgetCheck is provided, the purchase is gated by the callback.
  */
 export function purchaseTorRouter(ns: NS, budgetCheck?: (cost: number, name: string) => boolean): boolean {
-  if (budgetCheck && !budgetCheck(200_000, "TOR Router")) return false;
+  if (budgetCheck && !budgetCheck(TOR_ROUTER_COST, "TOR Router")) return false;
   // ns.singularity.* throws when Source-File 4 isn't available; treat that as "can't buy it".
   try {
     return ns.singularity.purchaseTor();

@@ -65,9 +65,6 @@ export const WSE_4S_TIX_API_COST = 25_000_000_000;
 /** Bucket the stocks daemon charges API purchases to. */
 export const WSE_ACCESS_BUCKET = "wse-access";
 
-/** Cash must be at least this many times the pending API price before the carve-out applies. */
-export const DEFAULT_WSE_CARVEOUT_MULT = 2;
-
 /**
  * Price of the next stock API the stocks daemon will try to buy, or 0 when it owns both.
  * Order mirrors daemons/stocks.ts: TIX API first, then the 4S Market Data TIX API.
@@ -78,14 +75,175 @@ export function nextWseApiCost(hasTIX: boolean, has4S: boolean): number {
   return 0;
 }
 
+/** Dashboard label for the next stock API, or null when both are owned. Mirrors nextWseApiCost. */
+export function nextWseApiLabel(hasTIX: boolean, has4S: boolean): string | null {
+  if (!hasTIX) return "TIX API";
+  if (!has4S) return "4S Market Data TIX API";
+  return null;
+}
+
+// === SAVINGS GOAL ===
+
 /**
- * One-off carve-out: when cash covers `mult` times the pending price, grant the full price
- * for this cycle regardless of the bucket's weight. Returns 0 when nothing is pending or
- * cash is below the threshold. Pure; the caller feeds the result into computeAllowances.
+ * Spender allowances are caps on current cash, so an item priced far above a bucket's
+ * share could never be bought while the continuous spenders keep cash from growing. A
+ * consumer reports the price of its next purchase; the budget daemon picks the cheapest
+ * pending item as the goal, hides a reserve toward it from every other spender, and grants
+ * the full price once the reserve covers it. See docs/systems/budget.md "Savings goal".
  */
-export function computeCarveout(cash: number, pendingCost: number, mult: number = DEFAULT_WSE_CARVEOUT_MULT): number {
-  if (!(pendingCost > 0) || !(mult > 0)) return 0;
-  return cash >= pendingCost * mult ? pendingCost : 0;
+
+/** Percent of cash the reserve may lock. The grant fires at cost / share (2x the price at 50). */
+export const DEFAULT_RESERVE_SHARE = 50;
+
+/** Seconds a hacknet upgrade may take to pay for itself (published for the hacknet daemon). 0 disables. */
+export const DEFAULT_PAYBACK_HORIZON = 3600;
+
+/** A pending item not refreshed within this many ms is dropped (its daemon died or was killed). */
+export const PENDING_STALE_MS = 120_000;
+
+export interface PendingItem {
+  cost: number;
+  label: string;
+  /** Date.now() when last reported. */
+  at: number;
+}
+
+export interface Goal {
+  bucket: string;
+  label: string;
+  cost: number;
+  /** Seconds until cash reaches the grant point at the estimated income (0 when already there). */
+  etaSec: number;
+}
+
+/** Inputs for the feasibility check in selectGoal. */
+export interface GoalFeasibility {
+  cash: number;
+  reserveShare: number;
+  incomePerSec: number;
+  /** Max seconds to save for one item; 0 disables the check. */
+  goalHorizon: number;
+}
+
+/** The selected goal and the cash reserved toward it this tick. */
+export interface GoalPlan {
+  goal: Goal | null;
+  reserve: number;
+}
+
+/** Drop stale entries and anything without a positive cost. Returns a new map. */
+export function prunePending(
+  pending: Record<string, PendingItem>,
+  now: number,
+  staleMs: number = PENDING_STALE_MS,
+): Record<string, PendingItem> {
+  const kept: Record<string, PendingItem> = {};
+  for (const [bucket, item] of Object.entries(pending)) {
+    if (!(item.cost > 0)) continue;
+    if (now - item.at > staleMs) continue;
+    kept[bucket] = item;
+  }
+  return kept;
+}
+
+/**
+ * Cheapest pending item among buckets whose effective weight is above zero. Done, frozen,
+ * zeroed and rush-sidelined buckets can never be the goal. With `feasibility`, an item whose
+ * ETA to its grant point exceeds the horizon is skipped for the next cheapest. Ties break by
+ * bucket name.
+ */
+export function selectGoal(
+  pending: Record<string, PendingItem>,
+  effectiveWeights: Record<string, number>,
+  feasibility?: GoalFeasibility,
+): Goal | null {
+  let best: Goal | null = null;
+  for (const [bucket, item] of Object.entries(pending)) {
+    if (!(item.cost > 0)) continue;
+    if (!((effectiveWeights[bucket] ?? 0) > 0)) continue;
+    const etaSec = feasibility
+      ? goalEtaSeconds(feasibility.cash, item.cost, feasibility.reserveShare, feasibility.incomePerSec)
+      : 0;
+    if (feasibility && !isGoalFeasible(etaSec, feasibility.goalHorizon)) continue;
+    if (best === null || item.cost < best.cost || (item.cost === best.cost && bucket < best.bucket)) {
+      best = { bucket, label: item.label, cost: item.cost, etaSec };
+    }
+  }
+  return best;
+}
+
+// === GOAL FEASIBILITY ===
+
+/** Max seconds the daemon will save for one item. 0 disables the check. */
+export const DEFAULT_GOAL_HORIZON = 7200;
+
+/** Time constant of the cash-trend fallback estimator. */
+export const CASH_TREND_TAU_SEC = 60;
+
+/**
+ * Sum the income rates the producer daemons publish. Missing (null/undefined) or
+ * non-finite entries are ignored; `sources` names the ones that counted, so an empty
+ * list means no producer is publishing and the caller should fall back.
+ */
+export function sumProducerIncome(
+  rates: Record<string, number | null | undefined>,
+): { total: number; sources: string[] } {
+  let total = 0;
+  const sources: string[] = [];
+  for (const [name, rate] of Object.entries(rates)) {
+    if (typeof rate !== "number" || !isFinite(rate)) continue;
+    total += rate;
+    sources.push(name);
+  }
+  return { total: Math.max(0, total), sources };
+}
+
+/**
+ * Exponential moving average of cash income per second, fed once per tick with the cash
+ * change and the spending the spender buckets reported (holders excluded, so trading
+ * nets out to profit). The first sample seeds the average.
+ */
+export function updateCashTrend(
+  prev: number | null,
+  deltaCash: number,
+  spenderSpend: number,
+  dtSec: number,
+  tauSec: number = CASH_TREND_TAU_SEC,
+): number {
+  if (!(dtSec > 0)) return prev ?? 0;
+  const sample = (deltaCash + spenderSpend) / dtSec;
+  if (prev === null) return sample;
+  const alpha = 1 - Math.exp(-dtSec / tauSec);
+  return prev + alpha * (sample - prev);
+}
+
+/**
+ * Seconds until cash reaches an item's grant point (cost / share) at `incomePerSec`.
+ * 0 when cash already covers it; Infinity when it never will (no income, or share 0).
+ * Optimistic: ignores what the other spenders take from income meanwhile.
+ */
+export function goalEtaSeconds(cash: number, cost: number, reserveShare: number, incomePerSec: number): number {
+  if (!(reserveShare > 0)) return Infinity;
+  const gap = cost / (reserveShare / 100) - cash;
+  if (gap <= 0) return 0;
+  if (!(incomePerSec > 0)) return Infinity;
+  return gap / incomePerSec;
+}
+
+/** An item is feasible when the horizon is disabled or its ETA is within it. */
+export function isGoalFeasible(etaSec: number, goalHorizon: number): boolean {
+  return !(goalHorizon > 0) || etaSec <= goalHorizon;
+}
+
+/** Cash locked toward the goal: min(cost, cash * share). 0 without a goal or with share <= 0. */
+export function computeReserve(cash: number, goal: Goal | null, reserveShare: number): number {
+  if (goal === null || !(reserveShare > 0) || !(cash > 0)) return 0;
+  return Math.min(goal.cost, cash * (reserveShare / 100));
+}
+
+/** The goal is granted once the reserve covers its full price. */
+export function isGranted(goal: Goal | null, reserve: number): boolean {
+  return goal !== null && reserve >= goal.cost;
 }
 
 // === PERSISTED STATE ===
@@ -181,12 +339,13 @@ export interface HoldingsInfo {
  * Compute allowances for all buckets based on current wealth snapshot.
  *
  * Holders: allowance = max(0, netWorth * weight% - currentHoldingValue)
- * Spenders: allowance = cash * weight%
+ * Spenders: allowance = (cash - reserve) * weight%
  *
- * `carveouts` (bucket -> amount) lifts a bucket's allowance up to that amount for this
- * cycle. It only applies while the bucket's effective weight is above zero, so a bucket
- * that is done, frozen, set to 0, or sidelined by another bucket's rush gets nothing.
- * Weights are independent caps on cash, so a carve-out never reduces another bucket.
+ * `plan` carries the savings goal (selectGoal) and the reserve toward it (computeReserve).
+ * Every spender except the goal bucket sees cash minus the reserve; the goal bucket keeps
+ * its weighted share of full cash and is lifted to the goal's price once the reserve
+ * covers it. Holders are untouched. While a rush is active the plan is ignored: the rushed
+ * bucket already gets all cash and everything else is zero.
  */
 export function computeAllowances(
   cash: number,
@@ -194,11 +353,16 @@ export function computeAllowances(
   weights: Record<string, number>,
   activeFlags: Record<string, boolean>,
   rushBucket: string | null,
-  carveouts: Record<string, number> = {},
+  plan: GoalPlan = { goal: null, reserve: 0 },
 ): Record<string, AllowanceResult> {
   const netWorth = cash + holdings.portfolioValue + holdings.corpFunds;
   const effectiveWeights = computeEffectiveWeights(weights, activeFlags, rushBucket);
   const results: Record<string, AllowanceResult> = {};
+
+  const rushActive = rushBucket !== null && !!activeFlags[rushBucket];
+  const goal = rushActive ? null : plan.goal;
+  const reserve = rushActive || goal === null ? 0 : Math.max(0, plan.reserve);
+  const granted = isGranted(goal, reserve);
 
   for (const bucket of Object.keys(weights)) {
     const ew = effectiveWeights[bucket] ?? 0;
@@ -216,15 +380,15 @@ export function computeAllowances(
       maxAllocation = netWorth * ew;
       allowance = Math.max(0, maxAllocation - currentHolding);
     } else {
-      // Spenders: percentage of cash
-      maxAllocation = cash * ew;
+      // Spenders: percentage of cash, minus the reserve unless this is the goal bucket
+      const isGoal = goal !== null && bucket === goal.bucket;
+      const base = isGoal ? cash : Math.max(0, cash - reserve);
+      maxAllocation = base * ew;
       allowance = maxAllocation;
-    }
-
-    const carveout = carveouts[bucket] ?? 0;
-    if (ew > 0 && carveout > 0) {
-      allowance = Math.max(allowance, carveout);
-      maxAllocation = Math.max(maxAllocation, carveout);
+      if (isGoal && ew > 0 && granted) {
+        allowance = Math.max(allowance, goal.cost);
+        maxAllocation = Math.max(maxAllocation, goal.cost);
+      }
     }
 
     results[bucket] = { allowance, maxAllocation, currentHolding, isHolder };

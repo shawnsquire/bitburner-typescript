@@ -15,6 +15,7 @@ import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
 import { TierFooter } from "views/dashboard/components/TierFooter";
 import { setHacknetStrategy } from "views/dashboard/state-store";
+import { formatTime } from "lib/utils";
 
 // Re-export type alias for consistency
 type FormattedHacknetStatus = HacknetStatus;
@@ -241,19 +242,32 @@ function HacknetDetailPanel({
       </div>
 
       {/* Next Target */}
-      {status.nextTarget && (
+      {(status.nextTarget || (status.skippedForPayback ?? 0) > 0) && (
         <div style={styles.section}>
           <div style={styles.sectionTitle}>NEXT TARGET</div>
-          <div style={styles.stat}>
-            <span style={styles.statLabel}>
-              {status.nextTarget.type === "new"
-                ? "New Server"
-                : `${status.nextTarget.type.charAt(0).toUpperCase() + status.nextTarget.type.slice(1)} #${status.nextTarget.serverIndex}`}
-            </span>
-            <span style={{ color: status.nextTarget.canAfford ? "#00ff00" : "#ff4444" }}>
-              {status.nextTarget.canAfford ? "\u2713" : "\u2717"} {status.nextTarget.costFormatted}
-            </span>
-          </div>
+          {status.nextTarget && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>
+                {status.nextTarget.type === "new"
+                  ? "New Server"
+                  : `${status.nextTarget.type.charAt(0).toUpperCase() + status.nextTarget.type.slice(1)} #${status.nextTarget.serverIndex}`}
+              </span>
+              <span style={{ color: status.nextTarget.canAfford ? "#00ff00" : "#ff4444" }}>
+                {status.nextTarget.canAfford ? "\u2713" : "\u2717"} {status.nextTarget.costFormatted}
+              </span>
+            </div>
+          )}
+          {(status.skippedForPayback ?? 0) > 0 && status.purchasesThisTick === 0 && (
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Waiting</span>
+              <span style={{ color: "#ffaa00" }}>
+                best payback {status.bestPaybackSec !== null ? formatTime(status.bestPaybackSec) : "n/a"}
+                {" > "}
+                {status.paybackHorizon !== null ? formatTime(status.paybackHorizon) : "no"} horizon
+                {" "}({status.skippedForPayback} skipped)
+              </span>
+            </div>
+          )}
         </div>
       )}
 

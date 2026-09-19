@@ -1047,7 +1047,28 @@ export interface BucketState {
   frozen: boolean;
   cap: number | null;
   capFormatted: string | null;
+  /** Price of the consumer's next purchase (reportNext), 0 when none is pending. */
+  nextCost: number;
+  nextCostFormatted: string | null;
+  nextLabel: string | null;
 }
+
+/** The savings goal the budget daemon is reserving cash toward (see docs/systems/budget.md). */
+export interface BudgetGoal {
+  bucket: string;
+  label: string;
+  cost: number;
+  costFormatted: string;
+  reserved: number;
+  reservedFormatted: string;
+  /** reserved / cost, clamped to 0..1 */
+  progress: number;
+  granted: boolean;
+  /** Seconds until cash reaches the grant point at the estimated income; 0 when granted. */
+  etaSec: number;
+}
+
+export type BudgetIncomeSource = "producers" | "cash-trend";
 
 export interface BudgetStatus {
   totalCash: number;
@@ -1060,10 +1081,19 @@ export interface BudgetStatus {
   corpFundsFormatted: string;
   buckets: Record<string, BucketState>;
   rushBucket: string | null;
+  goal: BudgetGoal | null;
+  /** Estimated cash income used for goal feasibility, and where it came from. */
+  incomePerSec: number;
+  incomePerSecFormatted: string;
+  incomeSource: BudgetIncomeSource;
+  /** Max seconds to save for one goal (config goalHorizon); 0 = disabled. */
+  goalHorizon: number;
+  /** Max seconds an upgrade may take to pay for itself (config paybackHorizon); 0 = disabled. */
+  paybackHorizon: number;
   lastUpdated: number;
 }
 
-export type BudgetControlAction = "purchased" | "done" | "report-cap" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate" | "freeze" | "unfreeze";
+export type BudgetControlAction = "purchased" | "done" | "report-cap" | "report-next" | "rush" | "cancel-rush" | "update-weight" | "reset-weights" | "reactivate" | "freeze" | "unfreeze";
 
 export interface BudgetControlMessage {
   action: BudgetControlAction;
@@ -1495,6 +1525,8 @@ export interface HacknetStatus {
   hashUtilization: number; // 0-1
   totalProduction: number;
   totalProductionFormatted: string;
+  /** Cash per second: hash rate at the sell rate under the `money` strategy, 0 otherwise. */
+  cashPerSec: number;
 
   // Costs
   nextNodeCost: number | null;
@@ -1519,6 +1551,12 @@ export interface HacknetStatus {
   // Next target
   nextTarget: { type: string; serverIndex: number; cost: number; costFormatted: string; canAfford: boolean; roi: number } | null;
   purchasesThisTick: number;
+  /** Candidates this tick whose payback exceeded the budget daemon's paybackHorizon. */
+  skippedForPayback: number;
+  /** Shortest finite payback (seconds) among the skipped candidates, null when none. */
+  bestPaybackSec: number | null;
+  /** The horizon in force (seconds), null when unlimited (budget daemon absent or disabled). */
+  paybackHorizon: number | null;
 
   // Per-server breakdown
   servers: HacknetServerInfo[];

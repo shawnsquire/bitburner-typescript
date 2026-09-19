@@ -1,6 +1,6 @@
 # Budget: savings goal and hacknet payback ceiling
 
-Design agreed 2026-09-19. Status: not yet implemented.
+Design agreed 2026-09-19. Implemented in commits e5905d6..3e29c7d (budget core, dashboard, consumers, hacknet ceiling).
 
 ## Problem
 
@@ -220,3 +220,33 @@ upgrades pass the horizon.
 - Deriving the horizon from time-to-next-install once the augments daemon publishes
   an ETA.
 - The common-currency allocator.
+
+## Addendum 2026-09-19: goal feasibility
+
+Observed after shipping: with programs and servers done, home's next upgrade
+(131 TB, 15.8t) became the goal at 87m cash. The reserve locked half of a cash
+pile that would never reach the 31.6t grant point, and hacknet only saw the
+other half. The selector had no feasibility check.
+
+Decisions:
+
+- **Income from producers.** The budget daemon sums the rates the producer
+  daemons already publish: hack `incomePerSec`, gang `moneyGainRate`, stocks
+  `profitPerSec` (realised, so not tricked by buy/sell traffic), plus a new
+  hacknet `cashPerSec` (hash rate at the sell rate under the `money` strategy,
+  0 otherwise). A stale or missing port contributes 0.
+- **Cash-trend fallback.** An exponential moving average (60 s time constant)
+  of cash change plus spender-bucket purchases per tick, kept warm every tick
+  and used only when no producer port is fresh. Holder purchases are excluded.
+  Cash-flow estimation was rejected as the primary source because trading
+  flow tricked an earlier version of it.
+- **`goalHorizon`** config key, default 7200 s, 0 disables. ETA to the grant
+  point is `max(0, cost / share − cash) / income`; an item whose ETA exceeds
+  the horizon is skipped and the next cheapest is considered. An item already
+  at its grant point always passes, even with zero income. The ETA ignores what
+  other spenders take from income and is documented as optimistic.
+- **Surface.** `BudgetStatus` gains `incomePerSec`, `incomeSource`
+  (`producers` | `cash-trend`) and the goal's `etaSec`; the Budget tab shows the
+  ETA on the goal line and the income line in the header.
+- Rejected: a cash-multiple cap (refuses the 25b 4S API at 100m cash even when
+  income makes it minutes away); reusing `paybackHorizon` (different question).

@@ -23,7 +23,7 @@ import { COLORS } from "/lib/utils";
 import { publishStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool } from "/lib/config";
 import { STATUS_PORTS, HomeStatus } from "/types/ports";
-import { getBudgetBalance, notifyPurchase, reportCap, signalDone } from "/lib/budget";
+import { getBudgetBalance, notifyPurchase, reportCap, reportNext, signalDone } from "/lib/budget";
 
 const C = COLORS;
 
@@ -297,6 +297,16 @@ export async function main(ns: NS): Promise<void> {
 
     const updatedRamCost = (!hasSingularity || updatedRamAtMax) ? null : trySingularity(() => ns.singularity.getUpgradeHomeRamCost());
     const updatedCoreCost = (!hasSingularity || updatedCoresAtMax) ? null : trySingularity(() => ns.singularity.getUpgradeHomeCoresCost());
+
+    // Tell the budget daemon what we would buy next (RAM before cores, as above) so it
+    // can save toward it. Same gate as buying; anything else clears the item.
+    if (tier.tier >= 1 && autoBuy && !updatedAllMaxed && !updatedRamAtMax && updatedRamCost !== null) {
+      reportNext(ns, "home", updatedRamCost, `Home RAM ${ns.format.ram(updatedRam * 2)}`);
+    } else if (tier.tier >= 1 && autoBuy && !updatedAllMaxed && updatedCoreCost !== null) {
+      reportNext(ns, "home", updatedCoreCost, `Home cores ${updatedCores + 1}`);
+    } else {
+      reportNext(ns, "home", 0, "");
+    }
 
     // Next tier RAM. Only meaningful when SF4 is available — without it,
     // buying more home RAM alone will never unlock the "auto" tier.

@@ -11,9 +11,20 @@ import {
   WSE_TIX_API_COST,
   WSE_4S_TIX_API_COST,
   WSE_ACCESS_BUCKET,
-  DEFAULT_WSE_CARVEOUT_MULT,
   nextWseApiCost,
-  computeCarveout,
+  nextWseApiLabel,
+  DEFAULT_RESERVE_SHARE,
+  PENDING_STALE_MS,
+  PendingItem,
+  prunePending,
+  selectGoal,
+  computeReserve,
+  isGranted,
+  sumProducerIncome,
+  updateCashTrend,
+  goalEtaSeconds,
+  isGoalFeasible,
+  CASH_TREND_TAU_SEC,
   applyStocks4SWeight,
   DEFAULT_STOCKS_WEIGHT_4S,
 } from "/controllers/budget";
@@ -192,69 +203,271 @@ describe("nextWseApiCost", () => {
   });
 });
 
-describe("computeCarveout", () => {
-  const cost = WSE_TIX_API_COST;
-
-  it("grants nothing below the threshold", () => {
-    expect(computeCarveout(cost * DEFAULT_WSE_CARVEOUT_MULT - 1, cost)).toBe(0);
-    expect(computeCarveout(cost, cost)).toBe(0);
-    expect(computeCarveout(0, cost)).toBe(0);
-  });
-
-  it("grants the full price exactly at the threshold and above it", () => {
-    expect(computeCarveout(cost * DEFAULT_WSE_CARVEOUT_MULT, cost)).toBe(cost);
-    expect(computeCarveout(cost * 100, cost)).toBe(cost);
-  });
-
-  it("honours a custom multiplier", () => {
-    expect(computeCarveout(cost * 3 - 1, cost, 3)).toBe(0);
-    expect(computeCarveout(cost * 3, cost, 3)).toBe(cost);
-    expect(computeCarveout(cost, cost, 1)).toBe(cost);
-  });
-
-  it("grants nothing when nothing is pending or the multiplier is invalid", () => {
-    expect(computeCarveout(1e12, 0)).toBe(0);
-    expect(computeCarveout(1e12, cost, 0)).toBe(0);
-    expect(computeCarveout(1e12, cost, NaN)).toBe(0);
+describe("nextWseApiLabel", () => {
+  it("labels the TIX API first, then 4S, then nothing", () => {
+    expect(nextWseApiLabel(false, false)).toBe("TIX API");
+    expect(nextWseApiLabel(true, false)).toBe("4S Market Data TIX API");
+    expect(nextWseApiLabel(true, true)).toBeNull();
   });
 });
 
-describe("computeAllowances with the wse-access carve-out", () => {
+describe("prunePending", () => {
+  const now = 1_000_000;
+  const fresh: PendingItem = { cost: 100, label: "fresh", at: now - 1000 };
+  const stale: PendingItem = { cost: 100, label: "stale", at: now - PENDING_STALE_MS - 1 };
+  const zero: PendingItem = { cost: 0, label: "zero", at: now };
+
+  it("keeps fresh entries and drops stale ones and zero costs", () => {
+    const result = prunePending({ a: fresh, b: stale, c: zero }, now);
+    expect(Object.keys(result)).toEqual(["a"]);
+  });
+
+  it("keeps an entry exactly at the stale boundary", () => {
+    const edge: PendingItem = { cost: 1, label: "edge", at: now - PENDING_STALE_MS };
+    expect(prunePending({ edge }, now)).toEqual({ edge });
+  });
+
+  it("returns a new object", () => {
+    const input = { a: fresh };
+    expect(prunePending(input, now)).not.toBe(input);
+  });
+});
+
+describe("selectGoal", () => {
+  const weights = { ...DEFAULT_WEIGHTS };
+  const allActive = Object.fromEntries(Object.keys(weights).map(b => [b, true]));
+  const ew = computeEffectiveWeights(weights, allActive, null);
+  const item = (cost: number, label = "x"): PendingItem => ({ cost, label, at: 0 });
+
+  it("picks the cheapest pending item", () => {
+    const goal = selectGoal({ home: item(1e9, "RAM"), programs: item(250e6, "SQLInject.exe"), servers: item(4e9) }, ew);
+    expect(goal).toEqual({ bucket: "programs", label: "SQLInject.exe", cost: 250e6, etaSec: 0 });
+  });
+
+  it("ignores buckets whose effective weight is zero (done, frozen, released)", () => {
+    const flags = { ...allActive };
+    handleCompletion("programs", flags);
+    const goal = selectGoal({ home: item(1e9), programs: item(250e6) }, computeEffectiveWeights(weights, flags, null));
+    expect(goal?.bucket).toBe("home");
+    const zeroed = computeEffectiveWeights({ ...weights, programs: 0 }, allActive, null);
+    expect(selectGoal({ programs: item(250e6) }, zeroed)).toBeNull();
+  });
+
+  it("ignores a bucket absent from the weights map", () => {
+    expect(selectGoal({ typo: item(1) }, ew)).toBeNull();
+  });
+
+  it("only the rushed bucket can be the goal during a rush", () => {
+    const rushed = computeEffectiveWeights(weights, allActive, "hacknet");
+    expect(selectGoal({ programs: item(1), home: item(2) }, rushed)).toBeNull();
+    expect(selectGoal({ programs: item(1), hacknet: item(2) }, rushed)?.bucket).toBe("hacknet");
+  });
+
+  it("returns null with nothing pending", () => {
+    expect(selectGoal({}, ew)).toBeNull();
+  });
+
+  it("breaks ties by bucket name", () => {
+    expect(selectGoal({ programs: item(5), home: item(5) }, ew)?.bucket).toBe("home");
+  });
+
+  describe("with feasibility", () => {
+    // 87m cash, 10m/s income, share 50, horizon 2h: a 250m item is 413m away (41 s),
+    // a 15.8t home upgrade is 31.6t away (36 days).
+    const feas = { cash: 87e6, reserveShare: 50, incomePerSec: 10e6, goalHorizon: 7200 };
+
+    it("skips an item whose ETA exceeds the horizon and takes the next cheapest", () => {
+      const goal = selectGoal({ home: item(15.8e12, "Home RAM"), programs: item(250e6, "SQLInject.exe") }, ew, feas);
+      expect(goal?.bucket).toBe("programs");
+      expect(goal?.etaSec).toBeCloseTo((500e6 - 87e6) / 10e6, 6);
+    });
+
+    it("returns null when nothing is feasible", () => {
+      expect(selectGoal({ home: item(15.8e12) }, ew, feas)).toBeNull();
+    });
+
+    it("always accepts an item already at its grant point, even with zero income", () => {
+      const goal = selectGoal({ programs: item(40e6) }, ew, { ...feas, incomePerSec: 0 });
+      expect(goal?.bucket).toBe("programs");
+      expect(goal?.etaSec).toBe(0);
+    });
+
+    it("skips every unreached item when income is zero", () => {
+      expect(selectGoal({ programs: item(250e6) }, ew, { ...feas, incomePerSec: 0 })).toBeNull();
+    });
+
+    it("disables the check when the horizon is 0", () => {
+      expect(selectGoal({ home: item(15.8e12) }, ew, { ...feas, goalHorizon: 0 })?.bucket).toBe("home");
+    });
+  });
+});
+
+describe("sumProducerIncome", () => {
+  it("sums finite rates and names the sources that counted", () => {
+    const r = sumProducerIncome({ hack: 5, hacknet: 3, gang: null, stocks: undefined });
+    expect(r.total).toBe(8);
+    expect(r.sources).toEqual(["hack", "hacknet"]);
+  });
+
+  it("reports no sources when nothing is publishing", () => {
+    expect(sumProducerIncome({ hack: null, hacknet: undefined, gang: NaN })).toEqual({ total: 0, sources: [] });
+  });
+
+  it("clamps a net negative total (stock losses) at 0", () => {
+    expect(sumProducerIncome({ hack: 2, stocks: -5 }).total).toBe(0);
+  });
+});
+
+describe("updateCashTrend", () => {
+  it("seeds from the first sample", () => {
+    expect(updateCashTrend(null, 20, 0, 2)).toBe(10);
+  });
+
+  it("adds spender purchases back and moves toward the sample with the tau", () => {
+    const next = updateCashTrend(10, 0, 40, 2); // sample 20/s
+    const alpha = 1 - Math.exp(-2 / CASH_TREND_TAU_SEC);
+    expect(next).toBeCloseTo(10 + alpha * 10, 12);
+  });
+
+  it("is unchanged without elapsed time", () => {
+    expect(updateCashTrend(10, 100, 0, 0)).toBe(10);
+    expect(updateCashTrend(null, 100, 0, 0)).toBe(0);
+  });
+});
+
+describe("goalEtaSeconds and isGoalFeasible", () => {
+  it("is 0 once cash covers the grant point", () => {
+    expect(goalEtaSeconds(500e6, 250e6, 50, 0)).toBe(0);
+    expect(goalEtaSeconds(600e6, 250e6, 50, 1)).toBe(0);
+  });
+
+  it("divides the gap to the grant point by income", () => {
+    expect(goalEtaSeconds(100e6, 250e6, 50, 10e6)).toBe(40);
+  });
+
+  it("is Infinity without income or with share 0", () => {
+    expect(goalEtaSeconds(100e6, 250e6, 50, 0)).toBe(Infinity);
+    expect(goalEtaSeconds(100e6, 250e6, 0, 10e6)).toBe(Infinity);
+  });
+
+  it("feasibility honours the horizon and 0 disables it", () => {
+    expect(isGoalFeasible(7200, 7200)).toBe(true);
+    expect(isGoalFeasible(7201, 7200)).toBe(false);
+    expect(isGoalFeasible(Infinity, 7200)).toBe(false);
+    expect(isGoalFeasible(Infinity, 0)).toBe(true);
+  });
+});
+
+describe("computeReserve and isGranted", () => {
+  const goal = { bucket: "programs", label: "SQLInject.exe", cost: 250e6, etaSec: 0 };
+
+  it("reserves the share of cash below the price and caps at the price above it", () => {
+    expect(computeReserve(226e6, goal, 50)).toBe(113e6);
+    expect(computeReserve(1e9, goal, 50)).toBe(250e6);
+  });
+
+  it("reserves nothing without a goal, with a non-positive share, or without cash", () => {
+    expect(computeReserve(1e9, null, 50)).toBe(0);
+    expect(computeReserve(1e9, goal, 0)).toBe(0);
+    expect(computeReserve(1e9, goal, -10)).toBe(0);
+    expect(computeReserve(0, goal, 50)).toBe(0);
+  });
+
+  it("grants exactly at cost / share and not a dollar below", () => {
+    const threshold = goal.cost / (DEFAULT_RESERVE_SHARE / 100); // 500m
+    expect(isGranted(goal, computeReserve(threshold, goal, DEFAULT_RESERVE_SHARE))).toBe(true);
+    expect(isGranted(goal, computeReserve(threshold - 1, goal, DEFAULT_RESERVE_SHARE))).toBe(false);
+    expect(isGranted(null, 1e12)).toBe(false);
+  });
+});
+
+describe("computeAllowances with a savings goal", () => {
+  // The design's worked example: cash 226m, programs wants SQLInject at 250m,
+  // hacknet 15%, home 10%, programs 5%, reserveShare 50.
+  const weights = { ...DEFAULT_WEIGHTS, hacknet: 15, home: 10, programs: 5, stocks: 40 };
+  const activeFlags = Object.fromEntries(Object.keys(weights).map(b => [b, true]));
+  const holdings = { portfolioValue: 99e6, corpFunds: 0 };
+  const goal = { bucket: "programs", label: "SQLInject.exe", cost: 250e6, etaSec: 0 };
+
+  function plan(cash: number) {
+    return { goal, reserve: computeReserve(cash, goal, 50) };
+  }
+
+  it("hides the reserve from every other spender", () => {
+    const r = computeAllowances(226e6, holdings, weights, activeFlags, null, plan(226e6));
+    expect(r.hacknet.allowance).toBeCloseTo(113e6 * 0.15, 3); // 17m, was 34m
+    expect(r.home.allowance).toBeCloseTo(113e6 * 0.10, 3);
+  });
+
+  it("gives the goal bucket its weighted share of full cash until granted", () => {
+    const r = computeAllowances(226e6, holdings, weights, activeFlags, null, plan(226e6));
+    expect(r.programs.allowance).toBeCloseTo(226e6 * 0.05, 3);
+  });
+
+  it("grants the full price once the reserve covers it", () => {
+    const r = computeAllowances(500e6, holdings, weights, activeFlags, null, plan(500e6));
+    expect(r.programs.allowance).toBe(250e6);
+    expect(r.programs.maxAllocation).toBe(250e6);
+    expect(r.hacknet.allowance).toBeCloseTo(250e6 * 0.15, 3);
+  });
+
+  it("leaves holders on their net-worth cap", () => {
+    const withGoal = computeAllowances(226e6, holdings, weights, activeFlags, null, plan(226e6));
+    const without = computeAllowances(226e6, holdings, weights, activeFlags, null);
+    expect(withGoal.stocks.allowance).toBe(without.stocks.allowance);
+    expect(withGoal.stocks.maxAllocation).toBe(without.stocks.maxAllocation);
+  });
+
+  it("ignores the plan while a rush is active", () => {
+    const r = computeAllowances(500e6, holdings, weights, activeFlags, "hacknet", plan(500e6));
+    expect(r.hacknet.allowance).toBe(500e6);
+    expect(r.programs.allowance).toBe(0);
+  });
+
+  it("with the default plan matches the no-goal result", () => {
+    const a = computeAllowances(226e6, holdings, weights, activeFlags, null);
+    const b = computeAllowances(226e6, holdings, weights, activeFlags, null, { goal: null, reserve: 0 });
+    expect(a).toEqual(b);
+  });
+});
+
+describe("wse-access via the savings goal at reserveShare 50", () => {
   const weights = { ...DEFAULT_WEIGHTS };
   const activeFlags = Object.fromEntries(Object.keys(weights).map(b => [b, true]));
   const holdings = { portfolioValue: 0, corpFunds: 0 };
   const cost = WSE_TIX_API_COST;
-  const cash = cost * DEFAULT_WSE_CARVEOUT_MULT; // 10b: at the default threshold
+  const cash = cost * 2; // 10b: the grant point at the default share
 
   function allowancesFor(c: number, flags = activeFlags, rush: string | null = null, w = weights) {
-    const carveouts = { [WSE_ACCESS_BUCKET]: computeCarveout(c, cost) };
-    return computeAllowances(c, holdings, w, flags, rush, carveouts);
+    const pending = { [WSE_ACCESS_BUCKET]: { cost, label: "TIX API", at: 0 } };
+    const goal = selectGoal(pending, computeEffectiveWeights(w, flags, rush));
+    const reserve = computeReserve(c, goal, DEFAULT_RESERVE_SHARE);
+    return computeAllowances(c, holdings, w, flags, rush, { goal, reserve });
   }
 
-  it("below the threshold wse-access keeps its weighted 5% allowance", () => {
+  it("below the grant point wse-access keeps its weighted 5% allowance", () => {
     const result = allowancesFor(cash - 1);
     expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo((cash - 1) * 0.05, 5);
     expect(result[WSE_ACCESS_BUCKET].allowance).toBeLessThan(cost);
   });
 
-  it("at the threshold wse-access is granted the full price regardless of weight", () => {
+  it("at the grant point wse-access is granted the full price regardless of weight", () => {
     const result = allowancesFor(cash);
     expect(result[WSE_ACCESS_BUCKET].allowance).toBe(cost);
     expect(result[WSE_ACCESS_BUCKET].maxAllocation).toBe(cost);
   });
 
-  it("never lowers an allowance that already exceeds the carve-out", () => {
+  it("never lowers an allowance that already exceeds the price", () => {
     const result = allowancesFor(cost * 100); // 5% of 500b = 25b > 5b
     expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo(cost * 5, 5);
   });
 
-  it("does not change any other bucket's allowance", () => {
-    const withCarveout = allowancesFor(cash);
+  it("other spenders see cash minus the reserve; holders are unchanged", () => {
+    const withGoal = allowancesFor(cash);
     const without = computeAllowances(cash, holdings, weights, activeFlags, null);
-    for (const bucket of Object.keys(weights)) {
-      if (bucket === WSE_ACCESS_BUCKET) continue;
-      expect(withCarveout[bucket].allowance).toBe(without[bucket].allowance);
-    }
+    expect(withGoal.servers.allowance).toBeCloseTo((cash - cost) * 0.25, 5);
+    expect(withGoal.servers.allowance).toBeCloseTo(without.servers.allowance / 2, 5);
+    expect(withGoal.stocks.allowance).toBe(without.stocks.allowance);
   });
 
   it("post-done (after signalDone) the bucket gets nothing even with plenty of cash", () => {
@@ -275,7 +488,7 @@ describe("computeAllowances with the wse-access carve-out", () => {
     expect(result[WSE_ACCESS_BUCKET].allowance).toBe(0);
   });
 
-  it("omitting the carveouts argument leaves the original behaviour intact", () => {
+  it("omitting the plan argument leaves the plain weighted behaviour intact", () => {
     const result = computeAllowances(cash, holdings, weights, activeFlags, null);
     expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo(cash * 0.05, 5);
   });

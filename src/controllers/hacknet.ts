@@ -122,3 +122,76 @@ export function resolveHashSpend(
 
   return { ...base, target: null, targetSource: null, isValid: true, reason: null };
 }
+
+// === PAYBACK ===
+
+/** "Sell for Money" hash upgrade: 4 hashes for $1m (game source src/Hacknet/data/HashUpgradesMetadata.tsx). */
+export const HASH_SELL_HASHES = 4;
+export const HASH_SELL_MONEY = 1_000_000;
+/** Dollar value of one hash at the sell rate; hashes are fungible, so every strategy is valued at this. */
+export const MONEY_PER_HASH = HASH_SELL_MONEY / HASH_SELL_HASHES;
+/** Cache upgrades are exempt from the payback ceiling above this hash utilisation (0..1). */
+export const CACHE_EXEMPT_UTILISATION = 0.9;
+
+export type HacknetCandidateType = "new" | "level" | "ram" | "cores" | "cache";
+
+export interface PaybackCandidate {
+  type: HacknetCandidateType;
+  cost: number;
+  /** Seconds for the purchase to pay for itself; Infinity when it adds no income. */
+  paybackSec: number;
+}
+
+/** Seconds until `cost` is earned back at `marginalMoneyPerSec`; Infinity when the rate is not positive. */
+export function paybackSeconds(cost: number, marginalMoneyPerSec: number): number {
+  if (!(marginalMoneyPerSec > 0) || !(cost >= 0)) return Infinity;
+  return cost / marginalMoneyPerSec;
+}
+
+/**
+ * Money per second of a plain hacknet node without Formulas.exe
+ * (src/Hacknet/formulas/HacknetNodes.ts calculateMoneyGainRate, BitNode multiplier ignored).
+ */
+export function estimateNodeMoneyRate(level: number, ram: number, cores: number, mult: number): number {
+  return level * 1.5 * Math.pow(1.035, ram - 1) * ((cores + 5) / 6) * mult;
+}
+
+/** Rough hashes per second of a hacknet server without Formulas.exe. */
+export function estimateServerHashRate(level: number, ramUsed: number, ram: number, cores: number, mult: number): number {
+  const freeRam = Math.max(0, ram - ramUsed);
+  return level * 0.001 * freeRam * (1 + (cores - 1) / 5) * mult;
+}
+
+/** The first node is always bought; a cache upgrade is exempt while hashes are about to overflow. */
+export function isExemptFromHorizon(c: PaybackCandidate, hashUtilization: number, numNodes: number): boolean {
+  if (c.type === "new" && numNodes === 0) return true;
+  if (c.type === "cache" && hashUtilization > CACHE_EXEMPT_UTILISATION) return true;
+  return false;
+}
+
+/**
+ * Split candidates into those the payback ceiling allows and a count of those it skips.
+ * Strictly greater than the horizon is skipped, so with the horizon at Infinity nothing is
+ * (an Infinity payback is not greater than Infinity). Order is preserved.
+ */
+export function partitionByPayback<T extends PaybackCandidate>(
+  candidates: T[],
+  horizon: number,
+  hashUtilization: number,
+  numNodes: number,
+): { eligible: T[]; skipped: number; bestSkippedSec: number | null } {
+  const eligible: T[] = [];
+  let skipped = 0;
+  let bestSkippedSec: number | null = null;
+  for (const c of candidates) {
+    if (!isExemptFromHorizon(c, hashUtilization, numNodes) && c.paybackSec > horizon) {
+      skipped++;
+      if (isFinite(c.paybackSec) && (bestSkippedSec === null || c.paybackSec < bestSkippedSec)) {
+        bestSkippedSec = c.paybackSec;
+      }
+      continue;
+    }
+    eligible.push(c);
+  }
+  return { eligible, skipped, bestSkippedSec };
+}

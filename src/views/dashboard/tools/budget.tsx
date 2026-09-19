@@ -14,6 +14,8 @@ import {
 import { BucketState } from "/types/ports";
 import { styles } from "views/dashboard/styles";
 import { ToolControl } from "views/dashboard/components/ToolControl";
+import { ProgressBar } from "views/dashboard/components/ProgressBar";
+import { formatTime } from "lib/utils";
 import {
   rushBudgetBucket,
   cancelBudgetRush,
@@ -205,6 +207,16 @@ function BudgetDetailPanel({
             <span style={styles.statLabel}>NW: </span>
             <span style={{ color: "#00ff00", fontWeight: "bold" }}>{status.netWorthFormatted}</span>
           </span>
+          {status.incomePerSecFormatted && (
+            <>
+              <span style={styles.dim}>|</span>
+              <span>
+                <span style={styles.statLabel}>Income: </span>
+                <span style={{ color: "#88ff88" }}>{status.incomePerSecFormatted}</span>
+                <span style={styles.dim}> ({status.incomeSource})</span>
+              </span>
+            </>
+          )}
           {status.rushBucket && (
             <>
               <span style={styles.dim}>|</span>
@@ -214,6 +226,29 @@ function BudgetDetailPanel({
         </div>
         <ToolControl tool={toolId} running={running} pid={pid} />
       </div>
+
+      {/* Savings goal: the cheapest pending next purchase the daemon is reserving cash for */}
+      {status.goal && (
+        <div style={{ marginTop: "12px" }}>
+          <div style={styles.sectionTitle}>SAVING FOR</div>
+          <div style={{ fontSize: "12px", marginBottom: "4px" }}>
+            <span style={{ color: getBarColor(status.goal.bucket), fontWeight: "bold" }}>{status.goal.label}</span>
+            <span style={styles.dim}> ({status.goal.bucket})</span>
+            {status.goal.granted ? (
+              <span style={{ color: "#00ff00", marginLeft: "8px" }}>GRANTED</span>
+            ) : (
+              <span style={{ color: "#aaa", marginLeft: "8px" }}>
+                ETA {status.goal.etaSec !== undefined && isFinite(status.goal.etaSec) ? formatTime(status.goal.etaSec) : "unknown"}
+              </span>
+            )}
+          </div>
+          <ProgressBar
+            progress={status.goal.progress}
+            label={`${status.goal.reservedFormatted} / ${status.goal.costFormatted}`}
+            fillColor={status.goal.granted ? "#00aa00" : getBarColor(status.goal.bucket)}
+          />
+        </div>
+      )}
 
       {/* Allowance Bar Chart */}
       <div style={{ marginTop: "12px" }}>
@@ -253,6 +288,7 @@ function BudgetDetailPanel({
               <th style={{ ...styles.tableHeader, width: "80px", textAlign: "right" }}>Allowance</th>
               <th style={{ ...styles.tableHeader, width: "70px", textAlign: "right" }}>Holding</th>
               <th style={{ ...styles.tableHeader, width: "70px", textAlign: "right" }}>Lifetime</th>
+              <th style={{ ...styles.tableHeader, width: "120px" }}>Next</th>
               <th style={{ ...styles.tableHeader, width: "50px", textAlign: "right" }}>Weight</th>
               <th style={{ ...styles.tableHeader, width: "60px", textAlign: "center" }}>Status</th>
               <th style={{ ...styles.tableHeader, width: "40px", textAlign: "center" }}>Freeze</th>
@@ -280,6 +316,13 @@ function BudgetDetailPanel({
                   </td>
                   <td style={{ ...styles.tableCell, textAlign: "right", color: "#888" }}>
                     {b.lifetimeSpentFormatted}
+                  </td>
+                  <td style={{
+                    ...styles.tableCell,
+                    fontSize: "11px",
+                    color: status.goal?.bucket === b.bucket ? "#ffaa00" : b.nextLabel ? "#aaa" : "#555",
+                  }}>
+                    {b.nextLabel ? `${b.nextLabel} (${b.nextCostFormatted})` : "\u2014"}
                   </td>
                   <td style={{ ...styles.tableCell, textAlign: "right", color: "#ddd" }}>
                     {b.weight}%

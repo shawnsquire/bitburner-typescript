@@ -30,6 +30,32 @@ export const DEFAULT_WEIGHTS: Record<string, number> = {
   "wse-access": 5,
 };
 
+// === STOCKS WEIGHT WITH 4S DATA ===
+
+/**
+ * Once the stocks daemon has the 4S TIX API its trades are near-certain positive
+ * drift and positions liquidate in one tick for the cost of the spread, so the
+ * measured return scales almost linearly with the share of net worth deployed
+ * (sim/stocks/exp-4s: 0.016 at the 30% default vs 0.047 all in). Default: hold
+ * up to 80% of net worth in stocks with 4S.
+ */
+export const DEFAULT_STOCKS_WEIGHT_4S = 80;
+
+/**
+ * Raise the stocks bucket weight to `weight4S` while 4S data is owned. Only lifts a
+ * weight that is already above zero, so a frozen or manually zeroed bucket stays
+ * zero, and never lowers a weight the user set higher. Pure; returns a new map.
+ */
+export function applyStocks4SWeight(
+  weights: Record<string, number>,
+  has4S: boolean,
+  weight4S: number = DEFAULT_STOCKS_WEIGHT_4S,
+): Record<string, number> {
+  const base = weights.stocks ?? 0;
+  if (!has4S || !(weight4S > 0) || !(base > 0) || base >= weight4S) return { ...weights };
+  return { ...weights, stocks: weight4S };
+}
+
 // === WSE ACCESS CARVE-OUT ===
 
 /** Game constants (StockMarketConstants in the game source); base prices before BitNode multipliers. */

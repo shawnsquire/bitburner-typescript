@@ -14,6 +14,8 @@ import {
   DEFAULT_WSE_CARVEOUT_MULT,
   nextWseApiCost,
   computeCarveout,
+  applyStocks4SWeight,
+  DEFAULT_STOCKS_WEIGHT_4S,
 } from "/controllers/budget";
 
 describe("createDefaultPersistedState", () => {
@@ -276,5 +278,29 @@ describe("computeAllowances with the wse-access carve-out", () => {
   it("omitting the carveouts argument leaves the original behaviour intact", () => {
     const result = computeAllowances(cash, holdings, weights, activeFlags, null);
     expect(result[WSE_ACCESS_BUCKET].allowance).toBeCloseTo(cash * 0.05, 5);
+  });
+});
+
+describe("applyStocks4SWeight", () => {
+  const base = { ...DEFAULT_WEIGHTS };
+
+  it("lifts the stocks weight to the 4S weight once 4S data is owned", () => {
+    const out = applyStocks4SWeight(base, true);
+    expect(out.stocks).toBe(DEFAULT_STOCKS_WEIGHT_4S);
+    expect(out.servers).toBe(base.servers);
+    expect(base.stocks).toBe(30); // pure: input untouched
+  });
+
+  it("leaves the weight alone without 4S", () => {
+    expect(applyStocks4SWeight(base, false).stocks).toBe(30);
+  });
+
+  it("never lowers a weight the user set higher", () => {
+    expect(applyStocks4SWeight({ ...base, stocks: 95 }, true, 80).stocks).toBe(95);
+  });
+
+  it("leaves a frozen or zeroed bucket at zero, and does nothing when disabled", () => {
+    expect(applyStocks4SWeight({ ...base, stocks: 0 }, true).stocks).toBe(0);
+    expect(applyStocks4SWeight(base, true, 0).stocks).toBe(30);
   });
 });

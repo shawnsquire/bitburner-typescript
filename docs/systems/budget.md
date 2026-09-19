@@ -20,6 +20,7 @@ state file, not the config file, and are edited from the dashboard.
 |---|---|---|
 | `interval` | `2000` | Tick interval (ms). Read once at startup. |
 | `wseCarveoutMult` | `2` | The `wse-access` carve-out fires once cash is at least this many times the price of the next stock API (see below). Read every tick. `0` disables the carve-out. |
+| `stocksWeight4S` | `80` | Weight (percent of net worth) the `stocks` bucket is lifted to while the stocks daemon reports 4S data. Read every tick. Never lowers a weight; a bucket frozen or set to 0 stays at 0. `0` disables the lift. |
 
 `writeDefaultConfig` only creates a missing file, so an existing config without
 `wseCarveoutMult` silently uses the default.
@@ -28,7 +29,7 @@ state file, not the config file, and are edited from the dashboard.
 
 | Bucket | Weight | Consumer | Kind |
 |---|---|---|---|
-| `stocks` | 30 | stocks daemon | holder: allowance is a share of net worth minus what it already holds |
+| `stocks` | 30, lifted to `stocksWeight4S` (80) with 4S data | stocks daemon | holder: allowance is a share of net worth minus what it already holds |
 | `servers` | 25 | pserv daemon | spender: share of cash |
 | `corp` | 22 | corp daemon | holder |
 | `home` | 15 | home daemon | spender |
@@ -42,6 +43,17 @@ Weights are independent caps, not shares: each spender may use up to
 than 100. A bucket that signals done is inactive and gets weight 0. Rushing a
 bucket gives it 100 percent and every other bucket 0 until cancelled. Freezing
 saves a bucket's weight and sets it to 0 until unfrozen.
+
+## Why stocks get most of net worth with 4S
+
+With the 4S TIX API the stocks daemon's expected return is known exactly and its
+positions unwind in one market tick for the cost of the spread, so the measured
+return scales almost linearly with the share of net worth deployed
+(`sim/stocks/exp-4s`: 0.016 log-return per 100 ticks at the 30 percent default,
+0.047 with all cash). Before 4S the estimated forecast is noisy, so the base
+weight stays. Nothing else needs to change for a reset: `actions/install-augments.js`
+sells every position before installing, because the game re-initialises the market
+on install and would otherwise discard them.
 
 ## The `wse-access` carve-out
 

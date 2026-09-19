@@ -31,6 +31,8 @@ import {
   DEFAULT_WSE_CARVEOUT_MULT,
   nextWseApiCost,
   computeCarveout,
+  DEFAULT_STOCKS_WEIGHT_4S,
+  applyStocks4SWeight,
 } from "/controllers/budget";
 
 const C = COLORS;
@@ -215,16 +217,18 @@ function checkDoneMarkers(ns: NS): void {
 // === HOLDINGS READERS ===
 
 /** Holdings plus the price of the next stock API the stocks daemon wants (0 = owns both or unknown). */
-function readHoldings(ns: NS): HoldingsInfo & { pendingWseCost: number } {
+function readHoldings(ns: NS): HoldingsInfo & { pendingWseCost: number; has4S: boolean } {
   let portfolioValue = 0;
   let corpFunds = 0;
   let pendingWseCost = 0;
+  let has4S = false;
 
   // Read stocks portfolio value and API ownership from status port
   const stocksStatus = peekStatus<StocksStatus>(ns, STATUS_PORTS.stocks, 30_000);
   if (stocksStatus) {
     portfolioValue = stocksStatus.portfolioValue;
     pendingWseCost = nextWseApiCost(stocksStatus.hasTIX, stocksStatus.has4S);
+    has4S = stocksStatus.has4S;
   }
 
   // Read corp funds from status port
@@ -233,7 +237,7 @@ function readHoldings(ns: NS): HoldingsInfo & { pendingWseCost: number } {
     corpFunds = corpStatus.funds;
   }
 
-  return { portfolioValue, corpFunds, pendingWseCost };
+  return { portfolioValue, corpFunds, pendingWseCost, has4S };
 }
 
 // === DAEMON LOOP ===
@@ -244,6 +248,7 @@ async function daemon(ns: NS): Promise<void> {
   writeDefaultConfig(ns, "budget", {
     interval: "2000",
     wseCarveoutMult: String(DEFAULT_WSE_CARVEOUT_MULT),
+    stocksWeight4S: String(DEFAULT_STOCKS_WEIGHT_4S),
   });
 
   const interval = getConfigNumber(ns, "budget", "interval", 2000);
@@ -313,8 +318,12 @@ async function daemon(ns: NS): Promise<void> {
     const carveouts = {
       [WSE_ACCESS_BUCKET]: computeCarveout(currentCash, holdings.pendingWseCost, wseCarveoutMult),
     };
+    //    With 4S data the stocks bucket is lifted to stocksWeight4S percent of net worth
+    //    (applyStocks4SWeight never lowers a weight and leaves a zero/frozen one alone).
+    const stocksWeight4S = getConfigNumber(ns, "budget", "stocksWeight4S", DEFAULT_STOCKS_WEIGHT_4S);
+    const weights = applyStocks4SWeight(state.weights, holdings.has4S, stocksWeight4S);
     const allowances = computeAllowances(
-      currentCash, holdings, state.weights, state.activeFlags, state.rushBucket, carveouts,
+      currentCash, holdings, weights, state.activeFlags, state.rushBucket, carveouts,
     );
 
     // 6. If rush bucket is no longer active, cancel rush
@@ -334,8 +343,8 @@ async function daemon(ns: NS): Promise<void> {
         bucket,
         allowance: a.allowance,
         allowanceFormatted: ns.format.number(a.allowance),
-        weight: state.weights[bucket] ?? 0,
-        effectiveWeight: (state.activeFlags[bucket] ? state.weights[bucket] : 0) / 100,
+        weight: weights[bucket] ?? 0,
+        effectiveWeight: (state.activeFlags[bucket] ? weights[bucket] : 0) / 100,
         lifetimeSpent: lifetime,
         lifetimeSpentFormatted: ns.format.number(lifetime),
         isHolder: a.isHolder,

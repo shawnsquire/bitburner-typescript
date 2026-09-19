@@ -8,8 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AttemptDecision,
-  FACTORI_OS_MIN_ATTEMPTS,
-  FACTORI_OS_MODEL_ID,
+  MODEL_MIN_ATTEMPTS,
   capBacklog,
   chooseAttempt,
   findFeedbackLine,
@@ -161,19 +160,33 @@ describe("chooseAttempt", () => {
     expect(decision).toEqual({ kind: "giveUp", reason: "stub ceiling" });
   });
 
-  it("exempts Factori-Os up to FACTORI_OS_MIN_ATTEMPTS even when maxAttempts is lower", () => {
-    const solver = makeStub(1000);
-    const decision = chooseAttempt(solver, { count: 0 }, null, 120, 120, FACTORI_OS_MODEL_ID);
-    expect(decision.kind).toBe("attempt");
+  it("raises the cap to a model's floor when maxAttempts is lower", () => {
+    for (const [model, floor] of Object.entries(MODEL_MIN_ATTEMPTS)) {
+      const solver = makeStub(1000);
+      // just under the floor: still allowed even though maxAttempts (120) is lower
+      expect(chooseAttempt(solver, { count: 0 }, null, floor - 1, 120, model).kind).toBe("attempt");
+      // at the floor: capped
+      expect(chooseAttempt(solver, { count: 0 }, null, floor, 120, model)).toEqual({
+        kind: "giveUp",
+        reason: "attempt cap reached",
+      });
+    }
   });
 
-  it("still caps Factori-Os once FACTORI_OS_MIN_ATTEMPTS is reached", () => {
-    const solver = makeStub(1000);
-    const decision = chooseAttempt(solver, { count: 0 }, null, FACTORI_OS_MIN_ATTEMPTS, 120, FACTORI_OS_MODEL_ID);
-    expect(decision).toEqual({ kind: "giveUp", reason: "attempt cap reached" });
+  it("covers the two solvers that exceed the default cap in practice", () => {
+    // 2G_cellular reaches ~496 attempts and RateMyPix/DeepGreen ~200 -- all above 120.
+    expect(MODEL_MIN_ATTEMPTS["2G_cellular"]).toBeGreaterThanOrEqual(496);
+    expect(MODEL_MIN_ATTEMPTS["RateMyPix.Auth"]).toBeGreaterThanOrEqual(200);
+    expect(MODEL_MIN_ATTEMPTS["DeepGreen"]).toBeGreaterThanOrEqual(200);
   });
 
-  it("does not exempt other models above maxAttempts", () => {
+  it("lets an operator-raised maxAttempts win over the floor", () => {
+    const solver = makeStub(1000);
+    // maxAttempts 600 > the 2G floor of 512: the higher value applies
+    expect(chooseAttempt(solver, { count: 0 }, null, 599, 600, "2G_cellular").kind).toBe("attempt");
+  });
+
+  it("does not raise the cap for models with no floor", () => {
     const solver = makeStub(1000);
     const decision = chooseAttempt(solver, { count: 0 }, null, 120, 120, "TopPass");
     expect(decision).toEqual({ kind: "giveUp", reason: "attempt cap reached" });

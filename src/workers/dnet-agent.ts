@@ -339,10 +339,15 @@ function launchLocalWorkers(ns: NS, self: string, policy: Policy): void {
     ns.run(DNET_WORKERS.harvest, { threads: 1, preventDuplicates: true }, self);
   }
   if (flags.phishThreads > 0) {
-    ns.run(DNET_WORKERS.phish, { threads: 1, preventDuplicates: true }, self, flags.phishThreads);
+    // Phishing income scales with thread count -- it must run at phishThreads
+    // threads, not one. dnet-phish.js takes no thread argument.
+    ns.run(DNET_WORKERS.phish, { threads: flags.phishThreads, preventDuplicates: true }, self);
   }
-  if (flags.lab && policy.labHost) {
-    ns.run(DNET_WORKERS.lab, { threads: 1, preventDuplicates: true }, self, policy.labHost);
+  if (flags.lab && policy.labName) {
+    // The walker runs here on `self` (the runner, adjacent to the lab) and
+    // authenticates against the labyrinth server itself -- pass labName (the
+    // maze hostname), NOT labHost (the runner).
+    ns.run(DNET_WORKERS.lab, { threads: 1, preventDuplicates: true }, self, policy.labName);
   }
   if (flags.stasis !== null) {
     ns.run(DNET_WORKERS.stasis, { threads: 1, preventDuplicates: true }, self, flags.stasis ? "on" : "off");

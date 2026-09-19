@@ -17,15 +17,24 @@ import { parseLeak } from "/lib/darknet/leaks";
 import { ParsedFeedback, Solver, parseFeedback } from "/lib/darknet/solvers/types";
 
 /**
- * `Factori-Os` (section 3 of the design doc) asks each small prime and its
- * powers, then the 83 large primes once (or twice above difficulty 24) --
- * up to ~124 attempts, comfortably past the `maxAttempts` config default of
- * 120. Rather than editing `protocol.ts`'s `Policy.maxAttempts` semantics
- * for every model, this one model gets an exempted floor:
- * `max(policy.maxAttempts, FACTORI_OS_MIN_ATTEMPTS)`.
+ * A few feedback models need more probes than the `maxAttempts` config
+ * default (120) before they can name the password: `Factori-Os` asks every
+ * small prime and the 83 large primes (~124), `2G_cellular` builds the
+ * password one character at a time (up to 62 x length, ~496 worst case),
+ * and `RateMyPix.Auth`/`DeepGreen` scan the alphabet then place each
+ * position (~200). Capping those at 120 would make deep instances
+ * permanently uncrackable -- and because the agent rebuilds solver state
+ * each tick, it would retry the same doomed prefix forever. So each of these
+ * models gets a floor: the effective cap is `max(maxAttempts, floor)`, which
+ * still lets an operator RAISE `maxAttempts` but never lowers a model below
+ * what it provably needs. Models absent from this map use `maxAttempts` as-is.
  */
-export const FACTORI_OS_MODEL_ID = "Factori-Os";
-export const FACTORI_OS_MIN_ATTEMPTS = 130;
+export const MODEL_MIN_ATTEMPTS: Record<string, number> = {
+  "Factori-Os": 130,
+  "2G_cellular": 512,
+  "RateMyPix.Auth": 220,
+  "DeepGreen": 220,
+};
 
 /**
  * Find the heartbleed-recovered log line that corresponds to the attempt
@@ -48,7 +57,7 @@ export type AttemptDecision<S> = { kind: "attempt"; attempt: string; state: S } 
 /**
  * One step of a solver's state machine, with the per-server attempt cap
  * applied. Kept here (rather than inline in the worker) so the cap policy,
- * including the `Factori-Os` exemption above, is unit-testable without an
+ * including the `MODEL_MIN_ATTEMPTS` floors above, is unit-testable without an
  * `ns` stub or a real solver's search logic.
  */
 export function chooseAttempt<S>(
@@ -59,7 +68,7 @@ export function chooseAttempt<S>(
   maxAttempts: number,
   modelId: string,
 ): AttemptDecision<S> {
-  const cap = modelId === FACTORI_OS_MODEL_ID ? Math.max(maxAttempts, FACTORI_OS_MIN_ATTEMPTS) : maxAttempts;
+  const cap = Math.max(maxAttempts, MODEL_MIN_ATTEMPTS[modelId] ?? 0);
   if (attempts >= cap) return { kind: "giveUp", reason: "attempt cap reached" };
 
   const step = solver.next(state, feedback);

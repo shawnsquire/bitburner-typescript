@@ -246,12 +246,17 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
         if (cell.state !== "agent" && cell.state !== "anchor") {
           cell.state = event.details.hasAdmin ? "admin" : "frontier";
         }
-        // `neighbours` is the reporting host's own neighbour list (probe()
-        // only reveals neighbours of the calling host, never of a distant
-        // target), so every edge here is anchored at `batch.from`.
+        // A `seen` about `event.host` is emitted by the agent on `batch.from`,
+        // and probe() only returns the caller's OWN direct neighbours -- so the
+        // report itself proves a `batch.from ~ event.host` edge. This is the
+        // sole source of the edge graph that lab-host selection, carrier
+        // charging and the stasis auto-bands depend on. The agent cannot know a
+        // distant host's neighbours, so `event.neighbours` is normally empty; we
+        // still fold in any it provides, anchored at `batch.from`.
+        if (batch.from !== event.host) addEdge(m, batch.from, event.host);
         for (const n of event.neighbours) {
           ensureCell(m, n);
-          addEdge(m, batch.from, n);
+          if (batch.from !== n) addEdge(m, batch.from, n);
         }
         break;
       }
@@ -698,13 +703,17 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
 
     const lab = config.lab && labHost === cell.host && player.charisma >= labCha && !(m.lab?.cleared ?? false);
 
-    // dnet-stasis.js is one-shot: it sets or clears the link then exits,
-    // freeing its 13.6 GB immediately, so it must not be subtracted from the
-    // ongoing budget phishThreads sizes against.
+    // Reserve for every worker this host will run alongside phishing so that
+    // sizing phishThreads to the remainder never starves them at launch.
+    // dnet-stasis.js is one-shot (it sets/clears the link then frees its
+    // 13.6 GB), but it still needs room the tick it fires, so reserve for it
+    // only while we are about to SET a link (stasis === true); once the link
+    // is placed the flag goes null and phish reclaims the space next tick.
     let reserved = DNET_WORKER_RAM.agent;
     if (harvest) reserved += DNET_WORKER_RAM.harvest;
     if (charge) reserved += DNET_WORKER_RAM.charge;
     if (lab) reserved += DNET_WORKER_RAM.lab;
+    if (stasis === true) reserved += DNET_WORKER_RAM.stasis;
 
     const freeForPhish = Math.max(0, maxRam - reserved);
     const phishThreads = config.phish ? Math.min(config.phishMaxThreads, Math.floor(freeForPhish / DNET_WORKER_RAM.phish)) : 0;

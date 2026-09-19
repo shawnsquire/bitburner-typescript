@@ -140,19 +140,26 @@ describe("applyReport: seen", () => {
     expect(m.cells["res1"].state).toBe("agent");
   });
 
-  it("resets attempts and drops the vault entry + edges when the fingerprint changes", () => {
+  it("resets attempts, drops the vault entry, and prunes STALE edges when the fingerprint changes", () => {
     const m = createModel(0);
-    applyReport(m, batch("prober", [seenEvent("target1", { difficulty: 5 }, ["target1"])]), 1);
+    // "stale" was a neighbour of the OLD server at target1 (from a prior tick).
+    applyReport(m, batch("target1", [seenEvent("stale")]), 0);
+    applyReport(m, batch("prober", [seenEvent("target1", { difficulty: 5 })]), 1);
     m.cells["target1"].attempts = 7;
     m.vault.entries["target1"] = { password: "old", fingerprint: { difficulty: 5, modelId: "ZeroLogon", passwordLength: 0 }, seenAt: 1 };
     expect(m.edges.has(edgeKey("prober", "target1"))).toBe(true);
+    expect(m.edges.has(edgeKey("target1", "stale"))).toBe(true);
 
     const result = applyReport(m, batch("prober", [seenEvent("target1", { difficulty: 9 })]), 2);
 
     expect(m.cells["target1"].attempts).toBe(0);
     expect(m.vault.entries["target1"]).toBeUndefined();
     expect(result.vaultChanged).toBe(true);
-    expect(m.edges.has(edgeKey("prober", "target1"))).toBe(false);
+    // The recycled server's OLD adjacency (target1~stale) is pruned...
+    expect(m.edges.has(edgeKey("target1", "stale"))).toBe(false);
+    // ...but the reporter is CURRENTLY adjacent to the recycled host, so that
+    // edge is immediately re-established this same tick.
+    expect(m.edges.has(edgeKey("prober", "target1"))).toBe(true);
   });
 
   it("does not touch the vault or attempts when the fingerprint is unchanged", () => {
@@ -176,6 +183,22 @@ describe("applyReport: seen", () => {
     expect(neighboursOf(m, "prober").sort()).toEqual(["n1", "n2"]);
     // n2 gets a bare cell even though only n1 had a "seen" event this tick.
     expect(m.cells["n2"].state).toBe("unknown");
+  });
+
+  it("builds the reporter->seen-host edge even when neighbours is empty (the real agent path)", () => {
+    // The live agent always emits `seenEvent(n)` with neighbours: [] -- probe()
+    // only reveals the caller's own neighbours -- so the edge must come from the
+    // seen host itself, not the (empty) neighbours list. Without this, m.edges
+    // stays empty forever and lab/charge/stasis-auto go dead.
+    const m = createModel(0);
+    applyReport(m, batch("home-agent", [seenEvent("th3_l4byr1nth", { modelId: "(The Labyrinth)" })]), 1);
+    expect(m.edges.has(edgeKey("home-agent", "th3_l4byr1nth"))).toBe(true);
+  });
+
+  it("does not create a self-loop edge", () => {
+    const m = createModel(0);
+    applyReport(m, batch("darkweb", [seenEvent("darkweb")]), 1);
+    expect(m.edges.has(edgeKey("darkweb", "darkweb"))).toBe(false);
   });
 });
 
@@ -667,7 +690,7 @@ describe("computePolicy", () => {
     expect(policy.workers["host1"].harvest).toBe(true);
   });
 
-  it("does not reserve stasis RAM when sizing phishThreads (dnet-stasis is one-shot and frees RAM on exit)", () => {
+  it("reserves stasis RAM while a link is being set, so the one-shot worker has launch room", () => {
     const m = createModel(0);
     agentCell(m, "host1", { maxRam: 32 });
     m.edges.add(edgeKey("host1", "darkweb"));
@@ -676,10 +699,10 @@ describe("computePolicy", () => {
 
     const policy = computePolicy(m, cfg, player, limits, 0);
     expect(policy.workers["host1"].stasis).toBe(true); // wants a fresh link this tick
-    // reserved = agent(6.25) only (no harvest: blockedRam 0, no cache; no charge/lab).
-    // free = 32 - 6.25 = 25.75; /3.6 = 7.15 -> 7. The buggy version also
-    // reserved stasis(13.6) here, giving free = 12.15 -> 3 threads.
-    expect(policy.workers["host1"].phishThreads).toBe(7);
+    // reserved = agent(6.25) + stasis(13.6) = 19.85; free = 32 - 19.85 = 12.15; /3.6 -> 3.
+    // Sizing phish to the whole host (7 threads) would leave no room for the
+    // one-shot stasis worker to launch and set the link this tick.
+    expect(policy.workers["host1"].phishThreads).toBe(3);
   });
 
   describe("auto-storm gate", () => {

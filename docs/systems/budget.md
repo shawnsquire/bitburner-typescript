@@ -112,7 +112,8 @@ Reporters:
 | budget (internal) | `wse-access` | the next stock API |
 
 Hacknet, gang, corp and stocks do not report. Hacknet's purchases are many
-small ROI-ranked items and use the payback ceiling instead.
+small ROI-ranked items and use the payback ceiling instead (`paybackHorizon`
+above; see `docs/systems/hacknet.md`).
 
 ## Protocol for consumers (`lib/budget.ts`)
 

@@ -16,8 +16,19 @@ import { COLORS } from "/lib/utils";
 import { publishStatus, peekStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
 import { STATUS_PORTS, HacknetStatus, HacknetServerInfo, HackStatus, HashSpendStrategy } from "/types/ports";
-import { getBudgetBalance, notifyPurchase, reportCap } from "/lib/budget";
-import { isHashSpendStrategy, resolveHashSpend, SERVER_TARGET_STRATEGIES } from "/controllers/hacknet";
+import { getBudgetBalance, notifyPurchase, reportCap, getPaybackHorizon } from "/lib/budget";
+import {
+  isHashSpendStrategy,
+  resolveHashSpend,
+  SERVER_TARGET_STRATEGIES,
+  HASH_SELL_MONEY,
+  MONEY_PER_HASH,
+  paybackSeconds,
+  estimateNodeMoneyRate,
+  estimateServerHashRate,
+  partitionByPayback,
+} from "/controllers/hacknet";
+import { formatTime } from "/lib/utils";
 
 const C = COLORS;
 
@@ -48,6 +59,9 @@ const HACKNET_TIERS: HacknetTierConfig[] = [
       "hacknet.getRamUpgradeCost",
       "hacknet.getCoreUpgradeCost",
       "hacknet.getCacheUpgradeCost",
+      // Both cost 0 GB; listed so a future RAM table change is caught by the tier check.
+      "formulas.hacknetServers.hashGainRate",
+      "formulas.hacknetNodes.moneyGainRate",
     ],
     features: ["server stats", "hash tracking", "upgrade costs"],
   },
@@ -131,7 +145,9 @@ interface UpgradeCandidate {
   type: "new" | "level" | "ram" | "cores" | "cache";
   serverIndex: number;
   cost: number;
-  roi: number; // deltaHashRate / cost — higher is better
+  roi: number; // marginal $/s per $ — higher is better
+  marginalMoneyPerSec: number;
+  paybackSec: number;
 }
 
 function getServerHashRate(ns: NS, level: number, ramUsed: number, ram: number, cores: number, mult: number): number {
@@ -139,50 +155,77 @@ function getServerHashRate(ns: NS, level: number, ramUsed: number, ram: number, 
   if (ns.fileExists("Formulas.exe", "home")) {
     return ns.formulas.hacknetServers.hashGainRate(level, ramUsed, ram, cores, mult);
   }
-  // Rough estimate when Formulas.exe unavailable
-  const freeRam = Math.max(0, ram - ramUsed);
-  return level * 0.001 * freeRam * (1 + (cores - 1) / 5) * mult;
+  return estimateServerHashRate(level, ramUsed, ram, cores, mult);
+}
+
+/**
+ * Money per second a node or server configuration produces. Hacknet servers are valued
+ * at the hash sell rate whatever the spend strategy; plain nodes (no hacknet servers in
+ * this BitNode) produce money directly.
+ */
+function marginalMoneyRate(
+  ns: NS, serverMode: boolean, level: number, ramUsed: number, ram: number, cores: number, mult: number,
+): number {
+  if (serverMode) return getServerHashRate(ns, level, ramUsed, ram, cores, mult) * MONEY_PER_HASH;
+  if (ns.fileExists("Formulas.exe", "home")) {
+    return ns.formulas.hacknetNodes.moneyGainRate(level, ram, cores, mult);
+  }
+  return estimateNodeMoneyRate(level, ram, cores, mult);
 }
 
 function evaluateUpgrades(ns: NS, mult: number, maxServers: number): UpgradeCandidate[] {
   const candidates: UpgradeCandidate[] = [];
   const numNodes = ns.hacknet.numNodes();
+  // hashCapacity() is 0 without hacknet servers. Re-read here rather than once per tick:
+  // the tick-level value is still 0 right after the first server is bought.
+  const serverMode = ns.hacknet.hashCapacity() > 0;
 
   // Evaluate upgrading each existing server
   for (let i = 0; i < numNodes; i++) {
     const stats = ns.hacknet.getNodeStats(i);
     const used = stats.ramUsed ?? 0;
-    const currentRate = getServerHashRate(ns, stats.level, used, stats.ram, stats.cores, mult);
+    const currentRate = marginalMoneyRate(ns, serverMode, stats.level, used, stats.ram, stats.cores, mult);
 
     // Level upgrade
     const levelCost = ns.hacknet.getLevelUpgradeCost(i, 1);
     if (isFinite(levelCost) && levelCost > 0) {
-      const newRate = getServerHashRate(ns, stats.level + 1, used, stats.ram, stats.cores, mult);
-      const roi = (newRate - currentRate) / levelCost;
-      candidates.push({ type: "level", serverIndex: i, cost: levelCost, roi });
+      const newRate = marginalMoneyRate(ns, serverMode, stats.level + 1, used, stats.ram, stats.cores, mult);
+      const delta = newRate - currentRate;
+      candidates.push({
+        type: "level", serverIndex: i, cost: levelCost, roi: delta / levelCost,
+        marginalMoneyPerSec: delta, paybackSec: paybackSeconds(levelCost, delta),
+      });
     }
 
     // RAM upgrade (doubles RAM)
     const ramCost = ns.hacknet.getRamUpgradeCost(i, 1);
     if (isFinite(ramCost) && ramCost > 0) {
-      const newRate = getServerHashRate(ns, stats.level, used, stats.ram * 2, stats.cores, mult);
-      const roi = (newRate - currentRate) / ramCost;
-      candidates.push({ type: "ram", serverIndex: i, cost: ramCost, roi });
+      const newRate = marginalMoneyRate(ns, serverMode, stats.level, used, stats.ram * 2, stats.cores, mult);
+      const delta = newRate - currentRate;
+      candidates.push({
+        type: "ram", serverIndex: i, cost: ramCost, roi: delta / ramCost,
+        marginalMoneyPerSec: delta, paybackSec: paybackSeconds(ramCost, delta),
+      });
     }
 
     // Core upgrade
     const coreCost = ns.hacknet.getCoreUpgradeCost(i, 1);
     if (isFinite(coreCost) && coreCost > 0) {
-      const newRate = getServerHashRate(ns, stats.level, used, stats.ram, stats.cores + 1, mult);
-      const roi = (newRate - currentRate) / coreCost;
-      candidates.push({ type: "cores", serverIndex: i, cost: coreCost, roi });
+      const newRate = marginalMoneyRate(ns, serverMode, stats.level, used, stats.ram, stats.cores + 1, mult);
+      const delta = newRate - currentRate;
+      candidates.push({
+        type: "cores", serverIndex: i, cost: coreCost, roi: delta / coreCost,
+        marginalMoneyPerSec: delta, paybackSec: paybackSeconds(coreCost, delta),
+      });
     }
 
     // Cache upgrade (no hash rate change, but prevents overflow)
     const cacheCost = ns.hacknet.getCacheUpgradeCost(i, 1);
     if (isFinite(cacheCost) && cacheCost > 0) {
       // Cache has 0 production ROI but gets priority when capacity is tight
-      candidates.push({ type: "cache", serverIndex: i, cost: cacheCost, roi: 0 });
+      candidates.push({
+        type: "cache", serverIndex: i, cost: cacheCost, roi: 0, marginalMoneyPerSec: 0, paybackSec: Infinity,
+      });
     }
   }
 
@@ -191,9 +234,11 @@ function evaluateUpgrades(ns: NS, mult: number, maxServers: number): UpgradeCand
     const newNodeCost = ns.hacknet.getPurchaseNodeCost();
     if (isFinite(newNodeCost) && newNodeCost > 0) {
       // New node starts at level 1, 0 used, 1 GB RAM, 1 core
-      const newRate = getServerHashRate(ns, 1, 0, 1, 1, mult);
-      const roi = newRate / newNodeCost;
-      candidates.push({ type: "new", serverIndex: -1, cost: newNodeCost, roi });
+      const newRate = marginalMoneyRate(ns, serverMode, 1, 0, 1, 1, mult);
+      candidates.push({
+        type: "new", serverIndex: -1, cost: newNodeCost, roi: newRate / newNodeCost,
+        marginalMoneyPerSec: newRate, paybackSec: paybackSeconds(newNodeCost, newRate),
+      });
     }
   }
 
@@ -209,7 +254,6 @@ let upgradesBought = 0;
 let totalSpent = 0;
 let hashesSpentTotal = 0;
 let moneyEarnedFromHashes = 0;
-const HASH_SELL_MONEY = 1_000_000; // $1M per sell
 /** Hack daemon status older than this is treated as absent when resolving a fallback target. */
 const HACK_STATUS_MAX_AGE_MS = 60_000;
 /** Last spend-blocked reason printed to the terminal, so the warning fires once per change. */
@@ -301,7 +345,10 @@ export async function main(ns: NS): Promise<void> {
     // Next node cost
     const nextNodeCost = numNodes < maxNodes ? ns.hacknet.getPurchaseNodeCost() : null;
 
-    // Tier 1: Auto-buy — batch purchase upgrades within budget
+    // Payback ceiling from the budget daemon (Infinity when it is absent or disabled).
+    const horizon = getPaybackHorizon(ns);
+
+    // Tier 1: Auto-buy — batch purchase upgrades within budget and the payback ceiling
     let purchasesThisTick = 0;
     if (tier.tier >= 1 && autoBuy) {
       let keepBuying = true;
@@ -341,7 +388,8 @@ export async function main(ns: NS): Promise<void> {
         const budget = getBudgetBalance(ns, "hacknet");
         keepBuying = false;
 
-        for (const candidate of currentCandidates) {
+        const { eligible } = partitionByPayback(currentCandidates, horizon, hashUtilization, currentNodes);
+        for (const candidate of eligible) {
           if (candidate.cost > budget) continue;
           if (candidate.cost > ns.getPlayer().money) continue;
 
@@ -404,8 +452,9 @@ export async function main(ns: NS): Promise<void> {
       };
     }
 
-    // Best remaining candidate = next target
-    const bestRemaining = remainingCandidates.length > 0 ? remainingCandidates[0] : null;
+    // Best remaining candidate the ceiling allows = next target
+    const payback = partitionByPayback(remainingCandidates, horizon, hashUtilization, ns.hacknet.numNodes());
+    const bestRemaining = payback.eligible.length > 0 ? payback.eligible[0] : null;
     const nextTarget: HacknetStatus["nextTarget"] = bestRemaining ? {
       type: bestRemaining.type,
       serverIndex: bestRemaining.serverIndex,
@@ -516,6 +565,9 @@ export async function main(ns: NS): Promise<void> {
 
       nextTarget,
       purchasesThisTick,
+      skippedForPayback: payback.skipped,
+      bestPaybackSec: payback.bestSkippedSec,
+      paybackHorizon: isFinite(horizon) ? horizon : null,
 
       servers,
 
@@ -552,6 +604,10 @@ export async function main(ns: NS): Promise<void> {
     }
     if (nextNodeCost !== null) {
       ns.print(`  Next Node: ${C.yellow}${ns.format.number(nextNodeCost)}${C.reset}`);
+    }
+    if (payback.skipped > 0 && purchasesThisTick === 0) {
+      const best = payback.bestSkippedSec !== null ? formatTime(payback.bestSkippedSec) : "n/a";
+      ns.print(`  ${C.yellow}Payback: ${payback.skipped} over horizon (best ${best} > ${formatTime(horizon)})${C.reset}`);
     }
     if (totalSpent > 0) {
       ns.print(`  Spent: ${ns.format.number(totalSpent)} (${nodesBought} nodes, ${upgradesBought} upgrades)`);

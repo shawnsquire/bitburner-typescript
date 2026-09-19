@@ -1529,6 +1529,12 @@ export interface HacknetStatus {
   // Next target
   nextTarget: { type: string; serverIndex: number; cost: number; costFormatted: string; canAfford: boolean; roi: number } | null;
   purchasesThisTick: number;
+  /** Candidates this tick whose payback exceeded the budget daemon's paybackHorizon. */
+  skippedForPayback: number;
+  /** Shortest finite payback (seconds) among the skipped candidates, null when none. */
+  bestPaybackSec: number | null;
+  /** The horizon in force (seconds), null when unlimited (budget daemon absent or disabled). */
+  paybackHorizon: number | null;
 
   // Per-server breakdown
   servers: HacknetServerInfo[];

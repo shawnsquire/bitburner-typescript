@@ -13,7 +13,7 @@ Optional daemon in `start.js`. Tiered; needs 8 GB to launch.
 
 | Tier | Name | Adds | RAM |
 |---|---|---|---|
-| 0 | monitor | Node stats, hash counts, upgrade costs | about 8 GB |
+| 0 | monitor | Node stats, hash counts, upgrade costs, `formulas.hacknetServers` / `formulas.hacknetNodes` (0 GB) | about 8 GB |
 | 1 | auto-buy | Purchase and upgrade functions | about 11 GB |
 | 2 | hash-spender | `hashCost`, `spendHashes` | about 12 GB |
 
@@ -63,16 +63,38 @@ each spend.
 
 ## Purchasing
 
-Candidates (new node, level, RAM, cores, cache) are ranked by hash rate gained
-per dollar using `formulas.hacknetServers`. The first node is bought without
-ranking. Spending goes through the `hacknet` budget bucket, and the daemon
-reports the remaining cost to fully upgrade as the bucket's cap.
+Candidates (new node, level, RAM, cores, cache) are valued in money per second
+and ranked by the gain per dollar. Hacknet servers are valued at the hash sell
+rate, 4 hashes per $1m, whatever the spend strategy (hashes are fungible), using
+`formulas.hacknetServers.hashGainRate`; plain hacknet nodes use
+`formulas.hacknetNodes.moneyGainRate`. Without Formulas.exe both fall back to
+the game's formula shape (the node estimate ignores the BitNode multiplier).
+Server mode is detected per evaluation from `hashCapacity() > 0`.
+
+Every candidate also carries a payback time, cost divided by marginal money
+per second, and the daemon skips any candidate whose payback exceeds the
+**payback horizon** the budget daemon publishes (`paybackHorizon` in
+`/config/budget.txt`, default 3600 s, read through `getPaybackHorizon`; it is
+`Infinity` when the budget daemon is absent or the key is 0, which restores the
+old buy-everything behaviour). Two exemptions: the first node is always bought,
+and a cache upgrade is exempt while hash utilisation is above 90 percent. A
+cache upgrade adds no income, so under a finite horizon it is never bought below
+that utilisation. When everything is over the horizon the daemon buys nothing
+that tick, which is the point: cash grows toward the budget's savings goal.
+
+Spending goes through the `hacknet` budget bucket, and the daemon reports the
+remaining cost to fully upgrade as the bucket's cap. It does not report a next
+purchase; its items are many and small, so the ceiling is the throttle.
 
 ## Ports and dashboard
 
 Publishes `HacknetStatus` on `STATUS_PORTS.hacknet`, including the resolved
 upgrade name, its target and where the target came from (`spendTarget` or the
-hack daemon), and a `spendBlocked` reason when spending is skipped. Dashboard:
+hack daemon), and a `spendBlocked` reason when spending is skipped. The status
+also carries `skippedForPayback`, `bestPaybackSec` and `paybackHorizon`, and
+the Hacknet tab shows "Waiting: best payback X > Y horizon" when the ceiling
+stopped every purchase this tick; `nextTarget` is the best candidate the ceiling
+allows. Dashboard:
 Money group, Hacknet tab, with a strategy selector, the resolved target, and
 the next planned purchase.
 

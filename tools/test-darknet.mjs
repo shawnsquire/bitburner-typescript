@@ -208,7 +208,7 @@ const ALL_MODEL_IDS = Object.values(ModelIds).filter((id) => id !== ModelIds.lab
 // non-blind (adaptive/heartbleed-driven) solver gets its own explicit cap.
 
 const SOLVER_CAPS = {
-  BellaCuore: 12,
+  BellaCuore: 16,
   "AccountsManager_4.2": 12,
   NIL: 70,
   "RateMyPix.Auth": 200,

@@ -19,7 +19,8 @@ src/
   types/ports.ts  Single source of truth for port numbers, status shapes, commands,
                   queue entries, priorities, kill tiers. Zero ns imports, zero RAM.
   views/          The React dashboard and a terminal status view.
-  workers/        Tiny hack/grow/weaken/share executors (plain .js, minimal RAM).
+  workers/        Tiny hack/grow/weaken/share executors and the darknet agent/dnet-*
+                  workers (plain .js, minimal RAM).
   scripts/        Standalone hacking scripts for early game.
   tools/          CLI utilities (info/, network/, control/, debug/).
 ```
@@ -53,7 +54,12 @@ daemon that has died.
 Systems that accept runtime commands from other scripts have a control port
 (`GANG_CONTROL_PORT`, `BUDGET_CONTROL_PORT`, `STOCKS_CONTROL_PORT`,
 `CORP_CONTROL_PORT`, `FOCUS_CONTROL_PORT`, `CONTRACTS_CONTROL_PORT`,
-`INFILTRATION_CONTROL_PORT`). Messages are JSON, consumed FIFO by the owning daemon.
+`INFILTRATION_CONTROL_PORT`, `DARKNET_CONTROL_PORT`). Messages are JSON,
+consumed FIFO by the owning daemon. Darknet also has two more ports of its
+own beyond the status/control pair: `DARKNET_POLICY_PORT` (coordinator to
+agents, one JSON `Policy` value replaced each tick) and
+`DARKNET_REPORT_PORT` (agents and workers to coordinator, FIFO); see
+`docs/systems/darknet.md`.
 
 ### Command port and queue
 
@@ -119,6 +125,6 @@ panel; `state-store.ts` polls the status ports and executes commands. Plugins ar
 wrapped in error boundaries so one broken panel does not take down the rest.
 
 Tab groups (`TAB_GROUPS` in `dashboard.tsx`): Servers (Home, Nuke, Hack, PServ,
-Darkweb), Focus (Focus, Work, Rep, Blade), Factions (Faction, Share, Augs), Money
+Darkweb, Darknet), Focus (Focus, Work, Rep, Blade), Factions (Faction, Share, Augs), Money
 (Budget, Stocks, Hacknet, Gang, Corp), Tools (Casino, Infiltrate, Contracts). The
 Overview tab shows every card with the Advisor's recommendations on top.

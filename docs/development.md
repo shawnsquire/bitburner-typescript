@@ -28,9 +28,10 @@ npm install
 | `npm run test:unit` | vitest over `test/**/*.test.ts`. |
 | `npm run test:watch` | vitest in watch mode. |
 | `npm run test:contracts` | Runs every coding-contract solver against the game's own generator and checker. `-- --rounds N` or `-- "Square Root"` narrows it. |
+| `npm run test:darknet` | Runs every darknet solver (`src/lib/darknet/solvers/`) against the game's own `ServerGenerator` and `checkPassword`. `-- --rounds N` or `-- "ZeroLogon"` narrows it. Requires the game source checkout, like `test:contracts`. |
 | `npm run ram -- <dist path>` | Static RAM cost of a compiled script (`npm run ram -- daemons/hack.js`). `--all` for every entry script, `--sf4 <level>` / `--bn4` for singularity multipliers, `--json` for machine output. |
 | `npm run ram:sync -- <tag>` | Regenerate the RAM table in `tools/ram-check.mjs` from the game checkout. |
-| `npm test` | typecheck, lint, build, unit tests, contract tests, in that order. Run before committing. |
+| `npm test` | typecheck, lint, build, unit tests, contract tests, darknet solver tests, in that order. Run before committing. |
 | `npm run sim` | Self-checks of the offline stock market simulator in `sim/stocks/stocksim/` (a port of the game's `StockMarket/*`). The Monte Carlo backtests next to it (`sim/stocks/exp-*`) run with plain `node file.ts`; see `sim/stocks/README.md`. Not part of `npm test`. |
 
 ## Test layout

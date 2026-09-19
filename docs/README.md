@@ -37,5 +37,6 @@ daemon has one.
 | [Contracts](systems/contracts.md) | `daemons/contracts.js` |
 | [Advisor](systems/advisor.md) | `daemons/advisor.js` |
 | [Queue and actions](systems/queue.md) | `daemons/queue.js`, `actions/*` |
+| [Darknet](systems/darknet.md) | `daemons/darknet.js`, `controllers/darknet.js`, `workers/dnet-*.js` |
 | [Dashboard](systems/dashboard.md) | `views/dashboard/*`, `views/status.js` |
 | [Tools](systems/tools.md) | `tools/**` |

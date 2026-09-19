@@ -20,8 +20,9 @@ When you change a config key, a flag, a port, or a tier table, update the system
 ## Checks
 
 ```
-npm test                  # typecheck (src + test), lint, build, unit tests, contract tests
+npm test                  # typecheck (src + test), lint, build, unit tests, contract tests, darknet solver tests
 npm run test:unit         # vitest only (test/**/*.test.ts)
+npm run test:darknet      # darknet solver harness alone (also runs as part of npm test)
 npm run ram -- daemons/x.js [--sf4 N | --bn4]
 ```
 

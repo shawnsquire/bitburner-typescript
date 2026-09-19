@@ -26,7 +26,7 @@ React shim needs.
 
 | Group | Tabs |
 |---|---|
-| Servers | Home, Nuke, Hack, PServ, Darkweb |
+| Servers | Home, Nuke, Hack, PServ, Darkweb, Darknet |
 | Focus | Focus, Work, Rep, Blade (with a sticky focus header) |
 | Factions | Faction, Share, Augs |
 | Money | Budget, Stocks, Hacknet, Gang, Corp |

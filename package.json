@@ -19,7 +19,7 @@
     "lint": "eslint src test --ext .ts,.tsx",
     "test:unit": "vitest run",
     "test:watch": "vitest",
-    "test": "npm run typecheck && npm run lint && npm run build && npm run test:unit && npm run test:contracts"
+    "test": "npm run typecheck && npm run lint && npm run build && npm run test:unit && npm run test:contracts && npm run test:darknet"
   },
   "author": "hydroflame, Hoekstraa, based on work by SlyCedix",
   "devDependencies": {

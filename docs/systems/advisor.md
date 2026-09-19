@@ -15,12 +15,12 @@ Optional daemon in `start.js`, 1.6 GB. Config `/config/advisor.txt`: `interval`
 
 ## How it works
 
-Twenty rule functions each look at a context assembled from the nuke, hack,
-pserv, share, rep, work, darkweb, bitnode, faction, gang, gang territory and
-augments status ports. A rule returns a recommendation with a score from 0 to
-100 or nothing. Missing ports simply mean those rules stay quiet. Rules are
-isolated: one throwing does not stop the others. Results are sorted by score
-and published.
+Twenty-two rule functions each look at a context assembled from the nuke, hack,
+pserv, share, rep, work, darkweb, bitnode, faction, gang, gang territory,
+augments and darknet (port 34) status ports. A rule returns a recommendation
+with a score from 0 to 100 or nothing. Missing ports simply mean those rules
+stay quiet. Rules are isolated: one throwing does not stop the others.
+Results are sorted by score and published.
 
 Categories: infrastructure, skills, factions, augmentations, gang, endgame.
 

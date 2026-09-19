@@ -18,6 +18,51 @@ describe("parseLeak", () => {
     expect(parseLeak(line)).toEqual({ t: "leak", host: null, password: "sw0rdf1sh", line });
   });
 
+  it("splits 'Connecting to <host>:<password> ...' on the LAST colon, not the first", () => {
+    // Real darknet hostnames can contain colons (`connectors` includes ":" and "::" in
+    // dictionaryData.ts). Passwords never contain a colon, so the last colon is always the
+    // host/password boundary.
+    expect(parseLeak("Connecting to bit::sys:abc123 ...")).toEqual({
+      t: "leak",
+      host: "bit::sys",
+      password: "abc123",
+      line: "Connecting to bit::sys:abc123 ...",
+    });
+    expect(parseLeak("Connecting to neo:corp:xyz789 ...")).toEqual({
+      t: "leak",
+      host: "neo:corp",
+      password: "xyz789",
+      line: "Connecting to neo:corp:xyz789 ...",
+    });
+  });
+
+  it("still recognises a plain colon-free host in 'Connecting to <host>:<password> ...'", () => {
+    const line = "Connecting to foodnstuff:hunter2 ...";
+    expect(parseLeak(line)).toEqual({ t: "leak", host: "foodnstuff", password: "hunter2", line });
+  });
+
+  it("allows a space-containing password in 'Connecting to <host>:<password> ...'", () => {
+    // `EUCountries` entries like "Czech Republic" can be used as passwords.
+    const line = "Connecting to host:Czech Republic ...";
+    expect(parseLeak(line)).toEqual({ t: "leak", host: "host", password: "Czech Republic", line });
+  });
+
+  it("allows a space-containing password in '--<password>--'", () => {
+    // `EUCountries` entries like "Republic of Cyprus" can be used as passwords.
+    const line = "--Republic of Cyprus--";
+    expect(parseLeak(line)).toEqual({ t: "leak", host: null, password: "Republic of Cyprus", line });
+  });
+
+  it("recognises 'Logging in with passcode: <password> ...' with an unknown host", () => {
+    const line = "Logging in with passcode: hunter2 ...";
+    expect(parseLeak(line)).toEqual({ t: "leak", host: null, password: "hunter2", line });
+  });
+
+  it("allows a space-containing password in 'Logging in with passcode: <password> ...'", () => {
+    const line = "Logging in with passcode: Czech Republic ...";
+    expect(parseLeak(line)).toEqual({ t: "leak", host: null, password: "Czech Republic", line });
+  });
+
   it.each([
     "There's definitely a x and a y...",
     "I can see a x and a y.",

@@ -2,22 +2,34 @@
  * Darknet Log-Noise Leak Parser
  *
  * The game's log noise generators (`src/DarkNet/models/packetSniffing.ts`:
- * `getLogNoise`, `getRandomData`, `getRandomCharsInPassword`,
- * `getExactCharactersHint`) occasionally leak real credential material into
- * otherwise-cosmetic log lines. This recognises those exact phrasings and
- * turns them into `ReportEvent`s the coordinator can act on. Best-effort: a
- * line matching nothing recognised returns null.
+ * `getLogNoise`, `getRandomData`, `addPacketSnifferNoise`,
+ * `getRandomCharsInPassword`, `getExactCharactersHint`) occasionally leak
+ * real credential material into otherwise-cosmetic log lines. This
+ * recognises those exact phrasings and turns them into `ReportEvent`s the
+ * coordinator can act on. Best-effort: a line matching nothing recognised
+ * returns null.
  *
  * Import with: import { parseLeak } from "/lib/darknet/leaks";
  */
 import type { ReportEvent } from "/lib/darknet/protocol";
 
 // `Connecting to ${name}:${password} ...` -- both `getLogNoise`'s neighbour
-// leak and `addPacketSnifferNoise`'s use this exact shape.
-const CONNECTING_RE = /^Connecting to ([^:\s]+):(\S+) \.\.\.$/;
+// leak and `addPacketSnifferNoise`'s use this exact shape. Hostnames are built
+// from dictionary words joined by `connectors` (dictionaryData.ts), which
+// includes ":" and "::", so the host itself can contain colons. Passwords are
+// generated from digits/letters/dictionary words (including EU country names
+// with spaces, e.g. "Republic of Cyprus") and never contain a colon, so the
+// robust split is on the LAST colon rather than a colon-free host regex.
+const CONNECTING_PREFIX = "Connecting to ";
+const CONNECTING_SUFFIX = " ...";
 
-// `--${password}--` -- a random server's password, host unknown.
-const DASH_RE = /^--(\S+)--$/;
+// `Logging in with passcode: ${password} ...` -- `addPacketSnifferNoise`'s
+// fallback when the server has no neighbours to connect to.
+const PASSCODE_PREFIX = "Logging in with passcode: ";
+
+// `--${password}--` -- a random server's password, host unknown. Non-greedy
+// so a password containing spaces (but never "--") still matches.
+const DASH_RE = /^--(.+?)--$/;
 
 // Every phrasing in `getRandomCharsInPassword`, verbatim.
 const PRESENT_CHARS_RES: RegExp[] = [
@@ -36,10 +48,22 @@ const PRESENT_CHARS_RES: RegExp[] = [
 const PLACED_RE = /^The characters (.+) are in the right place\.\s*$/;
 
 export function parseLeak(line: string): ReportEvent | null {
-  let m = CONNECTING_RE.exec(line);
-  if (m) return { t: "leak", host: m[1], password: m[2], line };
+  if (line.startsWith(CONNECTING_PREFIX) && line.endsWith(CONNECTING_SUFFIX)) {
+    const body = line.slice(CONNECTING_PREFIX.length, line.length - CONNECTING_SUFFIX.length);
+    const colonIdx = body.lastIndexOf(":");
+    if (colonIdx > 0 && colonIdx < body.length - 1) {
+      const host = body.slice(0, colonIdx);
+      const password = body.slice(colonIdx + 1);
+      return { t: "leak", host, password, line };
+    }
+  }
 
-  m = DASH_RE.exec(line);
+  if (line.startsWith(PASSCODE_PREFIX) && line.endsWith(CONNECTING_SUFFIX)) {
+    const password = line.slice(PASSCODE_PREFIX.length, line.length - CONNECTING_SUFFIX.length);
+    if (password.length > 0) return { t: "leak", host: null, password, line };
+  }
+
+  let m = DASH_RE.exec(line);
   if (m) return { t: "leak", host: null, password: m[1], line };
 
   for (const re of PRESENT_CHARS_RES) {

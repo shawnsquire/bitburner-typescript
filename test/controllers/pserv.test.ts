@@ -90,7 +90,21 @@ describe("getPservStatus", () => {
       maxRam: 0,
       maxPossibleRam: 1_048_576,
       allMaxed: false,
+      purchasingDisabled: false,
     });
+  });
+
+  it("flags purchasingDisabled when the game allows zero purchased servers (BN9: CloudServerLimit 0)", () => {
+    const ns = cloudNs({ servers: [], serverCap: 0 });
+    const status = getPservStatus(ns);
+    expect(status.purchasingDisabled).toBe(true);
+    expect(status.serverCap).toBe(0);
+    expect(status.allMaxed).toBe(false);
+  });
+
+  it("does not flag purchasingDisabled when servers exist under a positive cap", () => {
+    const ns = cloudNs({ servers: ["pserv-0"], serverRam: { "pserv-0": 8 }, serverCap: 1 });
+    expect(getPservStatus(ns).purchasingDisabled).toBe(false);
   });
 
   it("aggregates ram stats and detects allMaxed when the smallest server is at the game cap", () => {

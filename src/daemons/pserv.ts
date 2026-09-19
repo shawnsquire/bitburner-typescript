@@ -144,6 +144,20 @@ export async function main(ns: NS): Promise<void> {
 
   let wasMonitorMode = false;
 
+  // Some BitNodes allow zero purchased servers (CloudServerLimit 0, e.g. BN9).
+  // Nothing can ever be bought, so release the budget bucket and exit before
+  // the startup block below would reactivate it. Publish once so the PServ tab
+  // shows the cap instead of "Stopped".
+  {
+    const initial = getPservStatus(ns);
+    if (initial.purchasingDisabled) {
+      publishStatus(ns, STATUS_PORTS.pserv, computePservStatus(ns, 0, false, 0));
+      signalDone(ns, "servers");
+      ns.tprint("INFO: Purchased servers are unavailable in this BitNode (server limit 0). Pserv daemon exiting.");
+      return;
+    }
+  }
+
   // On startup, clear stale "done" state if servers aren't actually finished.
   // This handles the case where the daemon exited as done, but the user later
   // changed config (e.g. increased maxRam) and restarted the daemon.

@@ -18,6 +18,11 @@ export interface PservStatus {
   maxRam: number;
   maxPossibleRam: number;
   allMaxed: boolean;
+  /**
+   * True when the game allows zero purchased servers (CloudServerLimit 0, e.g.
+   * BitNode 9). Nothing can ever be bought or upgraded; the daemon should exit.
+   */
+  purchasingDisabled: boolean;
 }
 
 export interface PservConfig {
@@ -94,6 +99,7 @@ export function getPservStatus(ns: NS): PservStatus {
   const servers = ns.cloud.getServerNames();
   const serverCap = ns.cloud.getServerLimit();
   const maxPossibleRam = ns.cloud.getRamLimit();
+  const purchasingDisabled = serverCap <= 0;
 
   if (servers.length === 0) {
     return {
@@ -105,6 +111,7 @@ export function getPservStatus(ns: NS): PservStatus {
       maxRam: 0,
       maxPossibleRam,
       allMaxed: false,
+      purchasingDisabled,
     };
   }
 
@@ -123,6 +130,7 @@ export function getPservStatus(ns: NS): PservStatus {
     maxRam,
     maxPossibleRam,
     allMaxed,
+    purchasingDisabled,
   };
 }
 

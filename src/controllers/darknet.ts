@@ -1,26 +1,32 @@
 /**
- * Darknet Coordinator Controller
+ * Darknet Coordinator Controller (Pure Logic)
  *
- * Pure logic for the home-side darknet coordinator (`daemons/darknet.ts`,
- * a later task): owns the in-memory map of known darknet cells, the
- * password vault, income tallies, and the policy published to agents.
- * No `ns` import — the daemon calls `ns.dnet.*`, reads `/config/darknet.txt`
- * and reads/writes the vault (`lib/darknet/vault.ts`), then hands the
- * results in here as plain data.
+ * Pure functions over a `DarknetModel`: applying agent/worker reports,
+ * refreshing cells from the coordinator's own polling, computing the policy
+ * published to agents, and the charisma/carrier/stasis decisions described in
+ * `docs/design/2026-09-19-darknet.md` (sections 4, 6 and 7).
+ *
+ * Zero NS imports — safe to import without RAM cost. The coordinator daemon
+ * (`daemons/darknet.ts`) owns every `ns` call and feeds this module plain
+ * data; `lib/darknet/vault.ts` is the only piece that touches `ns`, for
+ * loading/saving `model.vault`.
+ *
+ * Several functions here mutate the `DarknetModel` in place rather than
+ * returning a new one (matching `applyReport`'s given signature, which
+ * returns only the values that don't already live on the model). Per tick,
+ * the intended call order is:
+ *   1. `applyReport` for every drained report batch.
+ *   2. `refreshFromDetails` for every known hostname the daemon polled.
+ *   3. `computePolicy` — this also syncs `model.lab` to the current lab and
+ *      updates `model.stuckSince`/`model.pauseUntil`/`model.stormPending`,
+ *      so it must run before `toStatus` for those fields to be current.
+ *   4. `toStatus` to build the published `DarknetStatus`.
  *
  * Import with: import { ... } from "/controllers/darknet";
  */
-import type {
-  Fingerprint,
-  Policy,
-  ReportBatch,
-  SeenDetails,
-  Vault,
-  VaultEntry,
-  WorkerFlags,
-} from "/lib/darknet/protocol";
-import { AGENT_VERSION, DNET_WORKER_RAM, LAB_HOSTS, LAB_MODEL_ID, fingerprintOf, sameFingerprint } from "/lib/darknet/protocol";
 import type { DarknetCell, DarknetCellState, DarknetStatus } from "/types/ports";
+import type { Fingerprint, Policy, ReportBatch, SeenDetails, Vault, WorkerFlags } from "/lib/darknet/protocol";
+import { AGENT_VERSION, CODE, DNET_WORKER_RAM, LAB_HOSTS, LAB_MODEL_ID, fingerprintOf, sameFingerprint } from "/lib/darknet/protocol";
 
 // === MODEL ===
 
@@ -33,13 +39,15 @@ export interface CellRecord {
   agentPid: number;
   agentSeenAt: number;
   attempts: number;
+  cacheSeen: boolean;
 }
 
 export interface DarknetModel {
   cells: Record<string, CellRecord>;
-  edges: Set<string>; // "a|b" with a < b lexically
+  edges: Set<string>; // "a|b" with a < b lexicographically
   vault: Vault;
-  stasisHosts: string[];
+  stasisHosts: string[]; // as last reported by the game (getStasisLinkedServers)
+  manualStasis: string[]; // targets from the control port in manual mode
   stormSeedHost: string | null;
   lab: { name: string; runner: string | null; grid: string[] | null; moves: number; cleared: boolean; password: string | null } | null;
   income: { money: number; since: number; cachesOpened: number; contractsFound: number; augsAwarded: number };
@@ -47,7 +55,6 @@ export interface DarknetModel {
   stuckSince: number | null;
   pauseUntil: number;
   stormPending: boolean;
-  manualStasis: string[];
 }
 
 export interface DarknetConfig {
@@ -64,243 +71,216 @@ export interface DarknetConfig {
   maxAttempts: number;
 }
 
-/** Rows at multiples of this depth are air gaps (design section 6). */
-const GAP_INTERVAL = 8;
+export const DEFAULT_CONFIG: DarknetConfig = {
+  heartbleed: true,
+  harvest: true,
+  phish: true,
+  phishMaxThreads: 64,
+  harvestKarmaFloor: -1e12,
+  stasisMode: "auto",
+  storm: "manual",
+  lab: true,
+  gapPatienceMs: 300000,
+  agentIntervalMs: 2000,
+  maxAttempts: 120,
+};
 
-/**
- * How long a reported agent stays "live" without a fresh report before its
- * cell falls back to its non-agent state. `applyReport`/`refreshFromDetails`
- * don't receive `cfg`, so this can't be `cfg.agentIntervalMs`; it's sized to
- * tolerate the agent's own 10s idle sleep (design section 2, step 7) plus
- * one missed/retried batch.
- */
-const AGENT_LIVE_WINDOW_MS = 15_000;
+export interface PlayerInfo {
+  charisma: number;
+  karma: number;
+}
 
-export function createModel(vault: Vault): DarknetModel {
+export interface Limits {
+  stasisLimit: number;
+  access: "none" | "basic" | "full";
+  labName: string | null;
+}
+
+/** Empty model for a fresh coordinator start (or a BitNode reset). */
+export function createModel(lastNodeReset: number): DarknetModel {
   return {
     cells: {},
-    edges: new Set<string>(),
-    vault,
+    edges: new Set(),
+    vault: { lastNodeReset, entries: {} },
     stasisHosts: [],
+    manualStasis: [],
     stormSeedHost: null,
     lab: null,
-    // 0 means "not started yet"; applyReport sets it to the first `now` it
-    // sees. Keeping this pure (no Date.now()) means createModel is
-    // deterministic and buildStatus treats 0 as "no income data yet".
     income: { money: 0, since: 0, cachesOpened: 0, contractsFound: 0, augsAwarded: 0 },
     heartbleedUsedThisNode: false,
     stuckSince: null,
     pauseUntil: 0,
     stormPending: false,
-    manualStasis: [],
   };
 }
 
-// === SMALL HELPERS ===
+// === EDGE / CELL HELPERS ===
 
-function edgeKey(a: string, b: string): string {
+const LIVE_ADMIN_STATES: DarknetCellState[] = ["admin", "agent", "anchor"];
+
+function isLiveAdmin(state: DarknetCellState): boolean {
+  return LIVE_ADMIN_STATES.includes(state);
+}
+
+/** Canonical edge key: hostnames sorted lexicographically, joined with "|". */
+export function edgeKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-function neighboursOf(m: DarknetModel, host: string): string[] {
-  const result: string[] = [];
-  for (const e of m.edges) {
-    const sep = e.indexOf("|");
-    const a = e.slice(0, sep);
-    const b = e.slice(sep + 1);
-    if (a === host) result.push(b);
-    else if (b === host) result.push(a);
-  }
-  return result;
+function addEdge(m: DarknetModel, a: string, b: string): void {
+  if (a === b) return;
+  m.edges.add(edgeKey(a, b));
 }
 
-function ensureCell(m: DarknetModel, host: string, now: number): CellRecord {
+function dropEdgesTouching(m: DarknetModel, host: string): void {
+  for (const key of m.edges) {
+    const [a, b] = key.split("|");
+    if (a === host || b === host) m.edges.delete(key);
+  }
+}
+
+/** Every host directly connected to `host` in the map built from `seen`/probe reports. */
+export function neighboursOf(m: DarknetModel, host: string): string[] {
+  const out: string[] = [];
+  for (const key of m.edges) {
+    const [a, b] = key.split("|");
+    if (a === host) out.push(b);
+    else if (b === host) out.push(a);
+  }
+  return out;
+}
+
+function ensureCell(m: DarknetModel, host: string): CellRecord {
   let cell = m.cells[host];
   if (!cell) {
-    cell = { host, details: null, fingerprint: null, state: "unknown", lastSeen: now, agentPid: 0, agentSeenAt: 0, attempts: 0 };
+    cell = {
+      host,
+      details: null,
+      fingerprint: null,
+      state: "unknown",
+      lastSeen: 0,
+      agentPid: 0,
+      agentSeenAt: 0,
+      attempts: 0,
+      cacheSeen: false,
+    };
     m.cells[host] = cell;
   }
   return cell;
 }
 
-function isAgentLive(cell: CellRecord, now: number): boolean {
-  return cell.agentPid !== 0 && now - cell.agentSeenAt <= AGENT_LIVE_WINDOW_MS;
+/** Drop a vault entry if present. Returns true when something was actually removed. */
+function dropVaultEntry(m: DarknetModel, host: string): boolean {
+  if (!(host in m.vault.entries)) return false;
+  delete m.vault.entries[host];
+  return true;
 }
 
-/** True admin-rights predicate, independent of display state (which "agent" can shadow). */
-function hasAdminNow(cell: CellRecord): boolean {
-  return cell.details?.hasAdmin === true;
+function pickDeepest(cells: CellRecord[]): CellRecord | null {
+  let best: CellRecord | null = null;
+  for (const c of cells) {
+    const d = c.details?.depth ?? -1;
+    const bd = best?.details?.depth ?? -1;
+    if (best === null || d > bd || (d === bd && c.host < best.host)) best = c;
+  }
+  return best;
 }
+
+function netDepthOf(limits: Limits): number {
+  if (limits.access !== "full") return 5;
+  if (!limits.labName) return 5;
+  return LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.depth ?? 5;
+}
+
+/** First multiple of 8 strictly greater than `depth` (the next air-gap row to cross). */
+function nextGapRow(depth: number): number {
+  return (Math.floor(depth / 8) + 1) * 8;
+}
+
+function configToRecord(config: DarknetConfig): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(config)) out[k] = String(v);
+  return out;
+}
+
+// === APPLY REPORT ===
 
 /**
- * Display state for a cell. A live agent always wins the display (it's the
- * most actionable fact), then admin (as "anchor" if stasis-linked), then
- * frontier for anything a solver could try. Every model has a solver
- * (design section 3) except the labyrinth's special `modelId`, so "a solver
- * could try it" reduces to "isn't the labyrinth model" without needing to
- * import the solver registry (out of scope for this controller's imports).
+ * Fold one batch of agent/worker reports into the model. Mutates `m`
+ * directly (vault, cells, edges, income); returns only the values that have
+ * no home elsewhere on the model — contracts to forward to the contracts
+ * daemon, and whether the vault changed (so the caller knows to persist it).
  */
-function deriveState(m: DarknetModel, cell: CellRecord, now: number): DarknetCellState {
-  const d = cell.details;
-  if (!d || !d.isOnline) return "offline";
-  if (isAgentLive(cell, now)) return "agent";
-  if (d.hasAdmin) return m.stasisHosts.includes(cell.host) ? "anchor" : "admin";
-  if (d.modelId === LAB_MODEL_ID) return "unknown"; // solved by walking, not a password solver
-  return "frontier";
-}
-
-/** Store fresh details on a cell, resetting it on an identity change. Returns whether the vault line was dropped. */
-function upsertDetails(m: DarknetModel, cell: CellRecord, details: SeenDetails, now: number): boolean {
-  const fp = fingerprintOf(details);
-  const identityChanged = cell.fingerprint !== null && !sameFingerprint(cell.fingerprint, fp);
-
-  cell.details = details;
-  cell.fingerprint = fp;
-  cell.lastSeen = now;
-
-  let vaultChanged = false;
-  if (identityChanged) {
-    cell.attempts = 0;
-    if (m.vault.entries[cell.host]) {
-      delete m.vault.entries[cell.host];
-      vaultChanged = true;
-    }
-  }
-
-  cell.state = deriveState(m, cell, now);
-  return vaultChanged;
-}
-
-function labMetaFor(name: string): { depth: number; cha: number } | null {
-  return (LAB_HOSTS as Record<string, { depth: number; cha: number; offsetStartAndEnd: boolean }>)[name] ?? null;
-}
-
-/** The admin host one row above the current lab, from which its walker is reseeded. */
-function labHostFor(m: DarknetModel): { host: string; name: string } | null {
-  if (!m.lab) return null;
-  const meta = labMetaFor(m.lab.name);
-  if (!meta) return null;
-  const targetDepth = meta.depth - 1;
-  const candidates = Object.values(m.cells).filter((c) => hasAdminNow(c) && c.details!.depth === targetDepth);
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.host.localeCompare(b.host));
-  return { host: candidates[0].host, name: m.lab.name };
-}
-
-/**
- * Gap rows (8, 16, 24, ...) the swarm is currently stuck below, per design
- * section 6: every admin host at the edge of the gap (depth `8k-1`/`8k-2`)
- * has been probed (we know its neighbours), none of those neighbours reach
- * past the gap, and nothing has crossed it another way.
- */
-function stuckGapRows(m: DarknetModel): number[] {
-  const adminCells = Object.values(m.cells).filter(hasAdminNow);
-  const edgeByRow = new Map<number, CellRecord[]>();
-  for (const c of adminCells) {
-    const depth = c.details!.depth;
-    const gapRow = GAP_INTERVAL * (Math.floor(depth / GAP_INTERVAL) + 1);
-    if (depth === gapRow - 1 || depth === gapRow - 2) {
-      if (!edgeByRow.has(gapRow)) edgeByRow.set(gapRow, []);
-      edgeByRow.get(gapRow)!.push(c);
-    }
-  }
-
-  const stuck: number[] = [];
-  for (const [gapRow, edgeAdmins] of edgeByRow) {
-    const alreadyCrossed = adminCells.some((c) => c.details!.depth >= gapRow);
-    if (alreadyCrossed) continue;
-
-    const probed = edgeAdmins.filter((c) => neighboursOf(m, c.host).length > 0);
-    if (probed.length === 0) continue; // haven't even reached the edge yet
-
-    const crossesSomewhere = probed.some((c) =>
-      neighboursOf(m, c.host).some((n) => {
-        const nc = m.cells[n];
-        return nc?.details != null && nc.details.depth >= gapRow;
-      }),
-    );
-    if (!crossesSomewhere) stuck.push(gapRow);
-  }
-  return stuck.sort((a, b) => a - b);
-}
-
-/** Gap rows (8, 16, 24, ...) already crossed by at least one admin host. */
-function crossedGapRows(m: DarknetModel): number[] {
-  const maxAdminDepth = Object.values(m.cells)
-    .filter(hasAdminNow)
-    .reduce((max, c) => Math.max(max, c.details!.depth), 0);
-  const rows: number[] = [];
-  for (let g = GAP_INTERVAL; g <= maxAdminDepth; g += GAP_INTERVAL) rows.push(g);
-  return rows;
-}
-
-/** Recompute `m.stuckSince`: set it the tick the raw stuck condition first holds, clear it once resolved. */
-function updateStuckSince(m: DarknetModel, now: number): void {
-  const stuckNow = stuckGapRows(m).length > 0;
-  if (stuckNow) {
-    if (m.stuckSince === null) m.stuckSince = now;
-  } else {
-    m.stuckSince = null;
-  }
-}
-
-// === REPORTS ===
-
-export function applyReport(
-  m: DarknetModel,
-  batch: ReportBatch,
-  now: number,
-): { contracts: { host: string; file: string }[]; vaultChanged: boolean } {
-  let vaultChanged = false;
+export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): { contracts: { host: string; file: string }[]; vaultChanged: boolean } {
   const contracts: { host: string; file: string }[] = [];
+  let vaultChanged = false;
 
-  if (m.income.since === 0) m.income.since = now;
+  // Every batch proves its origin host currently carries a live agent,
+  // regardless of what (if anything) this tick's events say about it.
+  const fromCell = ensureCell(m, batch.from);
+  fromCell.agentPid = batch.pid;
+  fromCell.agentSeenAt = batch.at;
+  fromCell.state = m.stasisHosts.includes(batch.from) ? "anchor" : "agent";
 
-  const reporter = ensureCell(m, batch.from, now);
-  reporter.agentPid = batch.pid;
-  reporter.agentSeenAt = batch.at;
-  if (reporter.details) reporter.state = deriveState(m, reporter, now);
-
-  for (const ev of batch.events) {
-    switch (ev.t) {
+  for (const event of batch.events) {
+    switch (event.t) {
       case "seen": {
-        const cell = ensureCell(m, ev.host, now);
-        if (upsertDetails(m, cell, ev.details, now)) vaultChanged = true;
-        // The reporting agent is adjacent to whatever it just probed.
-        m.edges.add(edgeKey(batch.from, ev.host));
-        for (const neighbour of ev.neighbours) {
-          m.edges.add(edgeKey(ev.host, neighbour));
+        const cell = ensureCell(m, event.host);
+        const newFp = fingerprintOf(event.details);
+        const recycled = cell.fingerprint !== null && !sameFingerprint(cell.fingerprint, newFp);
+        if (recycled) {
+          cell.attempts = 0;
+          if (dropVaultEntry(m, event.host)) vaultChanged = true;
+          dropEdgesTouching(m, event.host);
+        }
+        cell.details = event.details;
+        cell.fingerprint = newFp;
+        cell.lastSeen = now;
+        // A neighbour report can race a live agent's own batch; never let a
+        // stale probe demote a host that currently carries an agent.
+        if (cell.state !== "agent" && cell.state !== "anchor") {
+          cell.state = event.details.hasAdmin ? "admin" : "frontier";
+        }
+        // `neighbours` is the reporting host's own neighbour list (probe()
+        // only reveals neighbours of the calling host, never of a distant
+        // target), so every edge here is anchored at `batch.from`.
+        for (const n of event.neighbours) {
+          ensureCell(m, n);
+          addEdge(m, batch.from, n);
         }
         break;
       }
 
       case "cracked": {
-        const cell = ensureCell(m, ev.host, now);
-        cell.state = "admin";
-        cell.fingerprint = ev.fingerprint;
-        if (cell.details) cell.details = { ...cell.details, hasAdmin: true };
-        m.vault.entries[ev.host] = { password: ev.password, fingerprint: ev.fingerprint, seenAt: now };
+        const cell = ensureCell(m, event.host);
+        m.vault.entries[event.host] = { password: event.password, fingerprint: event.fingerprint, seenAt: batch.at };
         vaultChanged = true;
+        cell.fingerprint = event.fingerprint;
+        cell.attempts = 0;
+        if (cell.state !== "agent" && cell.state !== "anchor") cell.state = "admin";
         break;
       }
 
       case "stale": {
-        const entry = m.vault.entries[ev.host];
-        if (entry && sameFingerprint(entry.fingerprint, ev.fingerprint)) {
-          delete m.vault.entries[ev.host];
-          vaultChanged = true;
+        const entry = m.vault.entries[event.host];
+        // Only drop the entry the agent actually tried; a report that raced
+        // a newer crack (whose fingerprint already changed) is a no-op.
+        if (entry && sameFingerprint(entry.fingerprint, event.fingerprint)) {
+          if (dropVaultEntry(m, event.host)) vaultChanged = true;
         }
         break;
       }
 
       case "leak": {
-        // Leak events carry no fingerprint, so a candidate can only be
-        // trusted for a host we've already `seen` (and thus fingerprinted);
-        // never overwrite a password we already trust.
-        if (ev.host && ev.password && !m.vault.entries[ev.host]) {
-          const fp = m.cells[ev.host]?.fingerprint;
-          if (fp) {
-            m.vault.entries[ev.host] = { password: ev.password, fingerprint: fp, seenAt: now };
+        // Only the { host, password } shape from the leak parser is a vault
+        // candidate; `present`/`placed` character hints and the host-less
+        // "--pw--" line have no home on the model (a per-cell candidate list
+        // isn't part of `CellRecord`, so they're left for the agent's own
+        // solver state to consume).
+        if (event.host && event.password) {
+          const cell = m.cells[event.host];
+          if (cell?.fingerprint && !(event.host in m.vault.entries)) {
+            m.vault.entries[event.host] = { password: event.password, fingerprint: cell.fingerprint, seenAt: now };
             vaultChanged = true;
           }
         }
@@ -308,245 +288,415 @@ export function applyReport(
       }
 
       case "gap": {
-        // No model change: charismaNeed reads details.requiredCharismaSkill
-        // directly, which a prior `seen` already stored.
+        // Informational: `requiredCharismaSkill` already lives on the cell's
+        // `details` from a "seen" report, which is all `charismaNeed` needs.
         break;
       }
 
       case "cache": {
-        m.income.cachesOpened++;
-        break;
-      }
-
-      case "contract": {
-        m.income.contractsFound++;
-        contracts.push({ host: ev.host, file: ev.file });
+        ensureCell(m, event.host).cacheSeen = false;
+        m.income.cachesOpened += 1;
+        if (event.file === "the_great_work.cache") m.income.augsAwarded += 1;
         break;
       }
 
       case "ramfreed": {
-        // The task text says "optionally update details.usedRam", but
-        // `remaining` is what memoryReallocation shrinks (design section
-        // 5) and harvest's own gate reads `blockedRam > 0` — so this
-        // updates `blockedRam`, which is the field the rest of the model
-        // actually consults. Non-persistent either way (a `seen`/refresh
-        // overwrites it next tick).
-        const cell = m.cells[ev.host];
-        if (cell?.details) cell.details = { ...cell.details, blockedRam: ev.remaining };
+        const cell = ensureCell(m, event.host);
+        if (cell.details) cell.details = { ...cell.details, blockedRam: event.remaining };
+        if (event.remaining <= 0) cell.cacheSeen = true;
+        break;
+      }
+
+      case "contract": {
+        contracts.push({ host: event.host, file: event.file });
+        m.income.contractsFound += 1;
         break;
       }
 
       case "storm-seed": {
-        m.stormSeedHost = ev.host;
+        m.stormSeedHost = event.host;
         break;
       }
 
       case "phish": {
-        m.income.money += ev.money;
-        if (ev.cache) m.income.cachesOpened++;
+        m.income.money += event.money;
+        if (event.cache) ensureCell(m, event.host).cacheSeen = true;
         break;
       }
 
       case "lab": {
-        if (!m.lab || m.lab.name !== ev.host) {
-          m.lab = { name: ev.host, runner: batch.from, grid: ev.grid, moves: ev.moves, cleared: false, password: null };
+        if (!m.lab) {
+          // computePolicy hasn't synced a lab target yet this run; keep the
+          // report rather than drop it, under a placeholder name.
+          m.lab = { name: "", runner: event.host, grid: event.grid, moves: event.moves, cleared: event.cleared, password: event.password ?? null };
+        } else {
+          m.lab.runner = event.host;
+          m.lab.grid = event.grid;
+          m.lab.moves = event.moves;
+          m.lab.cleared = event.cleared;
+          if (event.password) m.lab.password = event.password;
         }
-        m.lab.runner = batch.from;
-        m.lab.grid = ev.grid;
-        m.lab.moves = ev.moves;
-        if (ev.cleared && !m.lab.cleared) {
-          m.lab.cleared = true;
-          m.lab.password = ev.password ?? null;
-          m.income.augsAwarded++;
+        if (event.password && m.lab.name) {
+          const labCell = ensureCell(m, m.lab.name);
+          labCell.fingerprint = labCell.fingerprint ?? { difficulty: labCell.details?.difficulty ?? 0, modelId: LAB_MODEL_ID, passwordLength: event.password.length };
+          m.vault.entries[m.lab.name] = { password: event.password, fingerprint: labCell.fingerprint, seenAt: batch.at };
+          vaultChanged = true;
+          if (labCell.state !== "agent" && labCell.state !== "anchor") labCell.state = "admin";
         }
         break;
       }
 
       case "error": {
-        const cell = m.cells[ev.host];
-        if (cell) cell.attempts++;
+        const cell = ensureCell(m, event.host);
+        if (event.code !== CODE.NotEnoughCharisma) cell.attempts += 1;
+        if (cell.state === "frontier") cell.state = "cracking";
         break;
       }
     }
   }
 
-  updateStuckSince(m, now);
   return { contracts, vaultChanged };
 }
 
-export function refreshFromDetails(m: DarknetModel, host: string, details: SeenDetails | null, now: number): { vaultChanged: boolean } {
-  const cell = ensureCell(m, host, now);
+// === REFRESH FROM POLLED DETAILS ===
 
-  if (details === null) {
+/**
+ * Fold the coordinator's own `getServerDetails` poll of one known hostname
+ * into the model (design doc section 4 step 2). Distinct from the `seen`
+ * event: this runs over every known cell each tick, not just this tick's
+ * probed neighbours, so it's what actually detects a host going offline.
+ */
+export function refreshFromDetails(m: DarknetModel, host: string, details: SeenDetails, now: number, config: DarknetConfig): { vaultChanged: boolean } {
+  const cell = ensureCell(m, host);
+  let vaultChanged = false;
+
+  if (!details.isOnline) {
     cell.state = "offline";
     cell.agentPid = 0;
-    updateStuckSince(m, now);
-    return { vaultChanged: false };
+    dropEdgesTouching(m, host);
+    return { vaultChanged };
   }
 
-  const vaultChanged = upsertDetails(m, cell, details, now);
-  updateStuckSince(m, now);
+  const newFp = fingerprintOf(details);
+  const recycled = cell.fingerprint !== null && !sameFingerprint(cell.fingerprint, newFp);
+  if (recycled) {
+    cell.attempts = 0;
+    if (dropVaultEntry(m, host)) vaultChanged = true;
+    dropEdgesTouching(m, host);
+  }
+  cell.details = details;
+  cell.fingerprint = newFp;
+  cell.lastSeen = now;
+
+  const baseState: DarknetCellState = details.hasAdmin ? (m.stasisHosts.includes(host) ? "anchor" : "admin") : "frontier";
+  // Death is normal (design doc section 2): a restart or delete kills an
+  // agent silently, so a resident marker older than a few missed ticks is
+  // stale and should fall back to whatever the fresh poll says.
+  const agentTimedOut = cell.agentSeenAt > 0 && now - cell.agentSeenAt > config.agentIntervalMs * 3;
+  if (recycled || agentTimedOut || (cell.state !== "agent" && cell.state !== "anchor")) {
+    if (recycled || agentTimedOut) cell.agentPid = 0;
+    cell.state = baseState;
+  }
+
   return { vaultChanged };
 }
 
-// === POLICY HELPERS ===
+// === CHARISMA NEED ===
 
-export function charismaNeed(m: DarknetModel, charisma: number): DarknetStatus["charismaNeed"] {
-  const blocked = Object.values(m.cells).filter(
-    (c) => c.details !== null && (c.state === "frontier" || c.state === "unknown") && c.details.requiredCharismaSkill > charisma,
-  );
-
-  let target: number | null = blocked.length > 0 ? Math.min(...blocked.map((c) => c.details!.requiredCharismaSkill)) : null;
-
-  let labCha: number | null = null;
-  if (m.lab && !m.lab.cleared) {
-    const meta = labMetaFor(m.lab.name);
-    if (meta && meta.cha > charisma) labCha = meta.cha;
+/**
+ * The next charisma gate worth training for: the lowest `requiredCharismaSkill`
+ * above the player's own that unblocks at least one frontier host, overridden
+ * by the current lab's threshold when that's the lower (and still unmet) gate.
+ * Null when nothing is gated.
+ */
+export function charismaNeed(m: DarknetModel, player: PlayerInfo, limits: Limits): { target: number; unlocks: number; reason: string } | null {
+  const frontierGates: number[] = [];
+  for (const c of Object.values(m.cells)) {
+    if (c.state !== "frontier" || !c.details) continue;
+    if (c.details.requiredCharismaSkill > player.charisma) frontierGates.push(c.details.requiredCharismaSkill);
   }
-  if (labCha !== null && (target === null || labCha < target)) target = labCha;
+
+  let target: number | null = frontierGates.length > 0 ? Math.min(...frontierGates) : null;
+  let reason = target !== null ? "frontier" : "";
+
+  const labName = limits.labName;
+  if (labName) {
+    const labCha = LAB_HOSTS[labName as keyof typeof LAB_HOSTS]?.cha;
+    if (labCha !== undefined && labCha > player.charisma && (target === null || labCha < target)) {
+      target = labCha;
+      reason = "lab";
+    }
+  }
 
   if (target === null) return null;
-
-  const unlocks = blocked.filter((c) => c.details!.requiredCharismaSkill <= target!).length + (labCha !== null && labCha <= target ? 1 : 0);
-
-  const reason = labCha !== null && target === labCha ? `Charisma ${target} clears the ${m.lab!.name} labyrinth` : `Charisma ${target} unlocks ${unlocks} server${unlocks === 1 ? "" : "s"}`;
-
+  const unlocks = frontierGates.filter((g) => g <= (target as number)).length;
   return { target, unlocks, reason };
 }
 
-export function selectCarriers(m: DarknetModel, access: "none" | "basic" | "full"): string[] {
-  if (access !== "full") return [];
-  const gaps = stuckGapRows(m);
-  if (gaps.length === 0) return [];
+// === CARRIERS (AIR GAP CROSSING) ===
 
-  const result = new Set<string>();
-  for (const cell of Object.values(m.cells)) {
-    if (!hasAdminNow(cell)) continue;
-    if (m.stasisHosts.includes(cell.host)) continue; // stasis hosts are immutable, cannot migrate
-    if (cell.details!.isStationary) continue;
-    const difficulty = cell.details!.difficulty;
-    for (const gapRow of gaps) {
-      if (difficulty >= gapRow - 3 && difficulty <= gapRow - 1) {
-        result.add(cell.host);
-        break;
-      }
-    }
+/**
+ * Admin hosts whose induced-migration range `[difficulty - 2, difficulty + 4]`
+ * can reach past the next uncrossed air-gap row (design doc section 6).
+ * Only meaningful with full darknet access, where air gaps exist at all.
+ */
+export function selectCarriers(m: DarknetModel, limits: Limits): string[] {
+  if (limits.access !== "full") return [];
+
+  let deepestAdmin = 0;
+  for (const c of Object.values(m.cells)) {
+    if (c.details && isLiveAdmin(c.state) && c.details.depth > deepestAdmin) deepestAdmin = c.details.depth;
   }
-  return [...result].sort();
+
+  const gap = nextGapRow(deepestAdmin);
+  if (gap >= netDepthOf(limits)) return [];
+
+  const carriers: string[] = [];
+  for (const c of Object.values(m.cells)) {
+    if (!c.details || !isLiveAdmin(c.state)) continue;
+    if (c.details.isStationary) continue;
+    if (m.stasisHosts.includes(c.host)) continue;
+    const d = c.details.difficulty;
+    if (d >= gap - 3 && d <= gap - 1) carriers.push(c.host);
+  }
+  return carriers.sort();
 }
 
-export function stasisPriority(m: DarknetModel, cfg: DarknetConfig, limit: number): { set: string[]; clear: string[] } {
-  const qualifies = (host: string): boolean => {
-    const c = m.cells[host];
-    if (!c || !hasAdminNow(c)) return false;
-    return c.details!.maxRam - DNET_WORKER_RAM.agent >= DNET_WORKER_RAM.stasis;
-  };
+// === STASIS PRIORITY ===
 
-  let desired: string[];
-  if (cfg.stasisMode === "manual") {
-    desired = m.manualStasis.filter(qualifies);
+function stasisFits(cell: CellRecord): boolean {
+  const maxRam = cell.details?.maxRam ?? 0;
+  return maxRam - DNET_WORKER_RAM.agent >= DNET_WORKER_RAM.stasis;
+}
+
+/**
+ * Hostnames to hold a stasis link, best first, at most `limits.stasisLimit`
+ * long. Manual mode simply echoes `model.manualStasis` (the dashboard/control
+ * port already validated those). Auto mode (design doc section 4 "Budgets"):
+ * the deepest agent host adjacent to the current lab, then the deepest agent
+ * host in each already-crossed air-gap band, then a darkweb-adjacent host —
+ * each only among hosts where the 13.6 GB stasis worker actually fits beside
+ * the 6.25 GB resident agent. An existing link is kept unless its host has
+ * gone offline or a fresh candidate for its slot is two or more rows deeper.
+ */
+export function stasisPriority(m: DarknetModel, config: DarknetConfig, limits: Limits, now: number): string[] {
+  void now; // reserved for future hysteresis timing; hosts are the only input today
+  if (limits.stasisLimit <= 0) return [];
+
+  if (config.stasisMode === "manual") {
+    return m.manualStasis.slice(0, limits.stasisLimit);
+  }
+
+  const candidates = Object.values(m.cells).filter((c) => c.state === "agent" && c.details && stasisFits(c));
+  const used = new Set<string>();
+  const picks: string[] = [];
+
+  const labName = limits.labName;
+  if (labName) {
+    const labAdjacent = candidates.filter((c) => !used.has(c.host) && m.edges.has(edgeKey(c.host, labName)));
+    const deepest = pickDeepest(labAdjacent);
+    if (deepest) {
+      picks.push(deepest.host);
+      used.add(deepest.host);
+    }
+  }
+
+  const netDepth = netDepthOf(limits);
+  for (let g = 8; g < netDepth; g += 8) {
+    const pastGap = Object.values(m.cells).some((c) => c.details && isLiveAdmin(c.state) && c.details.depth > g);
+    if (!pastGap) continue;
+    const band = candidates.filter((c) => !used.has(c.host) && c.details!.depth > g - 8 && c.details!.depth <= g);
+    const deepest = pickDeepest(band);
+    if (deepest) {
+      picks.push(deepest.host);
+      used.add(deepest.host);
+    }
+  }
+
+  if (picks.length < limits.stasisLimit) {
+    const darkwebAdjacent = candidates.filter((c) => !used.has(c.host) && m.edges.has(edgeKey(c.host, "darkweb")));
+    const deepest = pickDeepest(darkwebAdjacent);
+    if (deepest) {
+      picks.push(deepest.host);
+      used.add(deepest.host);
+    }
+  }
+
+  const final: string[] = picks.slice(0, limits.stasisLimit);
+
+  // Hysteresis: keep an existing, still-online link that the fresh pass
+  // didn't reselect, unless some fresh pick is >=2 rows deeper than it.
+  for (const anchor of m.stasisHosts) {
+    if (final.length >= limits.stasisLimit) break;
+    if (final.includes(anchor)) continue;
+    const anchorCell = m.cells[anchor];
+    if (!anchorCell || anchorCell.state === "offline") continue;
+    const anchorDepth = anchorCell.details?.depth ?? 0;
+    const replacedByDeeper = picks.some((p) => (m.cells[p]?.details?.depth ?? 0) >= anchorDepth + 2);
+    if (!replacedByDeeper) final.push(anchor);
+  }
+
+  return final.slice(0, limits.stasisLimit);
+}
+
+// === LAB HOST SELECTION ===
+
+/** The admin host one row shallower than, and adjacent to, the current lab. */
+function selectLabHost(m: DarknetModel, limits: Limits): string | null {
+  const labName = limits.labName;
+  if (!labName) return null;
+  const labDepth = LAB_HOSTS[labName as keyof typeof LAB_HOSTS]?.depth;
+  if (labDepth === undefined) return null;
+
+  const candidates = Object.values(m.cells).filter(
+    (c) => c.details && c.details.depth === labDepth - 1 && isLiveAdmin(c.state) && m.edges.has(edgeKey(c.host, labName)),
+  );
+  if (candidates.length === 0) return null;
+  const stasisLinked = candidates.find((c) => m.stasisHosts.includes(c.host));
+  return (stasisLinked ?? candidates[0]).host;
+}
+
+function syncLabTarget(m: DarknetModel, limits: Limits): void {
+  if (!limits.labName) return;
+  if (!m.lab || m.lab.name !== limits.labName) {
+    // Either first sync, or progression moved to a new lab (section 7): the
+    // walker starts over on the new target.
+    m.lab = { name: limits.labName, runner: null, grid: null, moves: 0, cleared: false, password: null };
+  }
+}
+
+function updateStuckSince(m: DarknetModel, limits: Limits, now: number): void {
+  if (limits.access !== "full") {
+    m.stuckSince = null;
+    return;
+  }
+
+  let deepestAdmin = 0;
+  for (const c of Object.values(m.cells)) {
+    if (c.details && isLiveAdmin(c.state) && c.details.depth > deepestAdmin) deepestAdmin = c.details.depth;
+  }
+  const gap = nextGapRow(deepestAdmin);
+  if (gap >= netDepthOf(limits)) {
+    m.stuckSince = null;
+    return;
+  }
+
+  // Simplification of "no neighbour lies below row 8k": checked against the
+  // whole known map rather than strictly the gap-edge hosts' own neighbours,
+  // since every explored host at or past the gap is reachable through some
+  // edge back to the frontier anyway.
+  const atGapEdge = Object.values(m.cells).some(
+    (c) => c.details && isLiveAdmin(c.state) && c.lastSeen > 0 && (c.details.depth === gap - 1 || c.details.depth === gap - 2),
+  );
+  const pastGap = Object.values(m.cells).some((c) => c.details && c.details.depth >= gap);
+
+  if (atGapEdge && !pastGap) {
+    if (m.stuckSince === null) m.stuckSince = now;
   } else {
-    const ranked: string[] = [];
-
-    const lab = labHostFor(m);
-    if (lab && qualifies(lab.host)) ranked.push(lab.host);
-
-    for (const gapRow of crossedGapRows(m)) {
-      const band = Object.values(m.cells)
-        .filter((c) => qualifies(c.host) && c.details!.depth >= gapRow && c.details!.depth < gapRow + GAP_INTERVAL)
-        .sort((a, b) => b.details!.depth - a.details!.depth || a.host.localeCompare(b.host));
-      if (band.length > 0 && !ranked.includes(band[0].host)) ranked.push(band[0].host);
-    }
-
-    const darkwebAdjacent = neighboursOf(m, "darkweb").filter(qualifies).sort();
-    if (darkwebAdjacent.length > 0 && !ranked.includes(darkwebAdjacent[0])) ranked.push(darkwebAdjacent[0]);
-
-    desired = ranked;
+    m.stuckSince = null;
   }
-
-  const set = desired.slice(0, Math.max(0, limit));
-  const clear = m.stasisHosts.filter((h) => !set.includes(h));
-  return { set, clear };
-}
-
-export function isStuck(m: DarknetModel, cfg: DarknetConfig, now: number): boolean {
-  // No `access` parameter: air gaps (and therefore the stuck condition
-  // stuckGapRows checks) structurally can't exist below basic access, since
-  // the net caps at depth 5 without full access (design section 1).
-  if (m.stuckSince === null) return false;
-  return now - m.stuckSince >= cfg.gapPatienceMs;
 }
 
 // === POLICY ===
 
-export function computePolicy(
-  m: DarknetModel,
-  cfg: DarknetConfig,
-  player: { charisma: number; karma: number },
-  limits: { stasisLimit: number; access: "none" | "basic" | "full" },
-  now: number,
-): Policy {
-  const stasis = stasisPriority(m, cfg, limits.stasisLimit);
-  const carriers = selectCarriers(m, limits.access);
-  const stuck = isStuck(m, cfg, now);
-  const labHostInfo = labHostFor(m);
+/**
+ * Build the `Policy` published to every agent this tick. Also mutates the
+ * model's own bookkeeping that only this function updates: `model.lab`
+ * (synced to the current lab target), `model.stuckSince` (air-gap stall
+ * detection), and `model.pauseUntil`/`model.stormPending` (the storm gate).
+ * Must run after every `applyReport`/`refreshFromDetails` call for the tick,
+ * and before `toStatus`.
+ */
+export function computePolicy(m: DarknetModel, config: DarknetConfig, player: PlayerInfo, limits: Limits, now: number): Policy {
+  syncLabTarget(m, limits);
+  updateStuckSince(m, limits, now);
 
-  const allStasisLinksPlaced = stasis.set.every((h) => m.stasisHosts.includes(h));
-  const stormRequested = cfg.storm === "auto" && stuck && carriers.length === 0 && allStasisLinksPlaced;
-  const stormTrigger = stormRequested || m.stormPending;
-  m.stormPending = false; // consumed this tick regardless of whether it actually fires
+  const migrationTargets = selectCarriers(m, limits);
+  const stasisTargets = stasisPriority(m, config, limits, now);
 
-  const stormFires = stormTrigger && m.stormSeedHost !== null;
-  if (stormFires) m.pauseUntil = now + 30_000;
+  const stuck = m.stuckSince !== null && now - m.stuckSince >= config.gapPatienceMs;
+  if (config.storm === "auto" && !m.stormPending && stuck && migrationTargets.length === 0 && limits.stasisLimit > 0 && stasisTargets.length >= limits.stasisLimit) {
+    m.stormPending = true;
+  }
+
+  let stormFiring = false;
+  if (m.stormPending) {
+    if (m.pauseUntil === 0) {
+      m.pauseUntil = now + 30_000;
+    } else if (now >= m.pauseUntil) {
+      stormFiring = true;
+      m.stormPending = false;
+      m.pauseUntil = 0;
+    }
+  }
   const pause = now < m.pauseUntil;
 
+  const labHost = selectLabHost(m, limits);
+  const labCha = limits.labName ? LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.cha ?? Infinity : Infinity;
+
   const workers: Record<string, WorkerFlags> = {};
+  let anyAgentAlive = false;
+
   for (const cell of Object.values(m.cells)) {
-    if (!isAgentLive(cell, now) || !cell.details) continue;
-    const d = cell.details;
+    if (cell.state !== "agent" && cell.state !== "anchor") continue;
+    anyAgentAlive = true;
 
-    const harvest = cfg.harvest && d.blockedRam > 0 && player.karma >= cfg.harvestKarmaFloor;
-    const freeAfterAgent = d.maxRam - DNET_WORKER_RAM.agent - (harvest ? DNET_WORKER_RAM.harvest : 0);
-    const phishThreads = cfg.phish ? Math.max(0, Math.min(cfg.phishMaxThreads, Math.floor(freeAfterAgent / DNET_WORKER_RAM.phish))) : 0;
-    const lab = cfg.lab && labHostInfo !== null && cell.host === labHostInfo.host;
+    const maxRam = cell.details?.maxRam ?? 0;
+    const harvest = config.harvest && ((cell.details?.blockedRam ?? 0) > 0 || cell.cacheSeen);
 
-    let stasisFlag: boolean | null = null;
-    if (stasis.set.includes(cell.host)) {
-      if (!m.stasisHosts.includes(cell.host)) stasisFlag = true;
-    } else if (stasis.clear.includes(cell.host)) {
-      stasisFlag = false;
-    }
+    const wantsLink = stasisTargets.includes(cell.host);
+    const hasLink = m.stasisHosts.includes(cell.host);
+    let stasis: boolean | null = null;
+    if (wantsLink && !hasLink) stasis = true;
+    else if (!wantsLink && hasLink) stasis = false;
 
     let charge: string | null = null;
-    for (const carrier of carriers) {
+    for (const carrier of migrationTargets) {
       if (m.edges.has(edgeKey(cell.host, carrier))) {
         charge = carrier;
         break;
       }
     }
 
-    const storm = stormFires && cell.host === m.stormSeedHost;
+    const lab = config.lab && labHost === cell.host && player.charisma >= labCha && !(m.lab?.cleared ?? false);
 
-    workers[cell.host] = { harvest, phishThreads, lab, stasis: stasisFlag, charge, storm };
+    let reserved = DNET_WORKER_RAM.agent;
+    if (harvest) reserved += DNET_WORKER_RAM.harvest;
+    if (stasis === true || (stasis === null && hasLink)) reserved += DNET_WORKER_RAM.stasis;
+    if (charge) reserved += DNET_WORKER_RAM.charge;
+    if (lab) reserved += DNET_WORKER_RAM.lab;
+
+    const freeForPhish = Math.max(0, maxRam - reserved);
+    const phishThreads = config.phish ? Math.min(config.phishMaxThreads, Math.floor(freeForPhish / DNET_WORKER_RAM.phish)) : 0;
+
+    workers[cell.host] = {
+      harvest,
+      phishThreads,
+      lab,
+      stasis,
+      charge,
+      storm: stormFiring && cell.host === m.stormSeedHost,
+    };
   }
 
-  if (cfg.heartbleed && Object.keys(workers).length > 0) {
-    m.heartbleedUsedThisNode = true;
-  }
+  // Approximation: the game exposes no flag for "heartbleed has been called
+  // this node", so treat it as used once config allows it and at least one
+  // agent is resident to potentially call it.
+  if (config.heartbleed && anyAgentAlive) m.heartbleedUsedThisNode = true;
 
   return {
     version: AGENT_VERSION,
     pause,
-    heartbleed: cfg.heartbleed,
+    heartbleed: config.heartbleed,
     charisma: player.charisma,
-    maxAttempts: cfg.maxAttempts,
-    agentIntervalMs: cfg.agentIntervalMs,
-    vault: m.vault.entries,
+    maxAttempts: config.maxAttempts,
+    agentIntervalMs: config.agentIntervalMs,
+    vault: { ...m.vault.entries },
     workers,
-    stasisTargets: stasis.set,
-    migrationTargets: carriers,
-    labHost: labHostInfo?.host ?? null,
-    labName: m.lab?.name ?? null,
+    stasisTargets,
+    migrationTargets,
+    labHost,
+    labName: limits.labName,
     labGrid: m.lab?.grid ?? null,
     publishedAt: now,
   };
@@ -554,87 +704,90 @@ export function computePolicy(
 
 // === STATUS ===
 
-function buildMapRows(m: DarknetModel): DarknetCell[][] {
-  const byDepth = new Map<number, DarknetCell[]>();
-  const unknownBucket: DarknetCell[] = [];
-
-  for (const c of Object.values(m.cells)) {
-    const cell: DarknetCell = {
-      host: c.host,
-      model: c.details?.modelId ?? "?",
-      difficulty: c.details?.difficulty ?? 0,
-      cha: c.details?.requiredCharismaSkill ?? 0,
-      depth: c.details?.depth ?? -1,
-      state: c.state,
-    };
-    if (c.details) {
-      const depth = c.details.depth;
-      if (!byDepth.has(depth)) byDepth.set(depth, []);
-      byDepth.get(depth)!.push(cell);
-    } else {
-      unknownBucket.push(cell);
-    }
-  }
-
-  const rows = [...byDepth.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, row]) => row.sort((a, b) => a.host.localeCompare(b.host)));
-  if (unknownBucket.length > 0) {
-    rows.push(unknownBucket.sort((a, b) => a.host.localeCompare(b.host)));
-  }
-  return rows;
-}
-
-export function buildStatus(
+/**
+ * Build the `DarknetStatus` published to the dashboard/advisor. Reads
+ * `model.stuckSince` and `model.lab`, both of which `computePolicy` keeps in
+ * sync — call this after `computePolicy` each tick.
+ */
+export function toStatus(
   m: DarknetModel,
-  cfg: DarknetConfig,
-  player: { charisma: number },
-  limits: { stasisLimit: number; access: "none" | "basic" | "full" },
+  config: DarknetConfig,
+  player: PlayerInfo,
+  limits: Limits,
   instability: { authenticationDurationMultiplier: number; authenticationTimeoutChance: number },
   now: number,
 ): DarknetStatus {
-  const cells = Object.values(m.cells);
-  const admin = cells.filter(hasAdminNow);
-  const agentsLive = cells.filter((c) => isAgentLive(c, now));
-  const frontier = cells.filter((c) => c.state === "frontier");
-  const blocked = cells.filter((c) => c.details !== null && (c.state === "frontier" || c.state === "unknown") && c.details.requiredCharismaSkill > player.charisma);
-  const offline = cells.filter((c) => c.state === "offline");
+  const counts = { seen: 0, admin: 0, agents: 0, frontier: 0, blocked: 0, offline: 0 };
+  let deepestAdmin = 0;
 
-  const deepestAdmin = admin.reduce((max, c) => Math.max(max, c.details!.depth), 0);
-  const netDepth = cells.reduce((max, c) => (c.details ? Math.max(max, c.details.depth) : max), 0);
+  for (const c of Object.values(m.cells)) {
+    if (c.state === "offline") {
+      counts.offline += 1;
+      continue;
+    }
+    counts.seen += 1;
+    if (isLiveAdmin(c.state)) {
+      counts.admin += 1;
+      if (c.details && c.details.depth > deepestAdmin) deepestAdmin = c.details.depth;
+    }
+    if (c.state === "agent" || c.state === "anchor") counts.agents += 1;
+    if (c.state === "frontier") {
+      counts.frontier += 1;
+      if (c.details && c.details.requiredCharismaSkill > player.charisma) counts.blocked += 1;
+    }
+  }
 
-  const moneyPerHour = m.income.since === 0 ? 0 : m.income.money / Math.max((now - m.income.since) / 3_600_000, 1 / 3600);
+  const netDepth = netDepthOf(limits);
+  const gap = nextGapRow(deepestAdmin);
+  const stuck = limits.access === "full" && gap < netDepth && m.stuckSince !== null && now - m.stuckSince >= config.gapPatienceMs;
 
-  const configRecord: Record<string, string> = Object.fromEntries(Object.entries(cfg).map(([k, v]) => [k, String(v)]));
+  const byDepth = new Map<number, DarknetCell[]>();
+  for (const c of Object.values(m.cells)) {
+    const depth = c.details?.depth ?? 0;
+    const cell: DarknetCell = {
+      host: c.host,
+      model: c.details?.modelId ?? "",
+      difficulty: c.details?.difficulty ?? 0,
+      cha: c.details?.requiredCharismaSkill ?? 0,
+      depth,
+      state: c.state,
+    };
+    const row = byDepth.get(depth);
+    if (row) row.push(cell);
+    else byDepth.set(depth, [cell]);
+  }
+  const rows: DarknetCell[][] = [...byDepth.keys()]
+    .sort((a, b) => a - b)
+    .map((depth) => byDepth.get(depth)!.sort((a, b) => a.host.localeCompare(b.host)));
 
-  const edges: [string, string][] = [...m.edges].map((e) => {
-    const sep = e.indexOf("|");
-    return [e.slice(0, sep), e.slice(sep + 1)] as [string, string];
-  });
+  const edges: [string, string][] = [...m.edges]
+    .map((key): [string, string] => {
+      const [a, b] = key.split("|");
+      return [a, b];
+    })
+    .sort((a, b) => (a[0] + a[1]).localeCompare(b[0] + b[1]));
 
-  const labMeta = m.lab ? labMetaFor(m.lab.name) : null;
+  const elapsedHours = m.income.since > 0 ? (now - m.income.since) / 3_600_000 : 0;
+  const moneyPerHour = elapsedHours > 0 ? m.income.money / elapsedHours : 0;
 
   return {
     access: limits.access,
-    heartbleedAllowed: cfg.heartbleed,
+    heartbleedAllowed: config.heartbleed,
     heartbleedUsedThisNode: m.heartbleedUsedThisNode,
     charisma: player.charisma,
-    counts: { seen: cells.length, admin: admin.length, agents: agentsLive.length, frontier: frontier.length, blocked: blocked.length, offline: offline.length },
+    counts,
     deepestAdmin,
     netDepth,
     instability,
-    stasis: { used: m.stasisHosts.length, limit: limits.stasisLimit, hosts: m.stasisHosts, mode: cfg.stasisMode },
-    charismaNeed: charismaNeed(m, player.charisma),
+    stasis: { used: m.stasisHosts.length, limit: limits.stasisLimit, hosts: m.stasisHosts, mode: config.stasisMode },
+    charismaNeed: charismaNeed(m, player, limits),
     lab: m.lab
       ? {
           name: m.lab.name,
           runner: m.lab.runner,
-          cha: labMeta?.cha ?? 0,
-          // Neither ns nor our reports can see whether a cleared lab's
-          // augmentation has been installed yet, so this is just "there's a
-          // great-work aug waiting"; the advisor (a later task) refines it.
-          augPending: m.lab.cleared,
+          cha: limits.labName ? LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.cha ?? 0 : 0,
           cleared: m.lab.cleared,
+          augPending: m.lab.cleared && m.income.augsAwarded === 0,
           moves: m.lab.moves,
         }
       : null,
@@ -645,8 +798,8 @@ export function buildStatus(
       augsAwarded: m.income.augsAwarded,
     },
     stormSeedHost: m.stormSeedHost,
-    stuck: isStuck(m, cfg, now),
-    config: configRecord,
-    map: { rows: buildMapRows(m), edges },
+    stuck,
+    config: configToRecord(config),
+    map: { rows, edges },
   };
 }

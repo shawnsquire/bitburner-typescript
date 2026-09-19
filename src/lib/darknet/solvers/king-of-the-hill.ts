@@ -151,8 +151,8 @@ function solveSecondProbe(state: State, from: Sample): number {
 }
 
 /** Start (or continue) zooming in on `seed`, from stage `nextStage` once solved. */
-function beginZoom(state: State, seed: Sample, window: number): { attempt: string; state: State } {
-  const withZoom: State = { ...state, zoomBest: seed, zoomWindow: window, zoomStage: "refine" };
+function beginZoom(state: State, seed: Sample, win: number): { attempt: string; state: State } {
+  const withZoom: State = { ...state, zoomBest: seed, zoomWindow: win, zoomStage: "refine" };
   const probes = nextZoomProbes(withZoom);
   if (probes.length === 0) {
     const x2 = solveSecondProbe(withZoom, seed);
@@ -276,9 +276,9 @@ export const kingOfTheHill: Solver<State> = {
       }
       let seed = coarseSamples[0];
       for (const s of coarseSamples) if (s.alt > seed.alt) seed = s;
-      const window = (coarseSamples[coarseSamples.length - 1].x - coarseSamples[0].x) / (WINDOW_SCAN_POINTS - 1) || state.width;
+      const win = (coarseSamples[coarseSamples.length - 1].x - coarseSamples[0].x) / (WINDOW_SCAN_POINTS - 1) || state.width;
       const nextStage = state.stage === "scanA" ? "zoomA" : state.stage === "scanB" ? "zoomB" : "zoomC";
-      return beginZoom({ ...state, stage: nextStage, coarseSamples: [], rawBest }, seed, window);
+      return beginZoom({ ...state, stage: nextStage, coarseSamples: [], rawBest }, seed, win);
     }
 
     // stage is zoomAnchor / zoomA / zoomB

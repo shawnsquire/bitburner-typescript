@@ -11,12 +11,13 @@
  * Usage:
  *   run daemons/hacknet.js
  */
-import { NS, NodeStats, HacknetServerHashUpgrade } from "@ns";
+import { NS, NodeStats } from "@ns";
 import { COLORS } from "/lib/utils";
-import { publishStatus } from "/lib/ports";
+import { publishStatus, peekStatus } from "/lib/ports";
 import { writeDefaultConfig, getConfigNumber, getConfigBool, getConfigString } from "/lib/config";
-import { STATUS_PORTS, HacknetStatus, HacknetServerInfo, HashSpendStrategy } from "/types/ports";
+import { STATUS_PORTS, HacknetStatus, HacknetServerInfo, HackStatus, HashSpendStrategy } from "/types/ports";
 import { getBudgetBalance, notifyPurchase, reportCap } from "/lib/budget";
+import { isHashSpendStrategy, resolveHashSpend, SERVER_TARGET_STRATEGIES } from "/controllers/hacknet";
 
 const C = COLORS;
 
@@ -69,7 +70,7 @@ const HACKNET_TIERS: HacknetTierConfig[] = [
       "hacknet.hashCost",
       "hacknet.spendHashes",
     ],
-    features: ["auto-spend hashes for money"],
+    features: ["auto-spend hashes per strategy"],
   },
 ];
 
@@ -209,17 +210,10 @@ let totalSpent = 0;
 let hashesSpentTotal = 0;
 let moneyEarnedFromHashes = 0;
 const HASH_SELL_MONEY = 1_000_000; // $1M per sell
-
-const HASH_STRATEGY_MAP: Record<HashSpendStrategy, HacknetServerHashUpgrade> = {
-  "money": "Sell for Money",
-  "study": "Improve Studying",
-  "gym": "Improve Gym Training",
-  "bladeburner-rank": "Exchange for Bladeburner Rank",
-  "bladeburner-sp": "Exchange for Bladeburner SP",
-  "coding-contract": "Generate Coding Contract",
-};
-
-const VALID_STRATEGIES = new Set(Object.keys(HASH_STRATEGY_MAP));
+/** Hack daemon status older than this is treated as absent when resolving a fallback target. */
+const HACK_STATUS_MAX_AGE_MS = 60_000;
+/** Last spend-blocked reason printed to the terminal, so the warning fires once per change. */
+let lastSpendWarning: string | null = null;
 
 // === DAEMON ===
 
@@ -236,6 +230,7 @@ export async function main(ns: NS): Promise<void> {
     reserveHashes: "0",
     allowWorkers: "false",
     spendStrategy: "money",
+    spendTarget: "",
   });
 
   const tierRamCosts = HACKNET_TIERS.map((_, i) => calculateTierRam(ns, i));
@@ -269,7 +264,8 @@ export async function main(ns: NS): Promise<void> {
     const spendThreshold = getConfigNumber(ns, "hacknet", "spendThreshold", 0.5);
     const reserveHashes = getConfigNumber(ns, "hacknet", "reserveHashes", 0);
     const rawStrategy = getConfigString(ns, "hacknet", "spendStrategy", "money");
-    const spendStrategy: HashSpendStrategy = VALID_STRATEGIES.has(rawStrategy) ? rawStrategy as HashSpendStrategy : "money";
+    const spendStrategy: HashSpendStrategy = isHashSpendStrategy(rawStrategy) ? rawStrategy : "money";
+    const spendTargetConfig = getConfigString(ns, "hacknet", "spendTarget", "");
 
     // Read hacknet state
     const numNodes = ns.hacknet.numNodes();
@@ -432,9 +428,14 @@ export async function main(ns: NS): Promise<void> {
     }
 
     // Tier 2: Hash spending — spend hashes using configured strategy
-    // "money" strategy always sells immediately; others wait for spendThreshold
-    const hashUpgradeName = HASH_STRATEGY_MAP[spendStrategy];
-    if (tier.tier >= 2 && hashCapacity > 0) {
+    // "money" strategy always sells immediately; others wait for spendThreshold.
+    // Server upgrades (reduce-security, increase-money) fall back to the hack daemon's
+    // primary target when spendTarget is empty; company-favor needs spendTarget.
+    const needsFallback = SERVER_TARGET_STRATEGIES.has(spendStrategy) && spendTargetConfig.trim() === "";
+    const hackStatus = needsFallback ? peekStatus<HackStatus>(ns, STATUS_PORTS.hack, HACK_STATUS_MAX_AGE_MS) : null;
+    const spendPlan = resolveHashSpend(spendStrategy, spendTargetConfig, hackStatus?.targets);
+    let spendBlocked: string | null = spendPlan.reason;
+    if (tier.tier >= 2 && hashCapacity > 0 && spendPlan.isValid) {
       const currentH = ns.hacknet.numHashes(); // Re-read after potential purchases
       const shouldSpend = spendStrategy === "money" || currentH / hashCapacity >= spendThreshold;
       if (shouldSpend) {
@@ -442,20 +443,31 @@ export async function main(ns: NS): Promise<void> {
         // (costPerLevel), so hashCost must be re-read after every successful spend —
         // otherwise hashesSpentTotal undercounts and the loop's own affordability check
         // goes stale.
-        let hashCost = ns.hacknet.hashCost(hashUpgradeName);
+        let hashCost = ns.hacknet.hashCost(spendPlan.upgrade);
         while (ns.hacknet.numHashes() >= hashCost + reserveHashes) {
-          if (ns.hacknet.spendHashes(hashUpgradeName)) {
+          if (ns.hacknet.spendHashes(spendPlan.upgrade, spendPlan.target ?? undefined)) {
             hashesSpentTotal += hashCost;
             if (spendStrategy === "money") {
               moneyEarnedFromHashes += HASH_SELL_MONEY;
             }
-            hashCost = ns.hacknet.hashCost(hashUpgradeName);
+            hashCost = ns.hacknet.hashCost(spendPlan.upgrade);
           } else {
+            // The game refused: bad target (not a foreign server / not a company), no
+            // corporation, not in Bladeburner, ... The reason is in the script log.
+            if (spendPlan.target !== null) {
+              spendBlocked = `game rejected ${spendPlan.upgrade} on '${spendPlan.target}'`;
+            } else {
+              spendBlocked = `game rejected ${spendPlan.upgrade}`;
+            }
             break;
           }
         }
       }
     }
+    if (spendBlocked !== null && spendBlocked !== lastSpendWarning) {
+      ns.tprint(`WARN: Hacknet hash spending skipped: ${spendBlocked}`);
+    }
+    lastSpendWarning = spendBlocked;
 
     // Next tier RAM
     const nextTierRam = tier.tier < HACKNET_TIERS.length - 1
@@ -496,6 +508,10 @@ export async function main(ns: NS): Promise<void> {
       moneyEarnedFromHashes,
       moneyEarnedFormatted: ns.format.number(moneyEarnedFromHashes),
       spendStrategy,
+      spendUpgrade: spendPlan.upgrade,
+      spendTarget: spendPlan.target,
+      spendTargetSource: spendPlan.targetSource,
+      spendBlocked,
       autoBuy: autoBuy && tier.tier >= 1,
 
       nextTarget,
@@ -524,6 +540,15 @@ export async function main(ns: NS): Promise<void> {
     }
     if (tier.tier >= 2 && moneyEarnedFromHashes > 0) {
       ns.print(`  Earned: ${C.green}$${status.moneyEarnedFormatted}${C.reset} from hashes`);
+    }
+    if (tier.tier >= 2) {
+      const targetNote = spendPlan.target !== null
+        ? ` -> ${spendPlan.target}${spendPlan.targetSource === "hack-daemon" ? " (hack daemon)" : ""}`
+        : "";
+      ns.print(`  Spend: ${spendStrategy} (${spendPlan.upgrade})${targetNote}`);
+      if (spendBlocked !== null) {
+        ns.print(`  ${C.yellow}Spending skipped: ${spendBlocked}${C.reset}`);
+      }
     }
     if (nextNodeCost !== null) {
       ns.print(`  Next Node: ${C.yellow}${ns.format.number(nextNodeCost)}${C.reset}`);

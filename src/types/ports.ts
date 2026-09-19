@@ -531,7 +531,18 @@ export type HackStrategy = "money" | "xp" | "drain" | "stocks";
 
 // === HACKNET SPEND STRATEGY ===
 
-export type HashSpendStrategy = "money" | "study" | "gym" | "bladeburner-rank" | "bladeburner-sp" | "coding-contract";
+export type HashSpendStrategy =
+  | "money"
+  | "corp-funds"
+  | "corp-research"
+  | "study"
+  | "gym"
+  | "bladeburner-rank"
+  | "bladeburner-sp"
+  | "coding-contract"
+  | "reduce-security"
+  | "increase-money"
+  | "company-favor";
 
 // === FLEET ALLOCATION ===
 
@@ -1476,6 +1487,14 @@ export interface HacknetStatus {
   moneyEarnedFromHashes: number;
   moneyEarnedFormatted: string;
   spendStrategy: HashSpendStrategy;
+  /** Upgrade name the strategy maps to (exact game string). */
+  spendUpgrade: string;
+  /** Resolved target for server/company upgrades; null when the upgrade takes none or none was found. */
+  spendTarget: string | null;
+  /** Where spendTarget came from: the config key or the hack daemon's primary target. */
+  spendTargetSource: "config" | "hack-daemon" | null;
+  /** Why spending is skipped (missing target, rejected target); null when spending is possible. */
+  spendBlocked: string | null;
   autoBuy: boolean;
 
   // Next target

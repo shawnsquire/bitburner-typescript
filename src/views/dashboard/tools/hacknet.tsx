@@ -32,11 +32,16 @@ const controlSelectStyle: React.CSSProperties = {
 
 const STRATEGY_LABELS: Record<HashSpendStrategy, string> = {
   "money": "Sell for Money",
+  "corp-funds": "Corporation Funds",
+  "corp-research": "Corporation Research",
   "study": "Improve Studying",
   "gym": "Improve Gym Training",
   "bladeburner-rank": "Bladeburner Rank",
   "bladeburner-sp": "Bladeburner SP",
   "coding-contract": "Coding Contract",
+  "reduce-security": "Reduce Min Security",
+  "increase-money": "Increase Max Money",
+  "company-favor": "Company Favor",
 };
 
 // === OVERVIEW CARD ===
@@ -183,6 +188,21 @@ function HacknetDetailPanel({
             ))}
           </select>
         </div>
+        {status.spendTarget !== null && (
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Target</span>
+            <span style={styles.statValue}>
+              {status.spendTarget}
+              {status.spendTargetSource === "hack-daemon" && <span style={styles.dim}> (hack daemon)</span>}
+            </span>
+          </div>
+        )}
+        {status.spendBlocked !== null && (
+          <div style={styles.stat}>
+            <span style={styles.statLabel}>Skipped</span>
+            <span style={{ color: "#ffaa00" }}>{status.spendBlocked}</span>
+          </div>
+        )}
         {status.moneyEarnedFromHashes > 0 && (
           <div style={styles.stat}>
             <span style={styles.statLabel}>Earned</span>

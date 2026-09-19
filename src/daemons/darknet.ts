@@ -129,25 +129,41 @@ function pollDetails(ns: NS, host: string, prior: SeenDetails | null): SeenDetai
 }
 
 /**
- * Which of the 8 fixed labyrinth hostnames currently exists as a live
- * darknet server. The game only ever generates the player's *current* lab
- * (`getCurrentLabName`/`getLabyrinthDetails` in the game source derive it
- * from owned reward augmentations and place only that one server); every
- * other name simply doesn't exist yet, so `getServerDetails` reports it
- * offline with no throw and no side effect. Polling all 8 is therefore a
- * safe, zero-marginal-RAM way to find the active one without any
- * Singularity augmentation check.
+ * Which of the 8 fixed labyrinth hostnames is the player's *current* lab —
+ * derived from the model, not from a poll. `addLabyrinth()` in the game
+ * source creates all 8 lab hostnames as real servers at once, every one with
+ * `modelId === LAB_MODEL_ID` and `isOnline: true` once the player has full
+ * access, so an 8-way `getServerDetails` poll can never tell which is
+ * current — it always finds the same (lowest-depth) one online first. Only
+ * the current lab is wired into the network graph
+ * (`connectServers(deepestRowServer, labyrinth)`), so only it is ever
+ * reachable by an agent's `probe()` and thus only it ever shows up as a cell
+ * in the model (as a "seen" neighbour, then filled in by the coordinator's
+ * own poll loop over `model.cells` above). `.depth` is pinned at -1 on every
+ * lab server and never updated by the game, so it can't disambiguate either
+ * — `LAB_HOSTS[name].depth` (the static table) is the only real depth.
+ *
+ * Tiebreak: prefer the entry with the greatest `LAB_HOSTS[name].depth`. This
+ * is not merely defensive — `model.cells` never drops a cell once seen, and
+ * every lab keeps reporting `isOnline`/`LAB_MODEL_ID` forever, so once the
+ * player clears lab N and an agent probes near lab N+1, *both* lab cells
+ * legitimately sit in the model at once. The stale, already-cleared lab N
+ * is always the shallower one, so preferring the deepest match is what picks
+ * the real current lab over the leftover.
  */
-function findCurrentLab(ns: NS): string | null {
+function findCurrentLab(model: DarknetModel): string | null {
+  let best: string | null = null;
+  let bestDepth = -1;
   for (const name of LAB_NAMES) {
-    try {
-      const details = ns.dnet.getServerDetails(name);
-      if (details.isOnline && details.modelId === LAB_MODEL_ID) return name;
-    } catch {
-      // Exists but isn't a darknet server — not a lab. Skip.
+    const cell = model.cells[name];
+    if (!cell || cell.details?.modelId !== LAB_MODEL_ID) continue;
+    const depth = LAB_HOSTS[name].depth;
+    if (best === null || depth > bestDepth) {
+      best = name;
+      bestDepth = depth;
     }
   }
-  return null;
+  return best;
 }
 
 /** Read every pending control-port command, applying each to `model`/config. Returns whether a `reseed` was requested. */
@@ -170,7 +186,7 @@ function readControlCommands(ns: NS, model: DarknetModel): boolean {
       case "set":
         // Restrict to known keys: setConfigValue builds a RegExp from `key`
         // unescaped, so an arbitrary/malformed key could throw.
-        if (cmd.key !== undefined && cmd.key in DEFAULT_CONFIG && cmd.value !== undefined) {
+        if (cmd.key !== undefined && Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, cmd.key) && cmd.value !== undefined) {
           setConfigValue(ns, "darknet", cmd.key, String(cmd.value));
         }
         break;
@@ -286,7 +302,7 @@ async function daemon(ns: NS): Promise<void> {
 
       if (!ns.fileExists("DarkscapeNavigator.exe", "home")) {
         publishStatus(ns, STATUS_PORTS.darknet, toStatus(model, config, player, NONE_LIMITS, NONE_INSTABILITY, now));
-        await ns.sleep(30000);
+        await ns.sleep(60000);
         continue;
       }
 
@@ -314,7 +330,7 @@ async function daemon(ns: NS): Promise<void> {
 
       const forceReseed = readControlCommands(ns, model);
 
-      const labName = access === "full" ? findCurrentLab(ns) : null;
+      const labName = access === "full" ? findCurrentLab(model) : null;
       const limits: Limits = { stasisLimit: ns.dnet.getStasisLinkLimit(), access, labName };
 
       const policy = computePolicy(model, config, player, limits, now);

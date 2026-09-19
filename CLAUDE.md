@@ -4,6 +4,34 @@ TypeScript automation for the game Bitburner, compiled to `dist/` and pushed int
 `bitburner-filesync`. Targets **Bitburner v3.0.1**. Scripts run inside the game, so every `ns.*`
 call has a RAM cost and only the functions in `NetscriptDefinitions.d.ts` exist.
 
+## Docs
+
+`docs/` is the reference; cite it and keep it current when behaviour changes.
+
+| Need | Page |
+|---|---|
+| Layers, ports, queue, config, budget, focus, tiered daemons | `docs/architecture.md` |
+| Build, test, RAM checks, new game version procedure | `docs/development.md` |
+| One page per system: run command, config keys and defaults, ports, dashboard tab, related scripts | `docs/systems/<name>.md` (index in `docs/README.md`) |
+| What the 2026-09-19 audit found, fixed, and deliberately left alone | `docs/audit-2026-09-19.md` |
+
+When you change a config key, a flag, a port, or a tier table, update the system page in the same change.
+
+## Checks
+
+```
+npm test                  # typecheck (src + test), lint, build, unit tests, contract tests
+npm run test:unit         # vitest only (test/**/*.test.ts)
+npm run ram -- daemons/x.js [--sf4 N | --bn4]
+```
+
+- Unit tests live in `test/` (never in `src/`, which ships into the game). Import source with
+  game-style paths (`/controllers/foo`); `test/helpers/mock-ns.ts` is the NS stub.
+- `test/tooling/ram.test.ts` enforces two invariants: a pinned `ns.ramOverride(N)` literal covers the
+  script's static cost, and every RAM-charging function a tiered daemon references appears in one of
+  its tier lists. If you add an ns call to a tiered daemon or a lib it imports, add it to the tier list.
+- Controllers are the unit-test target. Keep new logic pure and in `controllers/` or `lib/`.
+
 ## Game source checkout (source of truth)
 
 A partial clone of `bitburner-official/bitburner-src` lives at `~/documents/apps/games/bitburner`,
@@ -49,8 +77,18 @@ for offline type-checking copy it from the checkout: `cp ~/documents/apps/games/
 - **Removed functions throw when called**, not at load. A script can start fine and die minutes later.
 - **Enum parameters are exact strings**; v3 removed fuzzy matching. Copy values from the enum files.
 - **RAM is charged per statically referenced function**, including identifiers that merely look like
-  ns function names. `tools/ram-check.mjs` replicates the game's scan; `npm run ram <file>` before
-  trusting a `@ram` tag or `ns.ramOverride(...)` literal.
+  ns function names (a local variable called `share`, `nuke`, `ps` or `run` costs RAM). Also `window`
+  and `document` cost 25 GB each. `tools/ram-check.mjs` replicates the game's scan; `npm run ram <file>`
+  before trusting a `@ram` tag or `ns.ramOverride(...)` literal.
+- **A launch-time `ns.ramOverride(N)` only works as the first statement of `main` with a numeric
+  literal.** A computed value does not lower the launch cost; it can only adjust it afterwards.
+- **Dashboard plugins must not call `ns`.** Everything under `views/dashboard/tools/` is bundled into
+  `dashboard.js`, so one Singularity import there costs the whole dashboard hundreds of GB. Plugins read
+  the state store; daemons publish what the UI needs.
+- **Singularity calls throw without Source-File 4**, and the RAM check runs before the throw, so detect
+  SF4 through `ns.getResetInfo()` rather than by probing a Singularity function.
+- **v3 return values**: `nuke`, the port crackers and `purchaseProgram` return `false` on failure; the
+  `sleeve.setTo*` functions return `false` on a bad assignment. Check them.
 - **Tiered daemons** (`daemons/*.ts` with `HACKNET_TIERS`-style tables) compute their RAM from
   string lists of function names. Every ns function the daemon calls must appear in a tier list,
   or the game's dynamic RAM check kills it mid-run.

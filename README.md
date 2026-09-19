@@ -1,199 +1,122 @@
 # Bitburner Scripts
 
-Automation framework for [Bitburner](https://danielyxie.github.io/bitburner/). Requires SF4 (Singularity) for most features.
+TypeScript automation for [Bitburner](https://github.com/bitburner-official/bitburner-src),
+targeting game version **v3.0.1**. Most features need Source-File 4
+(Singularity); the hacking, nuke, share, contracts, stocks, hacknet and gang
+systems work without it.
 
-## Quick Start
+Full reference lives in [`docs/`](docs/README.md): architecture, development
+workflow, one page per system, and the latest audit.
+
+## Quick start
 
 ```
 run start.js
 ```
 
-Launches the dashboard, core daemons (nuke, hack, queue, darkweb), and optional daemons (pserv, faction, augments, gang, advisor, contracts) if RAM permits. Safe to re-run -- skips anything already running.
+Launches the dashboard, then the daemons listed in `/config/start.txt`
+(created on first run). Core daemons kill hacking workers for RAM if needed;
+optional ones start only when RAM is free. Safe to re-run: it skips anything
+already running and never overwrites config you have changed.
 
-## Architecture
-
-All daemons publish status to numbered Netscript ports. The React dashboard reads those ports to display live state. Commands flow back from the dashboard via a command port. Daemons read config from `/config/{system}.txt` files that can be edited in-game or through the dashboard.
+## How it fits together
 
 ```
-  Dashboard (React)
-      │  reads ports
-      ▼
-  Status Ports ◄── Daemons (long-running)
-      │                │
-      │                ├── Controllers (pure logic, zero RAM)
-      │                └── Config files (/config/*.txt)
-      │
-  Command Port ──► Main loop dispatches
+  /config/<system>.txt ──► daemon ──► status port ──► dashboard / status view
+                             ▲                            │
+                             └── control port ◄───────────┘ (commands, queue)
 ```
 
-## Gameplay Cheat Sheet
+- **Daemons** (`daemons/`) are long-running services, one per system, that
+  read `/config/<system>.txt` and publish JSON status to a numbered port.
+- **Controllers** (`controllers/`) hold the pure logic and are unit tested.
+- **Actions** (`actions/`) are one-shot scripts, often run through the queue daemon.
+- **Dashboard** (`views/dashboard/dashboard.js`) is a React panel inside the
+  game that reads the ports and sends commands back.
+- **Tiered daemons** pick a feature tier from free RAM, so most systems run in
+  some form early and grow later.
 
-### Early Bitnode (low RAM, low hacking)
+See [docs/architecture.md](docs/architecture.md).
+
+## Systems
+
+| System | Daemon | Docs |
+|---|---|---|
+| Distributed hacking (money, xp, drain, stocks strategies) | `daemons/hack.js` | [hack](docs/systems/hack.md) |
+| Root servers, deploy workers | `daemons/nuke.js` | [nuke](docs/systems/nuke.md) |
+| Buy TOR and programs | `daemons/darkweb.js` | [darkweb](docs/systems/darkweb.md) |
+| Purchased servers | `daemons/pserv.js` | [pserv](docs/systems/pserv.md) |
+| Share RAM for faction rep | `daemons/share.js` | [share](docs/systems/share.md) |
+| Home RAM and cores | `daemons/home.js` | [home](docs/systems/home.md) |
+| Hacknet nodes and hashes | `daemons/hacknet.js` | [hacknet](docs/systems/hacknet.md) |
+| Join factions, travel, backdoors | `daemons/faction.js` | [faction](docs/systems/faction.md) |
+| Faction reputation and work | `daemons/rep.js` | [rep](docs/systems/rep.md) |
+| Augmentation planning and install | `daemons/augments.js` | [augments](docs/systems/augments.md) |
+| Stat training, crime, focus arbitration | `daemons/work.js`, `daemons/focus.js` | [work](docs/systems/work.md) |
+| Money allocation between systems | `daemons/budget.js` | [budget](docs/systems/budget.md) |
+| Stock trading | `daemons/stocks.js` | [stocks](docs/systems/stocks.md) |
+| Gang | `daemons/gang.js` | [gang](docs/systems/gang.md) |
+| Corporation | `daemons/corp.js` | [corp](docs/systems/corp.md) |
+| Bladeburner | `daemons/blade.js` | [blade](docs/systems/blade.md) |
+| Infiltration with mini-game solvers | `daemons/infiltration.js` | [infiltration](docs/systems/infiltration.md) |
+| Casino | `casino.js` | [casino](docs/systems/casino.md) |
+| Coding contracts | `daemons/contracts.js` | [contracts](docs/systems/contracts.md) |
+| Recommendations | `daemons/advisor.js` | [advisor](docs/systems/advisor.md) |
+| Queue runner and actions | `daemons/queue.js` | [queue](docs/systems/queue.md) |
+| Dashboard and terminal status | `views/dashboard/dashboard.js`, `views/status.js` | [dashboard](docs/systems/dashboard.md) |
+| CLI tools | `tools/**` | [tools](docs/systems/tools.md) |
+
+## Cheat sheet
 
 | Goal | Command |
-|------|---------|
-| Root everything you can | `run start.js` (nuke daemon handles this) |
-| Backdoor faction servers | `run actions/faction-backdoors.js` |
-| Buy darkweb programs | Automatic via queue daemon, or `run actions/buy-tor.js` / `run actions/buy-program.js --program BruteSSH.exe` |
-| Grind hacking XP | `run scripts/hack/simple.js n00dles` |
-| Attack a single target | `run scripts/hack/shotgun.js auto` |
-
-### Mid-Game (100+ GB RAM, decent hacking)
-
-| Goal | Command |
-|------|---------|
-| Distributed hacking (money) | Automatic via `daemons/hack.js` from start.js |
-| Buy/upgrade personal servers | Automatic via `daemons/pserv.js` from start.js |
-| Boost faction rep gain | Automatic via `daemons/share.js` from start.js |
-| Train combat stats | `run daemons/work.js --focus balance-combat` |
-| Train hacking | `run daemons/work.js --focus hacking` |
-| Grind money via crime | `run daemons/work.js --focus crime-money` |
-| Work for a faction | `run actions/work-for-faction.js --faction CyberSec --type hacking` |
-
-### Late Game (buying augments, resetting)
-
-| Goal | Command |
-|------|---------|
-| Auto-grind rep for next aug | `run daemons/rep.js` |
+|---|---|
+| Start everything | `run start.js` |
+| See what is running and why | `run views/status.js` or the dashboard Overview tab |
+| Grind hacking XP on day one | `run scripts/hack/simple.js n00dles` |
+| Flood one target | `run scripts/hack/shotgun.js auto` |
+| Change hack strategy | dashboard Hack tab, or edit `strategy` in `/config/hack.txt` and restart |
+| Train stats or commit crime | `run actions/set-work-focus.js --focus balance-combat` (see work docs for values) |
+| Work for a faction now | `run actions/work-for-faction.js --faction CyberSec --type hacking` |
 | Preview affordable augments | `run actions/purchase-augments.js --dry-run` |
-| Buy all affordable augments | `run actions/purchase-augments.js` |
-| Buy NeuroFlux Governor | `run actions/purchase-neuroflux.js` |
-| Donate for NFG (150+ favor) | `run actions/neuroflux-donate.js --confirm` |
-| Install augments and reset | `run actions/install-augments.js --confirm` |
+| Buy everything and reset | `run actions/firesale.js`, then `run actions/install-augments.js --confirm` |
+| Inspect a status port | `run tools/debug/peek-ports.js 2` |
+| Map the network | `run tools/network/nmap.js --where root=0,reqHack<=200 --sort reqHack` |
 
-### Work Focus Options
+## Config
 
-Set via dashboard or: `run actions/set-work-focus.js --focus FOCUS`
-
-| Focus | What it does |
-|-------|-------------|
-| `strength` / `defense` / `dexterity` / `agility` | Train one combat stat at best gym |
-| `hacking` / `charisma` | Train at best university |
-| `balance-combat` | Rotate through combat stats, training the lowest |
-| `balance-all` | Rotate through all stats |
-| `crime-money` | Commit most profitable crime |
-| `crime-stats` | Commit best crime for combat XP |
-
-## Daemons
-
-Started by `start.js` or launched manually. All publish status to ports for the dashboard. Each daemon reads its config from `/config/{name}.txt`.
-
-| Daemon | Purpose |
-|--------|---------|
-| `daemons/nuke.js` | Root servers as hacking/tools allow |
-| `daemons/hack.js` | Distributed hack/grow/weaken across all rooted servers |
-| `daemons/queue.js` | Execute queued one-shot actions, rotate status checks |
-| `daemons/pserv.js` | Buy and upgrade personal servers |
-| `daemons/share.js` | Fill spare RAM with `share()` for rep boost |
-| `daemons/rep.js` | Auto-grind faction rep toward next augmentation |
-| `daemons/work.js` | Auto-train stats at gyms/universities/crime |
-| `daemons/darkweb.js` | Auto-buy darkweb programs (exits when all owned) |
-| `daemons/faction.js` | Auto-join factions, track requirements and invitations |
-| `daemons/infiltration.js` | Automated infiltration runs with mini-game solvers |
-| `daemons/gang.js` | Gang management (tasks, ascension, equipment, territory) |
-| `daemons/augments.js` | Track available/affordable augmentations |
-| `daemons/advisor.js` | Analyze game state and rank recommended actions |
-| `daemons/contracts.js` | Find and auto-solve coding contracts on all servers |
-| `daemons/budget.js` | Capital allocation across spending systems (pserv, stocks, etc.) |
-| `daemons/stocks.js` | Stock market trading (tiered: monitor, pre-4S MA, 4S forecast) |
-
-## Dashboard
-
-The React dashboard (`views/dashboard/dashboard.js`) provides live monitoring and control for all daemons. It uses a two-tier grouped tab layout:
-
-| Group | Tabs |
-|-------|------|
-| Servers | Nuke, Hack, PServ, Darkweb |
-| Rep & Factions | Faction, Rep, Share, Augs |
-| Money | Work, Budget, Stocks, Gang |
-| Tools | Infiltrate, Contracts |
-
-The Overview tab shows all tools at a glance with the Advisor's recommendations at the top. Each plugin has an OverviewCard (summary) and a DetailPanel (full view). Error boundaries wrap every plugin so a crash in one panel won't take down the dashboard.
-
-## Tools
-
-| Tool | Purpose |
-|------|---------|
-| `tools/prioritize.js` | Analyze game state, suggest next action |
-| `tools/launch.js SCRIPT` | RAM-aware launcher (kills workers if needed) |
-| `tools/nmap.js` | Network map with sorting and filtering |
-| `tools/network-monitor.js` | Real-time hacking activity dashboard |
-| `tools/path-to.js HOST` | Show connect path to a server |
-| `tools/path-to-backdoors.js` | Show paths to faction backdoor targets |
-| `tools/pwned.js` | List/manage rooted servers |
-| `tools/slum-work.js` | Crime analysis (money, XP, karma rates) |
-| `tools/augments.js` | List installed and pending augmentations |
-| `tools/infiltration-list.js` | List infiltration locations by difficulty |
-| `tools/colors.js` | ANSI color reference chart |
-| `tools/backdoor.js` | Backdoor a server via Singularity |
-| `tools/karma.js` | Track karma progress |
-| `tools/debug/peek-ports.js` | Inspect status port data |
-| `tools/debug/ram-audit.js` | RAM cost audit of all scripts |
-| `tools/debug/file-diff.js` | Find orphaned/missing files on server |
-
-## Config System
-
-Each daemon reads config from `/config/{name}.txt` on startup and re-reads periodically. Config files use a simple `key=value` format with `#` comments. Defaults are written automatically on first run.
-
-Example (`/config/hack.txt`):
-```
-# Home RAM to reserve (GB)
-homeReserve=64
-# Max simultaneous targets
-maxTargets=8
-```
-
-### Stocks Config (`/config/stocks.txt`)
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `enabled` | `true` | Enable/disable trading |
-| `pollInterval` | `6000` | Price poll interval (ms) |
-| `smartMode` | `true` | Adjust confidence based on hack daemon targets |
-| `preThreshold` | `0.03` | MA deviation threshold for pre-4S signals |
-| `forecastThreshold` | `0.01` | Forecast deviation threshold for 4S signals |
-| `maWindow` | `12` | Moving average window size |
-| `minConfidence` | `0.55` | Minimum forecast confidence for 4S trades |
-| `stopLossPercent` | `0.05` | Hard stop-loss (5% from entry) |
-| `trailingStopPercent` | `0.08` | Trailing stop (8% from peak) |
-| `maxHoldTicks` | `60` | Max ticks to hold a position (0 = unlimited) |
-
-### Budget Config (`/config/budget.txt`)
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `interval` | `2000` | Status update interval (ms) |
-| `reserveFraction` | `0.01` | Emergency reserve fraction |
-| `weight.stocks` | `50` | T2 weight for stock investments |
-| `weight.servers` | `25` | T2 weight for personal servers |
-| `weight.gang` | `15` | T2 weight for gang equipment |
-| `weight.hacknet` | `10` | T2 weight for hacknet (no consumer yet) |
-
-## Contracts
-
-The contracts daemon scans all servers for `.cct` files and solves them automatically using 28 built-in solvers covering all known contract types. Solved contracts are logged to the dashboard.
-
-## Project Structure
-
-```
-src/
-  start.ts              Entry point (bootstrap)
-  actions/              One-shot scripts (buy, travel, install, etc.)
-  controllers/          Business logic (no main loops, zero RAM cost)
-  daemons/              Long-running services with status publishing
-  scripts/              Standalone game scripts (simple hackers, casino)
-  lib/                  Infrastructure (utils, ports, launcher, config, react shim)
-  types/                Shared types and port assignments (zero RAM)
-  views/                Dashboard UI (React, two-tier tabs, error boundaries)
-  workers/              Stateless hack/grow/weaken/share executors (.js, minimal RAM)
-  tools/                CLI utilities and debug helpers
-```
+Every system reads `/config/<name>.txt` (`key=value`, `#` comments), writes
+its defaults on first run, and re-reads periodically, so edits in-game or from
+the dashboard apply without a restart. Each system page under
+`docs/systems/` lists the keys and defaults.
 
 ## Development
 
-```bash
+```
 npm install
-npm run watch        # Transpile + sync to game
+npm run watch     # transpile, sync, push into the game
+npm test          # typecheck, lint, build, unit tests, contract tests
 ```
 
-Build output goes to `dist/`, which `bitburner-filesync` pushes to the game.
+`npm test` runs offline against a checkout of the game source. Setup, the test
+layout, RAM discipline and the procedure for a new game version are in
+[docs/development.md](docs/development.md). `CLAUDE.md` has the notes for AI
+agents working in this repo.
+
+## Project structure
+
+```
+src/
+  start.ts              Bootstrap
+  daemons/              Long-running services
+  controllers/          Pure logic (unit tested)
+  actions/              One-shot scripts
+  lib/                  Config, ports, launcher, RAM utils, budget client, solvers
+  types/ports.ts        Ports, status shapes, commands, priorities, kill tiers
+  views/                Dashboard (React) and terminal status view
+  workers/              hack/grow/weaken/share payloads (plain JS)
+  scripts/hack/         Standalone early-game hackers
+  tools/                CLI utilities (info, network, control, debug)
+test/                   vitest unit tests and repo invariants
+tools/                  Node-side RAM checker and contract harness
+docs/                   Reference documentation
+```

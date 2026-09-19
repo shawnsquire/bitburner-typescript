@@ -91,6 +91,16 @@ const roleForDistPath = new Map<string, keyof typeof DNET_WORKERS>(
 );
 
 describe("darknet replication bundle (DNET_BUNDLE)", () => {
+  // No dnet-*.ts workers exist yet, so the three tests below loop over an
+  // empty array and never actually exercise the walker. Smoke-test it
+  // against a real entry file (wire.ts) that already exists, so a broken
+  // regex or resolver is caught now rather than silently passing until
+  // the first worker lands.
+  it("walker resolves wire.ts's closure to protocol + ports (smoke)", () => {
+    const closure = importClosure(join(SRC, "lib/darknet/wire.ts")).map(distPath).sort();
+    expect(closure).toEqual(["lib/darknet/protocol.js", "types/ports.js"]);
+  });
+
   it("covers every dnet-*.ts worker's dist path and import closure", () => {
     for (const worker of workers) {
       const workerDist = distPath(worker);

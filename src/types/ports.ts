@@ -1076,17 +1076,18 @@ export interface StockPosition {
   direction: "long" | "short";
   profit: number;
   profitFormatted: string;
+  /** |forecast − 0.5| of the stock right now (estimated pre-4S). */
   confidence: number;
-  server?: string;
-  hackAdjustment?: string;
 }
 
 export interface StockSignal {
   symbol: string;
   direction: "long" | "short" | "neutral";
+  /** |expected return| per tick = volatility × |forecast − 0.5|. */
   strength: number;
   forecast?: number;
-  maRatio?: number;
+  /** Signed expected log return per tick. */
+  expectedReturn?: number;
 }
 
 export interface StocksStatus {
@@ -1122,11 +1123,9 @@ export interface StocksStatus {
   tradingCapitalFormatted: string;
 
   // Config
-  smartMode: boolean;
   activeProfile?: string;
-  pollInterval: number;
 
-  // Tick counter
+  // Market ticks seen since start
   tickCount: number;
 
   // Scraped forecast info (when using DOM scraper)

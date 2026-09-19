@@ -237,12 +237,6 @@ function StocksDetailPanel({
         </span>
         <span style={styles.dim}>|</span>
         <span>
-          Smart: <span style={{ color: status.smartMode ? "#00ff00" : "#888" }}>
-            {status.smartMode ? "ON" : "OFF"}
-          </span>
-        </span>
-        <span style={styles.dim}>|</span>
-        <span>
           Capital: <span style={styles.statValue}>{status.tradingCapitalFormatted}</span>
         </span>
         <span style={styles.dim}>|</span>
@@ -322,7 +316,6 @@ function StocksDetailPanel({
                 <th style={{ ...styles.tableHeader, width: "80px", textAlign: "right" }}>Price</th>
                 <th style={{ ...styles.tableHeader, width: "90px", textAlign: "right" }}>P&L</th>
                 <th style={{ ...styles.tableHeader, width: "50px", textAlign: "right" }}>Conf</th>
-                <th style={{ ...styles.tableHeader, width: "60px" }}>Hack</th>
               </tr>
             </thead>
             <tbody>
@@ -351,14 +344,6 @@ function StocksDetailPanel({
                     <td style={{ ...styles.tableCell, textAlign: "right" }}>
                       {(p.confidence * 100).toFixed(0)}%
                     </td>
-                    <td style={{
-                      ...styles.tableCell,
-                      color: p.hackAdjustment === "hacked" ? "#ff4444"
-                           : p.hackAdjustment === "growing" ? "#00ff00"
-                           : "#888",
-                    }}>
-                      {p.hackAdjustment || "—"}
-                    </td>
                   </tr>
                 );
               })}
@@ -376,9 +361,9 @@ function StocksDetailPanel({
               <tr>
                 <th style={styles.tableHeader}>Symbol</th>
                 <th style={{ ...styles.tableHeader, width: "60px" }}>Direction</th>
-                <th style={{ ...styles.tableHeader, width: "60px", textAlign: "right" }}>Strength</th>
+                <th style={{ ...styles.tableHeader, width: "60px", textAlign: "right" }}>Ret/tick</th>
                 <th style={{ ...styles.tableHeader, width: "80px", textAlign: "right" }}>
-                  {status.has4S ? "Forecast" : "MA Ratio"}
+                  {status.mode === "pre4s" ? "Est. forecast" : "Forecast"}
                 </th>
               </tr>
             </thead>
@@ -395,12 +380,10 @@ function StocksDetailPanel({
                       {s.direction.toUpperCase()}
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right" }}>
-                      {(s.strength * 100).toFixed(0)}%
+                      {(s.strength * 100).toFixed(3)}%
                     </td>
                     <td style={{ ...styles.tableCell, textAlign: "right" }}>
-                      {s.forecast !== undefined ? s.forecast.toFixed(3)
-                       : s.maRatio !== undefined ? s.maRatio.toFixed(4)
-                       : "—"}
+                      {s.forecast !== undefined ? s.forecast.toFixed(3) : "—"}
                     </td>
                   </tr>
                 );
@@ -484,9 +467,6 @@ function StocksDetailPanel({
                 const plColor = t.profit >= 0 ? "#00ff00" : "#ff4444";
                 const reasonColors: Record<string, string> = {
                   "signal": "#00ff00",
-                  "hard-stop": "#ff4444",
-                  "trailing-stop": "#ff8800",
-                  "time-limit": "#ffaa00",
                   "external": "#888",
                 };
                 return (

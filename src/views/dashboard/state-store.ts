@@ -10,6 +10,7 @@
 import { NetscriptPort, NS } from "@ns";
 import { peekStatus } from "/lib/ports";
 import { setConfigValue, getConfigString, getConfigBool, readConfig } from "/lib/config";
+import { TRADING_PROFILES, profileConfigValues, TradingProfileName } from "/controllers/stocks";
 import {
   ToolName,
   DashboardState,
@@ -952,21 +953,11 @@ function executeCommand(ns: NS, cmd: Command): void {
       break;
     case "set-stocks-profile":
       {
-        const profiles: Record<string, Record<string, string>> = {
-          aggressive: {
-            minForecastDeviation: "0.055", sellForecastDeviation: "0.02",
-            stopLossPercent: "0.10", trailingStopPercent: "0.06", maxHoldTicks: "45", maxPositions: "10",
-          },
-          moderate: {
-            minForecastDeviation: "0.10", sellForecastDeviation: "0.05",
-            stopLossPercent: "0.15", trailingStopPercent: "0.08", maxHoldTicks: "60", maxPositions: "8",
-          },
-          conservative: {
-            minForecastDeviation: "0.15", sellForecastDeviation: "0.08",
-            stopLossPercent: "0.20", trailingStopPercent: "0.10", maxHoldTicks: "75", maxPositions: "6",
-          },
-        };
-        const profile = cmd.stocksProfile ? profiles[cmd.stocksProfile] : null;
+        // Presets come from the controller so the daemon's detectActiveProfile matches
+        // exactly what was written.
+        const profile = cmd.stocksProfile && cmd.stocksProfile in TRADING_PROFILES
+          ? profileConfigValues(cmd.stocksProfile as Exclude<TradingProfileName, "custom">)
+          : null;
         if (profile) {
           for (const [key, value] of Object.entries(profile)) {
             setConfigValue(ns, "stocks", key, value);

@@ -78,7 +78,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   budget: { start: "run daemons/budget.js", stop: "kill daemons/budget.js",
              flags: "config: /config/budget.txt (interval)" },
   stocks: { start: "run daemons/stocks.js", stop: "kill daemons/stocks.js",
-             flags: "config: /config/stocks.txt (enabled, pollInterval, smartMode, minForecastDeviation, sellForecastDeviation, preThreshold, tickWindow, maxPositions, stopLossPercent, trailingStopPercent, maxHoldTicks, sellCooldownTicks, commissionPerTrade, scrapeMaxAge)" },
+             flags: "config: /config/stocks.txt (enabled, minForecastDeviation, preMinForecastDeviation, holdHorizonTicks, tickWindow, cashReservePercent, scrapeMaxAge)" },
   casino: { start: "run casino.js", stop: "kill casino.js", flags: null },
   home: { start: "run daemons/home.js", stop: "kill daemons/home.js", flags: "config: /config/home.txt (interval, autoBuy)" },
   corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (interval, tier, directive, pinDirective, countdownSeconds, dividendRate, productInvestPct, corpName, autoTea, enabled)" },

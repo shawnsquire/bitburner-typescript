@@ -5,7 +5,11 @@
  * fiber mining. Writes results to /data/stock-forecasts.json for the stocks
  * daemon to consume as a fallback when the $25B 4S TIX API isn't purchased.
  *
- * Requires: Stock Market page must be open in the game UI with 4S Market Data.
+ * Requires: the Stock Market page must be open in the game UI. 4S Market Data is NOT
+ * required: the ticker rows receive the raw Stock object (otlkMag, b, mv) as a React
+ * prop regardless, so fiber mining reads the exact forecast with only a WSE account.
+ * The text-parsing fallback (++/--) does need the 4S display. Trading still needs the
+ * TIX API.
  * Stop: Close the tail window or kill the script.
  *
  * Usage: run actions/scrape-forecasts.js

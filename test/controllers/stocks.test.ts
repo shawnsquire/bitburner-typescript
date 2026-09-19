@@ -3,23 +3,20 @@ import {
   createPriceHistory,
   addPrice,
   estimateForecast,
-  getMovingAverage,
   estimateVolatility,
-  detectTrend,
   calcExpectedReturn,
   forecastSignal,
-  calcWeightedBudget,
-  calculatePositionSize,
-  meetsCommissionThreshold,
+  spreadFromQuotes,
+  clearsRoundTrip,
+  planPurchases,
   shouldSell,
-  shouldStopLoss,
-  updatePeakPrice,
-  getHackAdjustment,
+  longExitProfit,
+  shortExitProfit,
   detectActiveProfile,
-  getSymbolForServer,
-  getServerForSymbol,
-  PositionTracking,
-  StopLossParams,
+  profileConfigValues,
+  TRADING_PROFILES,
+  EWMA_HALF_LIFE,
+  PurchaseCandidate,
 } from "/controllers/stocks";
 
 // === PRICE HISTORY ===
@@ -27,20 +24,18 @@ import {
 describe("createPriceHistory / addPrice", () => {
   it("caps history at maxLength, dropping oldest first", () => {
     const h = createPriceHistory(3);
-    addPrice(h, 1);
-    addPrice(h, 2);
-    addPrice(h, 3);
-    addPrice(h, 4);
+    [1, 2, 3, 4].forEach((p) => addPrice(h, p));
     expect(h.prices).toEqual([2, 3, 4]);
   });
 
-  it("tracks tick directions (up/down) aligned with price additions", () => {
+  it("drops a repeated price as a duplicate read instead of counting a direction", () => {
     const h = createPriceHistory(10);
     addPrice(h, 10);
-    addPrice(h, 12); // up
-    addPrice(h, 8); // down
-    addPrice(h, 8); // flat -> not up
-    expect(h.tickDirections).toEqual([true, false, false]);
+    addPrice(h, 12);
+    addPrice(h, 12);
+    addPrice(h, 8);
+    expect(h.prices).toEqual([10, 12, 8]);
+    expect(h.samples).toBe(2);
   });
 });
 
@@ -51,27 +46,30 @@ describe("estimateForecast", () => {
     expect(estimateForecast(h)).toBeNull();
   });
 
-  it("returns the fraction of up-ticks once enough data exists", () => {
-    const h = createPriceHistory(20);
-    // 11 prices -> 10 directions (minTicks default is 10)
-    const prices = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 108];
-    for (const p of prices) addPrice(h, p);
-    // directions: 9 up, 1 down (last step) = 0.9
-    expect(estimateForecast(h)).toBeCloseTo(0.9, 10);
-  });
-});
-
-describe("getMovingAverage", () => {
-  it("returns null with fewer than 2 prices", () => {
-    const h = createPriceHistory(10);
-    addPrice(h, 5);
-    expect(getMovingAverage(h)).toBeNull();
+  it("is 1 for a monotone rise and 0 for a monotone fall", () => {
+    const up = createPriceHistory(40);
+    const down = createPriceHistory(40);
+    for (let i = 0; i < 30; i++) {
+      addPrice(up, 100 + i);
+      addPrice(down, 100 - i);
+    }
+    expect(estimateForecast(up)).toBeCloseTo(1, 10);
+    expect(estimateForecast(down)).toBeCloseTo(0, 10);
   });
 
-  it("averages all tracked prices", () => {
-    const h = createPriceHistory(10);
-    [1, 2, 3].forEach((p) => addPrice(h, p));
-    expect(getMovingAverage(h)).toBe(2);
+  it("weights recent ticks more: a flip is detected within about a half-life", () => {
+    const h = createPriceHistory(80);
+    for (let i = 0; i < 60; i++) addPrice(h, 100 + i); // long bull run
+    for (let i = 0; i < EWMA_HALF_LIFE; i++) addPrice(h, 160 - i); // then falling
+    // After one half-life of down-ticks the up-fraction is at or below 0.5.
+    expect(estimateForecast(h)!).toBeLessThanOrEqual(0.5);
+  });
+
+  it("is near 0.5 for alternating ticks", () => {
+    const h = createPriceHistory(40);
+    for (let i = 0; i < 40; i++) addPrice(h, i % 2 === 0 ? 100 : 101);
+    expect(estimateForecast(h)!).toBeGreaterThan(0.4);
+    expect(estimateForecast(h)!).toBeLessThan(0.6);
   });
 });
 
@@ -83,302 +81,179 @@ describe("estimateVolatility", () => {
     expect(estimateVolatility(h)).toBeNull();
   });
 
-  it("returns 0 for a perfectly flat price series", () => {
-    const h = createPriceHistory(10);
-    [100, 100, 100, 100].forEach((p) => addPrice(h, p));
-    expect(estimateVolatility(h)).toBe(0);
-  });
-
-  it("returns a positive stddev of returns for a moving series", () => {
-    const h = createPriceHistory(10);
-    [100, 110, 90, 105].forEach((p) => addPrice(h, p));
-    const vol = estimateVolatility(h);
-    expect(vol).not.toBeNull();
-    expect(vol!).toBeGreaterThan(0);
-  });
-});
-
-// === TREND DETECTION (PRE-4S) ===
-
-describe("detectTrend", () => {
-  it("stays neutral before enough data for MA or tick-count", () => {
-    const h = createPriceHistory(40);
-    addPrice(h, 100);
-    const sig = detectTrend(h, 0.03, 0.10);
-    expect(sig.direction).toBe("neutral");
-    expect(sig.strength).toBe(0);
-  });
-
-  it("falls back to MA crossover for early ticks (< minTicks for tick-count)", () => {
-    const h = createPriceHistory(40);
-    [100, 100, 108].forEach((p) => addPrice(h, p)); // MA=(100+100+108)/3=102.67, price/MA>1.03
-    const sig = detectTrend(h, 0.03, 0.10);
-    expect(sig.direction).toBe("long");
-    expect(sig.strength).toBeGreaterThan(0);
-  });
-
-  it("prefers tick-count forecast once enough directions exist, ignoring MA", () => {
-    const h = createPriceHistory(40);
-    // 11 prices, mostly rising -> up-tick fraction well above 0.5+0.10
-    const prices = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110];
-    prices.forEach((p) => addPrice(h, p));
-    const sig = detectTrend(h, 0.03, 0.10);
-    expect(sig.direction).toBe("long");
-  });
-
-  it("returns neutral when tick-count deviation is below the threshold", () => {
-    const h = createPriceHistory(40);
-    // Alternating prices -> ~50% up-ticks, deviation near 0
-    const prices = [100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100];
-    prices.forEach((p) => addPrice(h, p));
-    const sig = detectTrend(h, 0.03, 0.10);
-    expect(sig.direction).toBe("neutral");
+  it("recovers the game's volatility from the largest move in the window", () => {
+    // Game move law: price *= (1 + v*vol) or /= (1 + v*vol), v ~ U(0,1).
+    const vol = 0.02;
+    const h = createPriceHistory(41);
+    let price = 1000;
+    addPrice(h, price);
+    // Deterministic v ramp 0.025..1 over 40 moves, alternating direction
+    for (let i = 1; i <= 40; i++) {
+      const av = (i / 40) * vol;
+      price = i % 2 === 0 ? price * (1 + av) : price / (1 + av);
+      addPrice(h, price);
+    }
+    // Largest move is av = vol exactly; the (W+1)/W correction over-corrects a
+    // deterministic ramp slightly, so allow 3%.
+    expect(estimateVolatility(h)!).toBeCloseTo(vol * 41 / 40, 3);
   });
 });
 
-// === EXPECTED RETURN / FORECAST SIGNAL ===
+// === EXPECTED RETURN / SIGNALS ===
 
 describe("calcExpectedReturn", () => {
-  it("is positive when forecast is bullish", () => {
+  it("is volatility times the forecast deviation, signed", () => {
     expect(calcExpectedReturn(0.6, 0.02)).toBeCloseTo(0.002, 10);
-  });
-
-  it("is negative when forecast is bearish", () => {
     expect(calcExpectedReturn(0.4, 0.02)).toBeCloseTo(-0.002, 10);
-  });
-
-  it("is zero at forecast 0.5 regardless of volatility", () => {
     expect(calcExpectedReturn(0.5, 0.5)).toBe(0);
   });
 });
 
 describe("forecastSignal", () => {
   it("returns neutral when forecast deviation is below the minimum", () => {
-    const sig = forecastSignal(0.52, 0.02, 0.10);
-    expect(sig.direction).toBe("neutral");
-    expect(sig.strength).toBe(0);
+    expect(forecastSignal(0.52, 0.02, 0.10).direction).toBe("neutral");
   });
 
-  it("returns long with strength = |expectedReturn| when bullish enough", () => {
-    const sig = forecastSignal(0.65, 0.02, 0.10);
-    expect(sig.direction).toBe("long");
-    expect(sig.strength).toBeCloseTo(0.02 * 0.15, 10);
-  });
-
-  it("returns short when bearish enough", () => {
-    const sig = forecastSignal(0.30, 0.02, 0.10);
-    expect(sig.direction).toBe("short");
-    expect(sig.expectedReturn).toBeLessThan(0);
+  it("returns long / short with the signed expected return", () => {
+    const long = forecastSignal(0.65, 0.02, 0.10);
+    expect(long.direction).toBe("long");
+    expect(long.expectedReturn).toBeCloseTo(0.003, 10);
+    const short = forecastSignal(0.30, 0.02, 0.10);
+    expect(short.direction).toBe("short");
+    expect(short.expectedReturn).toBeLessThan(0);
   });
 });
 
-// === POSITION SIZING ===
+// === SPREAD AND ENTRY GATE ===
 
-describe("calcWeightedBudget", () => {
-  it("weights allocation by relative signal strength", () => {
-    // Two candidates, strengths 3 and 1 (total 4), capital 1000, maxPositions 4 (equalShare=250)
-    const strong = calcWeightedBudget(1000, 4, 3, 4);
-    const weak = calcWeightedBudget(1000, 4, 1, 4);
-    expect(strong).toBeGreaterThan(weak);
-  });
-
-  it("caps allocation at 2x the equal share to prevent over-concentration", () => {
-    // A single candidate holding 100% of total strength would get all capital uncapped;
-    // the cap keeps it at 2x equalShare (2 * 1000/4 = 500)
-    const budget = calcWeightedBudget(1000, 4, 10, 10);
-    expect(budget).toBe(500);
-  });
-
-  it("falls back to full capital when maxPositions or totalStrength is invalid", () => {
-    expect(calcWeightedBudget(1000, 0, 1, 1)).toBe(1000);
-    expect(calcWeightedBudget(1000, 4, 1, 0)).toBe(1000);
+describe("spreadFromQuotes", () => {
+  it("returns the per-side spread fraction of the mid price", () => {
+    // spreadPerc 1%: ask = 101, bid = 99 around mid 100
+    expect(spreadFromQuotes(101, 99)).toBeCloseTo(0.01, 10);
+    expect(spreadFromQuotes(0, 0)).toBe(0);
   });
 });
 
-describe("calculatePositionSize", () => {
-  it("floors shares to what the budget affords", () => {
-    expect(calculatePositionSize(1000, 100, 33)).toBe(30); // floor(1000/33)=30
+describe("clearsRoundTrip", () => {
+  it("requires the expected return over the horizon to cover spread and commission", () => {
+    // 0.1% per tick over 50 ticks = 5% vs hurdle 2*1% + 2*100k/10m = 2% + 2% = 4%
+    expect(clearsRoundTrip(0.001, 0.01, 100_000, 10_000_000, 50)).toBe(true);
+    // Same edge, 2% spread: hurdle 4% + 2% = 6% > 5%
+    expect(clearsRoundTrip(0.001, 0.02, 100_000, 10_000_000, 50)).toBe(false);
+    // Tiny notional: commission dominates
+    expect(clearsRoundTrip(0.001, 0.001, 100_000, 1_000_000, 50)).toBe(false);
   });
 
-  it("caps at maxShares even with excess cash", () => {
-    expect(calculatePositionSize(1_000_000, 5, 1)).toBe(5);
+  it("uses the magnitude for shorts", () => {
+    expect(clearsRoundTrip(-0.001, 0.005, 100_000, 1e9, 50)).toBe(true);
   });
 
-  it("returns 0 for non-positive price or cash", () => {
-    expect(calculatePositionSize(1000, 100, 0)).toBe(0);
-    expect(calculatePositionSize(0, 100, 10)).toBe(0);
-    expect(calculatePositionSize(-5, 100, 10)).toBe(0);
-  });
-});
-
-describe("meetsCommissionThreshold", () => {
-  it("rejects a zero expected return regardless of size (pre-4S bootstrap safety)", () => {
-    expect(meetsCommissionThreshold(1000, 50, 0, 100_000)).toBe(false);
-  });
-
-  it("accepts when expected profit clears commission with the safety multiple", () => {
-    // shares*price*|return|*minHoldTicks > commission*2*1.5
-    // 1000 shares * $50 * 0.01 * 10 = $5000; commission*2*1.5 = 100000*2*1.5=300000 -> should fail (too small)
-    expect(meetsCommissionThreshold(1000, 50, 0.01, 100_000)).toBe(false);
-    // Bigger position clears it: 100000 shares * $50 * 0.01 * 10 = $500,000 > $300,000
-    expect(meetsCommissionThreshold(100_000, 50, 0.01, 100_000)).toBe(true);
-  });
-
-  it("rejects non-positive shares or price", () => {
-    expect(meetsCommissionThreshold(0, 50, 0.5, 100_000)).toBe(false);
-    expect(meetsCommissionThreshold(100, 0, 0.5, 100_000)).toBe(false);
+  it("rejects non-positive notional or horizon", () => {
+    expect(clearsRoundTrip(0.01, 0, 0, 0, 50)).toBe(false);
+    expect(clearsRoundTrip(0.01, 0, 0, 1e9, 0)).toBe(false);
   });
 });
 
-// === SELL THRESHOLDS ===
+// === RANK AND FILL ===
 
-describe("shouldSell", () => {
-  it("uses forecast hysteresis for long positions when forecast is available", () => {
-    expect(shouldSell("long", 0.44, null, 0.05, 0.03)).toBe(true); // below 0.5 - 0.05
-    expect(shouldSell("long", 0.46, null, 0.05, 0.03)).toBe(false); // above hold threshold
-  });
+const opts = { commission: 100_000, horizonTicks: 50, minOrderNotional: 10_000_000 };
 
-  it("uses forecast hysteresis for short positions when forecast is available", () => {
-    expect(shouldSell("short", 0.56, null, 0.05, 0.03)).toBe(true);
-    expect(shouldSell("short", 0.54, null, 0.05, 0.03)).toBe(false);
-  });
-
-  it("falls back to MA ratio when forecast is null", () => {
-    expect(shouldSell("long", null, 0.96, 0.05, 0.03)).toBe(true); // < 1 - 0.03
-    expect(shouldSell("short", null, 1.04, 0.05, 0.03)).toBe(true); // > 1 + 0.03
-    expect(shouldSell("long", null, 0.99, 0.05, 0.03)).toBe(false);
-  });
-
-  it("returns false when neither forecast nor MA ratio is available", () => {
-    expect(shouldSell("long", null, null, 0.05, 0.03)).toBe(false);
-  });
-});
-
-// === STOP-LOSS ===
-
-function tracking(overrides: Partial<PositionTracking> = {}): PositionTracking {
-  return { entryPrice: 100, peakPrice: 100, ticksHeld: 0, direction: "long", ...overrides };
+function cand(overrides: Partial<PurchaseCandidate>): PurchaseCandidate {
+  return { symbol: "X", direction: "long", expectedReturn: 0.002, fillPrice: 100, spread: 0.002, sharesRoom: 1e9, ...overrides };
 }
 
-const stopParams: StopLossParams = { hardStopPercent: 0.10, trailingStopPercent: 0.05, maxHoldTicks: 60 };
-
-describe("shouldStopLoss", () => {
-  it("exits on time limit before checking price", () => {
-    const t = tracking({ ticksHeld: 60, entryPrice: 100, peakPrice: 100 });
-    const result = shouldStopLoss(100, t, stopParams);
-    expect(result).toEqual({ shouldExit: true, reason: "time-limit" });
+describe("planPurchases", () => {
+  it("fills the strongest candidate first and drains one shared pool", () => {
+    const weak = cand({ symbol: "WEAK", expectedReturn: 0.001, sharesRoom: 1e6 });
+    const strong = cand({ symbol: "STRONG", expectedReturn: 0.004, sharesRoom: 1e6 });
+    const orders = planPurchases([weak, strong], 150_000_000 + 2 * 100_000, opts);
+    expect(orders.map((o) => o.symbol)).toEqual(["STRONG", "WEAK"]);
+    expect(orders[0].shares).toBe(1e6); // capped by room: 100m
+    // 50m + 200k − 100k commission left over → 500k shares... minus the second commission
+    expect(orders[1].shares).toBe(Math.floor((150_200_000 - 100_100_000 - 100_000) / 100));
+    const spent = orders.reduce((s, o) => s + o.cost, 0);
+    expect(spent).toBeLessThanOrEqual(150_200_000);
   });
 
-  it("exits a long position on hard stop", () => {
-    const t = tracking({ entryPrice: 100, peakPrice: 100 });
-    expect(shouldStopLoss(89, t, stopParams).reason).toBe("hard-stop");
-    // 96 is above both the hard-stop (90) and trailing-stop (peak 100 * 0.95 = 95) floors
-    expect(shouldStopLoss(96, t, stopParams).shouldExit).toBe(false);
+  it("ranks shorts by magnitude alongside longs", () => {
+    const long = cand({ symbol: "L", expectedReturn: 0.001 });
+    const short = cand({ symbol: "S", direction: "short", expectedReturn: -0.003 });
+    const orders = planPurchases([long, short], 1e9, opts);
+    expect(orders[0].symbol).toBe("S");
+    expect(orders[0].direction).toBe("short");
   });
 
-  it("exits a long position on trailing stop from peak", () => {
-    const t = tracking({ entryPrice: 100, peakPrice: 120 });
-    // 120 * (1 - 0.05) = 114; price at 113 should trigger, price at 100 also triggers hard-stop first check order doesn't matter here since both would exit
-    expect(shouldStopLoss(113, t, stopParams).reason).toBe("trailing-stop");
+  it("skips candidates with no room, no price, or that fail the round-trip gate", () => {
+    const full = cand({ symbol: "FULL", sharesRoom: 0 });
+    const wide = cand({ symbol: "WIDE", spread: 0.05 }); // 0.2%*50 = 10% < 2*5% + …
+    const ok = cand({ symbol: "OK" });
+    const orders = planPurchases([full, wide, ok], 1e9, opts);
+    expect(orders.map((o) => o.symbol)).toEqual(["OK"]);
   });
 
-  it("exits a short position when price rises past entry or peak thresholds", () => {
-    const t = tracking({ direction: "short", entryPrice: 100, peakPrice: 90 });
-    expect(shouldStopLoss(111, t, stopParams).reason).toBe("hard-stop"); // 100*1.10=110
-    const t2 = tracking({ direction: "short", entryPrice: 100, peakPrice: 80 });
-    expect(shouldStopLoss(85, t2, stopParams).reason).toBe("trailing-stop"); // 80*1.05=84
+  it("does not place dust orders below the minimum notional", () => {
+    const c = cand({ symbol: "DUST" });
+    expect(planPurchases([c], 5_000_000, opts)).toEqual([]);
   });
 
-  it("does not exit when price is within all thresholds", () => {
-    const t = tracking({ entryPrice: 100, peakPrice: 105 });
-    expect(shouldStopLoss(102, t, stopParams)).toEqual({ shouldExit: false, reason: "" });
-  });
-
-  it("ignores a threshold that is set to 0 (disabled)", () => {
-    const disabled: StopLossParams = { hardStopPercent: 0, trailingStopPercent: 0, maxHoldTicks: 0 };
-    const t = tracking({ entryPrice: 100, peakPrice: 100, ticksHeld: 99999 });
-    expect(shouldStopLoss(1, t, disabled)).toEqual({ shouldExit: false, reason: "" });
-  });
-});
-
-describe("updatePeakPrice", () => {
-  it("tracks the max price for long positions", () => {
-    const t = tracking({ direction: "long", peakPrice: 100 });
-    expect(updatePeakPrice(90, t)).toBe(100);
-    expect(updatePeakPrice(110, t)).toBe(110);
-  });
-
-  it("tracks the min price for short positions", () => {
-    const t = tracking({ direction: "short", peakPrice: 100 });
-    expect(updatePeakPrice(110, t)).toBe(100);
-    expect(updatePeakPrice(90, t)).toBe(90);
+  it("never spends more than the pool including commissions", () => {
+    const a = cand({ symbol: "A", expectedReturn: 0.003, sharesRoom: 1e5 });
+    const b = cand({ symbol: "B", expectedReturn: 0.002, sharesRoom: 1e5 });
+    const pool = 12_000_000;
+    const orders = planPurchases([a, b], pool, opts);
+    const spent = orders.reduce((s, o) => s + o.cost, 0);
+    expect(spent).toBeLessThanOrEqual(pool);
+    expect(orders.length).toBe(1); // A takes 10m + 100k; B would be dust
   });
 });
 
-// === HACK AWARENESS ===
+// === EXITS ===
 
-describe("getHackAdjustment", () => {
-  it("returns neutral for a symbol with no mapped server", () => {
-    expect(getHackAdjustment("ZZZZ", "long", new Map())).toEqual({ confidenceMultiplier: 1, reason: "" });
+describe("shouldSell", () => {
+  it("sells a long the moment the forecast drops below 0.5", () => {
+    expect(shouldSell("long", 0.49)).toBe(true);
+    expect(shouldSell("long", 0.5)).toBe(false);
+    expect(shouldSell("long", 0.51)).toBe(false);
   });
 
-  it("returns neutral when the mapped server isn't being targeted", () => {
-    expect(getHackAdjustment("ECP", "long", new Map())).toEqual({ confidenceMultiplier: 1, reason: "" });
+  it("covers a short the moment the forecast rises above 0.5", () => {
+    expect(shouldSell("short", 0.51)).toBe(true);
+    expect(shouldSell("short", 0.5)).toBe(false);
   });
 
-  it("reduces long confidence and boosts short confidence when a server is being batch-hacked", () => {
-    const targets = new Map([["ecorp", "batch"]]);
-    expect(getHackAdjustment("ECP", "long", targets)).toEqual({ confidenceMultiplier: 0.5, reason: "hacked" });
-    expect(getHackAdjustment("ECP", "short", targets)).toEqual({ confidenceMultiplier: 1.3, reason: "hacked" });
-  });
-
-  it("boosts long confidence and reduces short confidence during prep/grow", () => {
-    const targets = new Map([["ecorp", "prep"]]);
-    expect(getHackAdjustment("ECP", "long", targets)).toEqual({ confidenceMultiplier: 1.2, reason: "growing" });
-    expect(getHackAdjustment("ECP", "short", targets)).toEqual({ confidenceMultiplier: 0.7, reason: "growing" });
+  it("holds when there is no forecast at all", () => {
+    expect(shouldSell("long", null)).toBe(false);
   });
 });
 
-// === SERVER <-> SYMBOL MAPPING ===
+// === P&L ===
 
-describe("getSymbolForServer / getServerForSymbol", () => {
-  it("round-trips known mappings", () => {
-    expect(getSymbolForServer("ecorp")).toBe("ECP");
-    expect(getServerForSymbol("ECP")).toBe("ecorp");
+describe("exit profit", () => {
+  it("books a long at the bid less the sell commission", () => {
+    expect(longExitProfit(1000, 100, 110, 100_000)).toBe(1000 * 10 - 100_000);
   });
 
-  it("returns null for unknown entries", () => {
-    expect(getSymbolForServer("not-a-server")).toBeNull();
-    expect(getServerForSymbol("ZZZZ")).toBeNull();
+  it("books a short at the ask less the cover commission", () => {
+    expect(shortExitProfit(1000, 100, 90, 100_000)).toBe(1000 * 10 - 100_000);
   });
 });
 
-// === TRADING PROFILES ===
+// === PROFILES ===
 
-describe("detectActiveProfile", () => {
-  it("recognizes the built-in moderate profile", () => {
-    expect(
-      detectActiveProfile({
-        minForecastDeviation: 0.10,
-        sellForecastDeviation: 0.05,
-        stopLossPercent: 0.15,
-        trailingStopPercent: 0.08,
-        maxHoldTicks: 60,
-        maxPositions: 8,
-      }),
-    ).toBe("moderate");
+describe("profiles", () => {
+  it("recognises each preset from the config it writes", () => {
+    for (const name of ["aggressive", "moderate", "conservative"] as const) {
+      const cfg = profileConfigValues(name);
+      expect(detectActiveProfile({ minForecastDeviation: Number(cfg.minForecastDeviation) })).toBe(name);
+    }
   });
 
-  it("returns custom for a non-matching combination", () => {
-    expect(
-      detectActiveProfile({
-        minForecastDeviation: 0.11,
-        sellForecastDeviation: 0.05,
-        stopLossPercent: 0.15,
-        trailingStopPercent: 0.08,
-        maxHoldTicks: 60,
-        maxPositions: 8,
-      }),
-    ).toBe("custom");
+  it("returns custom for a non-matching threshold", () => {
+    expect(detectActiveProfile({ minForecastDeviation: 0.07 })).toBe("custom");
+  });
+
+  it("orders presets from widest to narrowest entry", () => {
+    expect(TRADING_PROFILES.aggressive.minForecastDeviation).toBeLessThan(TRADING_PROFILES.moderate.minForecastDeviation);
+    expect(TRADING_PROFILES.moderate.minForecastDeviation).toBeLessThan(TRADING_PROFILES.conservative.minForecastDeviation);
   });
 });

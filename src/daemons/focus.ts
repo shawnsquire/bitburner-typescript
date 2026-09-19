@@ -6,18 +6,20 @@
  *
  * Responsibilities:
  *   - Manages which daemon (work/rep/blade) holds the player's focus
- *   - Detects sleeve availability and Simulacrum augmentation
+ *   - Detects sleeve availability; Simulacrum detection is delegated to
+ *     actions/check-simulacrum.js (exec'd at startup and on `refresh`)
  *   - Routes sleeve assignments via action scripts
  *   - Receives commands from dashboard via FOCUS_CONTROL_PORT (33)
  *
- * Non-tiered: fixed RAM cost. If you can't afford it, you don't run it.
+ * Non-tiered: fixed RAM cost, pinned with ns.ramOverride so the daemon only
+ * reserves what its loop needs (ps, exec, sleeve.getNumSleeves, config I/O).
  *
  * Usage:
  *   run daemons/focus.js
  */
 import { NS } from "@ns";
 import { publishStatus } from "/lib/ports";
-import { writeDefaultConfig, getConfigString, setConfigValue } from "/lib/config";
+import { writeDefaultConfig, getConfigString, getConfigBool, setConfigValue } from "/lib/config";
 import {
   STATUS_PORTS,
   FOCUS_CONTROL_PORT,
@@ -37,7 +39,7 @@ const COLORS = {
   reset: "\x1b[0m",
 };
 
-const SIMULACRUM_NAME = "The Blade's Simulacrum";
+const SIMULACRUM_ACTION = "actions/check-simulacrum.js";
 const FOCUS_DAEMONS: FocusDaemon[] = ["work", "rep", "blade"];
 
 function normalizeFocusDaemon(val: string): FocusDaemon {
@@ -45,7 +47,9 @@ function normalizeFocusDaemon(val: string): FocusDaemon {
   return "none";
 }
 
+/** @ram 7.1 */
 export async function main(ns: NS): Promise<void> {
+  ns.ramOverride(7.1);
   ns.disableLog("ALL");
 
   // Write default config
@@ -64,16 +68,10 @@ export async function main(ns: NS): Promise<void> {
     // Sleeve API not available (not enough SF)
   }
 
-  let hasSimulacrum = false;
-  try {
-    const augs = ns.singularity.getOwnedAugmentations(false);
-    hasSimulacrum = augs.includes(SIMULACRUM_NAME);
-  } catch {
-    // Singularity API not available at this SF level
-  }
-
-  // Write simulacrum detection to config so blade daemon can read it
-  setConfigValue(ns, "focus", "simulacrum", hasSimulacrum ? "true" : "false");
+  // Simulacrum detection runs in a short-lived action that writes the
+  // `simulacrum` config key (read by the blade daemon). Retry until it launches
+  // so a stale value from a previous session never goes unchecked.
+  let simulacrumChecked = execSimulacrumCheck(ns);
 
   // Initialize holder from config, applying default if empty
   let holder = getConfigString(ns, "focus", "holder", "");
@@ -88,18 +86,25 @@ export async function main(ns: NS): Promise<void> {
 
   ns.print(`${COLORS.cyan}Focus daemon started${COLORS.reset}`);
   ns.print(`  Sleeves: ${numSleeves}`);
-  ns.print(`  Simulacrum: ${hasSimulacrum ? "YES" : "no"}`);
+  ns.print(`  Simulacrum: ${simulacrumChecked ? "checking" : "check pending (RAM?)"}`);
   ns.print(`  Initial holder: ${holder}`);
   ns.print("");
 
   while (true) {
+    if (!simulacrumChecked) simulacrumChecked = execSimulacrumCheck(ns);
+
     // Process control messages
     while (!controlPort.empty()) {
       const raw = controlPort.read();
       if (raw === "NULL PORT DATA") break;
       try {
         const msg = JSON.parse(raw as string) as FocusControlMessage;
-        processControlMessage(ns, msg, numSleeves);
+        if (msg.action === "refresh") {
+          ns.print(`${COLORS.dim}Focus refresh requested${COLORS.reset}`);
+          simulacrumChecked = execSimulacrumCheck(ns);
+        } else {
+          processControlMessage(ns, msg, numSleeves);
+        }
       } catch {
         // Skip invalid messages
       }
@@ -134,7 +139,7 @@ export async function main(ns: NS): Promise<void> {
     const status: FocusStatus = {
       holder: normalizedHolder,
       sleeves,
-      simulacrum: hasSimulacrum,
+      simulacrum: getConfigBool(ns, "focus", "simulacrum", false),
       numSleeves,
       runningDaemons,
       defaultHolder: normalizeFocusDaemon(getConfigString(ns, "focus", "default", "work")),
@@ -201,9 +206,19 @@ function processControlMessage(ns: NS, msg: FocusControlMessage, numSleeves: num
     }
 
     case "refresh":
-      ns.print(`${COLORS.dim}Focus refresh requested${COLORS.reset}`);
+      // Handled in the main loop (re-runs the Simulacrum check)
       break;
   }
+}
+
+/** Launch the Simulacrum check action. Returns true if it started. */
+function execSimulacrumCheck(ns: NS): boolean {
+  const pid = ns.exec(SIMULACRUM_ACTION, "home", { threads: 1, temporary: true });
+  if (pid === 0) {
+    ns.print(`${COLORS.yellow}Could not exec ${SIMULACRUM_ACTION} (RAM?); will retry${COLORS.reset}`);
+    return false;
+  }
+  return true;
 }
 
 function printStatus(ns: NS, status: FocusStatus): void {

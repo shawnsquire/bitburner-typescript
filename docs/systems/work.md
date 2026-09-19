@@ -66,15 +66,18 @@ Publishes `WorkStatus` on `STATUS_PORTS.work`. Dashboard: Focus group, Work tab
 run daemons/focus.js
 ```
 
-Sole writer of `/config/focus.txt`. Not tiered; about 87 GB at SF4 level 0,
-almost all of it the one-time Simulacrum check through `getOwnedAugmentations`.
+Sole writer of `/config/focus.txt`. Not tiered; pinned at 7.1 GB
+(`ps`, `exec`, `sleeve.getNumSleeves`, config I/O). The Simulacrum check runs
+in `actions/check-simulacrum.js` (2.6 GB, `getResetInfo().ownedAugs`, no
+Source-File 4 needed), exec'd once at startup and again on a `refresh` control
+message. If the exec fails for lack of RAM the daemon retries every tick.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `holder` | `work` | Which daemon may use the player's focus: `work`, `rep`, `blade`, `none`. |
 | `sleeveHolder` | `none` | Which daemon directs sleeve 0. |
 | `default` | `work` | Holder to use at boot when `holder` is empty. |
-| `simulacrum` | detected | Whether The Blade's Simulacrum is installed (Bladeburner then needs no focus). Written by the daemon, not the player. |
+| `simulacrum` | detected | Whether The Blade's Simulacrum is installed (Bladeburner then needs no focus). Written by `actions/check-simulacrum.js`, not the player. |
 
 Control port `FOCUS_CONTROL_PORT` accepts `set-holder`, `set-sleeve`, and
 `refresh` messages. Publishes `FocusStatus` on `STATUS_PORTS.focus`. When the
@@ -95,6 +98,7 @@ the action does not travel them.
 | `run actions/set-work-focus.js --focus <value>` | Change focus without Singularity RAM. | 2 GB |
 | `run actions/check-work.js` | Publish a one-shot work status when the daemon is not running. | 12 GB |
 | `run actions/assign-sleeve.js --sleeve 0 --daemon work\|rep\|blade\|none` | Route a sleeve to a daemon's current task. Reports a warning if the game rejects the assignment. | 38 GB |
+| `run actions/check-simulacrum.js` | Write `simulacrum=true\|false` to `/config/focus.txt` from `getResetInfo().ownedAugs`. Run by the focus daemon at startup and on `refresh`. | 2.6 GB |
 
 The actions hard-code their own valid-value lists instead of importing the
 controllers on purpose: importing would pull unrelated Singularity references

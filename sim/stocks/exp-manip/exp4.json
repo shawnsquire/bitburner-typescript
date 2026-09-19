@@ -1,0 +1,92 @@
+{
+  "ECP": {
+    "nSeeds": 200,
+    "ticksPerSeed": 6000,
+    "totalCycleEvents": 16000,
+    "totalFlips": 7173,
+    "observedFlipRatePerCycleEvent": 0.4483125,
+    "expectedFlipRatePerCycleEvent": 0.45,
+    "seFlipRate": 0.003933033180638069,
+    "finalForecast": {
+      "n": 200,
+      "median": 0.33772035058709765,
+      "q25": 0.3068916947990679,
+      "q75": 0.6808601059281045,
+      "min": 0.23594496230571044,
+      "max": 0.7446079045905588,
+      "mean": 0.4837664137288694
+    },
+    "finalOtlkMag": {
+      "n": 200,
+      "median": 18.532134026057655,
+      "q25": 17.416988468689997,
+      "q75": 19.849070458903114,
+      "min": 14.845278308228002,
+      "max": 26.405503769428957,
+      "mean": 18.73206139995683
+    },
+    "fractionBullishAtEnd": 0.465,
+    "anyOtlkMagOutOfRange": false,
+    "anyNaN": false
+  },
+  "FLCM": {
+    "nSeeds": 200,
+    "ticksPerSeed": 6000,
+    "totalCycleEvents": 16000,
+    "totalFlips": 7173,
+    "observedFlipRatePerCycleEvent": 0.4483125,
+    "expectedFlipRatePerCycleEvent": 0.45,
+    "seFlipRate": 0.003933033180638069,
+    "finalForecast": {
+      "n": 200,
+      "median": 0.40166902709080876,
+      "q25": 0.34079090743410617,
+      "q75": 0.6328723854117079,
+      "min": 0.1424696559780878,
+      "max": 0.8193904612858921,
+      "mean": 0.4822459674369936
+    },
+    "finalOtlkMag": {
+      "n": 200,
+      "median": 14.298984775731768,
+      "q25": 12.131570200395101,
+      "q75": 17.58587896090449,
+      "min": 7.284754834632527,
+      "max": 35.75303440219122,
+      "mean": 15.316844267933625
+    },
+    "fractionBullishAtEnd": 0.465,
+    "anyOtlkMagOutOfRange": false,
+    "anyNaN": false
+  },
+  "JGN": {
+    "nSeeds": 200,
+    "ticksPerSeed": 6000,
+    "totalCycleEvents": 16000,
+    "totalFlips": 7173,
+    "observedFlipRatePerCycleEvent": 0.4483125,
+    "expectedFlipRatePerCycleEvent": 0.45,
+    "seFlipRate": 0.003933033180638069,
+    "finalForecast": {
+      "n": 200,
+      "median": 0.4611163153026371,
+      "q25": 0.4278109867038453,
+      "q75": 0.567526075651748,
+      "min": 0.187236087606737,
+      "max": 0.7309206079222005,
+      "mean": 0.4910080175651153
+    },
+    "finalOtlkMag": {
+      "n": 200,
+      "median": 6.895432960989044,
+      "q25": 5.871675397632754,
+      "q75": 9.064345392239895,
+      "min": 0.9969641260683126,
+      "max": 31.2763912393263,
+      "mean": 8.076296734714909
+    },
+    "fractionBullishAtEnd": 0.445,
+    "anyOtlkMagOutOfRange": false,
+    "anyNaN": false
+  }
+}

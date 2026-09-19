@@ -46,7 +46,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
              flags: "config: /config/nuke.txt (interval, oneShot)" },
   // hack.ts has no ns.flags() — strategy/batches/reserve are config-only, set via the dashboard.
   hack:    { start: "run daemons/hack.js",    stop: "kill daemons/hack.js",
-             flags: "config: /config/hack.txt (oneShot, interval, homeReserve, maxTargets, maxBatches [0=legacy, 1+=HWGW batch], strategy [money|xp|drain|stocks], moneyThreshold, securityBuffer, hackPercent)" },
+             flags: "config: /config/hack.txt (oneShot, interval, homeReserve, maxTargets, maxBatches [0=legacy, 1+=HWGW batch], strategy [money|xp|drain], moneyThreshold, securityBuffer, hackPercent)" },
   pserv:   { start: "run daemons/pserv.js",   stop: "kill daemons/pserv.js",
              flags: "config: /config/pserv.txt (prefix, minRam, maxRam [0=game max], reserve, oneShot, interval, autoBuy)" },
   // --tier is an internal self-respawn flag (monitor/active); targetPercent is config-only.
@@ -78,7 +78,7 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   budget: { start: "run daemons/budget.js", stop: "kill daemons/budget.js",
              flags: "config: /config/budget.txt (interval)" },
   stocks: { start: "run daemons/stocks.js", stop: "kill daemons/stocks.js",
-             flags: "config: /config/stocks.txt (enabled, pollInterval, smartMode, minForecastDeviation, sellForecastDeviation, preThreshold, tickWindow, maxPositions, stopLossPercent, trailingStopPercent, maxHoldTicks, sellCooldownTicks, commissionPerTrade, scrapeMaxAge)" },
+             flags: "config: /config/stocks.txt (enabled, minForecastDeviation, preMinForecastDeviation, holdHorizonTicks, tickWindow, cashReservePercent, scrapeMaxAge)" },
   casino: { start: "run casino.js", stop: "kill casino.js", flags: null },
   home: { start: "run daemons/home.js", stop: "kill daemons/home.js", flags: "config: /config/home.txt (interval, autoBuy)" },
   corp: { start: "run daemons/corp.js", stop: "kill daemons/corp.js", flags: "config: /config/corp.txt (interval, tier, directive, pinDirective, countdownSeconds, dividendRate, productInvestPct, corpName, autoTea, enabled)" },

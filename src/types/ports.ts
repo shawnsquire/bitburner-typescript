@@ -34,6 +34,7 @@ export const STATUS_PORTS = {
   blade: 30,
   hacknet: 31,
   focus: 32,
+  darknet: 34,
 } as const;
 
 export const INFILTRATION_CONTROL_PORT = 12;
@@ -43,13 +44,16 @@ export const BUDGET_CONTROL_PORT = 23;
 export const STOCKS_CONTROL_PORT = 25;
 export const CORP_CONTROL_PORT = 29;
 export const FOCUS_CONTROL_PORT = 33;
+export const DARKNET_CONTROL_PORT = 35;
+export const DARKNET_POLICY_PORT = 36;
+export const DARKNET_REPORT_PORT = 37;
 
 export const QUEUE_PORT = 19;
 export const COMMAND_PORT = 20;
 
 // === TOOL NAMES ===
 
-export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade" | "hacknet" | "focus";
+export type ToolName = "nuke" | "pserv" | "share" | "rep" | "hack" | "darkweb" | "work" | "faction" | "infiltration" | "gang" | "augments" | "advisor" | "contracts" | "budget" | "stocks" | "casino" | "home" | "corp" | "blade" | "hacknet" | "focus" | "darknet";
 
 // === TOOL SCRIPTS (daemon paths) ===
 
@@ -75,6 +79,7 @@ export const TOOL_SCRIPTS: Record<ToolName, string> = {
   blade: "daemons/blade.js",
   hacknet: "daemons/hacknet.js",
   focus: "daemons/focus.js",
+  darknet: "daemons/darknet.js",
 };
 
 // === FOCUS TYPES ===
@@ -136,7 +141,7 @@ export interface QueueEntry {
 
 export interface Command {
   tool: ToolName;
-  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy" | "freeze-budget-bucket" | "unfreeze-budget-bucket";
+  action: "start" | "stop" | "open-tail" | "run-script" | "start-faction-work" | "set-focus" | "start-training" | "install-augments" | "run-backdoors" | "restart-rep-daemon" | "join-faction" | "restart-faction-daemon" | "restart-hack-daemon" | "restart-share-daemon" | "stop-infiltration" | "kill-infiltration" | "configure-infiltration" | "set-gang-strategy" | "pin-gang-member" | "unpin-gang-member" | "ascend-gang-member" | "toggle-gang-purchases" | "set-gang-wanted-threshold" | "set-gang-ascension-thresholds" | "set-gang-training-threshold" | "set-gang-grow-target" | "set-gang-grow-respect-reserve" | "set-gang-territory-threshold" | "force-buy-equipment" | "restart-gang-daemon" | "buy-selected-augments" | "claim-focus" | "claim-sleeve-focus" | "toggle-pserv-autobuy" | "set-pserv-max-ram" | "force-contract-attempt" | "restart-stocks-daemon" | "reset-stocks-pnl" | "stocks-control" | "set-stocks-profile" | "rush-budget-bucket" | "cancel-budget-rush" | "update-budget-weight" | "reset-budget-weights" | "toggle-home-autobuy" | "set-corp-directive" | "cancel-corp-pending" | "toggle-corp-pin" | "restart-corp-daemon" | "toggle-corp-auto-tea" | "set-corp-dividend-rate" | "toggle-corp-enabled" | "restart-blade-daemon" | "blade-buy-skill" | "blade-buy-all-skills" | "set-blade-config" | "reset-start-config" | "set-hacknet-strategy" | "freeze-budget-bucket" | "unfreeze-budget-bucket" | "darknet-control";
   scriptPath?: string;
   scriptArgs?: string[];
   factionName?: string;
@@ -186,6 +191,11 @@ export interface Command {
   bladeConfigKey?: string;
   bladeConfigValue?: string;
   hacknetSpendStrategy?: HashSpendStrategy;
+  darknetControlAction?: "set" | "stasis" | "storm" | "reseed";
+  darknetHost?: string;
+  darknetLink?: boolean;
+  darknetConfigKey?: string;
+  darknetConfigValue?: string;
 }
 
 // === STATUS INTERFACES ===
@@ -1526,6 +1536,38 @@ export interface StartupConfigEntry {
   core: boolean;
 }
 
+// === DARKNET STATUS ===
+
+export type DarknetCellState = "unknown" | "frontier" | "cracking" | "admin" | "agent" | "anchor" | "offline";
+
+export interface DarknetCell {
+  host: string;
+  model: string;
+  difficulty: number;
+  cha: number;
+  depth: number;
+  state: DarknetCellState;
+}
+
+export interface DarknetStatus {
+  access: "none" | "basic" | "full";
+  heartbleedAllowed: boolean;
+  heartbleedUsedThisNode: boolean;
+  charisma: number;
+  counts: { seen: number; admin: number; agents: number; frontier: number; blocked: number; offline: number };
+  deepestAdmin: number;
+  netDepth: number;
+  instability: { authenticationDurationMultiplier: number; authenticationTimeoutChance: number };
+  stasis: { used: number; limit: number; hosts: string[]; mode: "auto" | "manual" };
+  charismaNeed: { target: number; unlocks: number; reason: string } | null;
+  lab: { name: string; runner: string | null; cha: number; cleared: boolean; augPending: boolean; moves: number } | null;
+  income: { moneyPerHour: number; cachesOpened: number; contractsFound: number; augsAwarded: number };
+  stormSeedHost: string | null;
+  stuck: boolean;
+  config: Record<string, string>;
+  map: { rows: DarknetCell[][]; edges: [string, string][] };
+}
+
 // === DASHBOARD STATE ===
 
 export interface DashboardState {
@@ -1559,6 +1601,7 @@ export interface DashboardState {
   hacknetStatus: HacknetStatus | null;
   focusStatus: FocusStatus | null;
   startupConfig: StartupConfigEntry[];
+  darknetStatus: DarknetStatus | null;
 }
 
 // === PLUGIN INTERFACE (for dashboard) ===

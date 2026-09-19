@@ -50,7 +50,8 @@ daemons/gang.js
 daemons/home.js
 daemons/corp.js
 daemons/blade.js
-daemons/hacknet.js`;
+daemons/hacknet.js
+daemons/darknet.js`;
 
 interface StartEntry {
   path: string;

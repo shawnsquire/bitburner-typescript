@@ -20,6 +20,9 @@ import {
   STOCKS_CONTROL_PORT,
   CORP_CONTROL_PORT,
   FOCUS_CONTROL_PORT,
+  DARKNET_CONTROL_PORT,
+  DARKNET_POLICY_PORT,
+  DARKNET_REPORT_PORT,
   QUEUE_PORT,
   COMMAND_PORT,
 } from "/types/ports";
@@ -35,6 +38,9 @@ const CONTROL_PORTS: Record<string, number> = {
   "stocks-ctrl": STOCKS_CONTROL_PORT,
   "corp-ctrl": CORP_CONTROL_PORT,
   "focus-ctrl": FOCUS_CONTROL_PORT,
+  "darknet-ctrl": DARKNET_CONTROL_PORT,
+  "darknet-policy": DARKNET_POLICY_PORT,
+  "darknet-report": DARKNET_REPORT_PORT,
   "queue": QUEUE_PORT,
   "command": COMMAND_PORT,
 };

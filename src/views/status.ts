@@ -85,6 +85,8 @@ const DAEMON_DOCS: Record<ToolName, { start: string; stop: string; flags: string
   blade: { start: "run daemons/blade.js", stop: "kill daemons/blade.js", flags: "config: /config/blade.txt (interval, operationThreshold, blackOpThreshold, contractThreshold, staminaMinPercent, staminaRestoreTo, staminaTrainMax, chaosMax, chaosTarget, successSpreadMax, populationMin, buySkill)" },
   hacknet: { start: "run daemons/hacknet.js", stop: "kill daemons/hacknet.js", flags: "config: /config/hacknet.txt (interval, autoBuy, maxServers, spendThreshold, reserveHashes, allowWorkers, spendStrategy)" },
   focus: { start: "run daemons/focus.js", stop: "kill daemons/focus.js", flags: "config: /config/focus.txt (holder, sleeveHolder, default, simulacrum)" },
+  darknet: { start: "run daemons/darknet.js", stop: "kill daemons/darknet.js",
+             flags: "config: /config/darknet.txt (heartbleed, harvest, phish, phishMaxThreads, harvestKarmaFloor, stasisMode, storm, lab, gapPatienceMs, agentIntervalMs, maxAttempts)" },
 };
 
 // === RUNNING STATE ===

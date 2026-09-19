@@ -54,6 +54,7 @@ import {
   HashSpendStrategy,
   StartupConfigEntry,
   Command,
+  DarknetStatus,
 } from "/types/ports";
 
 // === COMMAND PORT ===
@@ -1224,6 +1225,7 @@ const uiState: UIState = {
     blade: {},
     hacknet: {},
     focus: {},
+    darknet: {},
   },
 };
 
@@ -1344,10 +1346,11 @@ interface CachedData {
   hacknetStatus: HacknetStatus | null;
   focusStatus: FocusStatus | null;
   startupConfig: StartupConfigEntry[];
+  darknetStatus: DarknetStatus | null;
 }
 
 const cachedData: CachedData = {
-  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0, hacknet: 0, focus: 0 },
+  pids: { nuke: 0, pserv: 0, share: 0, rep: 0, hack: 0, darkweb: 0, work: 0, faction: 0, infiltration: 0, gang: 0, augments: 0, advisor: 0, contracts: 0, budget: 0, stocks: 0, casino: 0, home: 0, corp: 0, blade: 0, hacknet: 0, focus: 0, darknet: 0 },
   nukeStatus: null,
   pservStatus: null,
   shareStatus: null,
@@ -1377,6 +1380,7 @@ const cachedData: CachedData = {
   hacknetStatus: null,
   focusStatus: null,
   startupConfig: [],
+  darknetStatus: null,
 };
 
 // === PORT-BASED STATUS READING ===
@@ -1461,6 +1465,10 @@ export function readStatusPorts(ns: NS): void {
 
   cachedData.focusStatus = peekStatus<FocusStatus>(ns, STATUS_PORTS.focus, STALE_THRESHOLD_MS);
 
+  // The daemon sleeps 30s when it lacks darknet access, so a longer max-age
+  // avoids flicker between polls (precedent: the contracts peek above).
+  cachedData.darknetStatus = peekStatus<DarknetStatus>(ns, STATUS_PORTS.darknet, 120_000);
+
   cachedData.startupConfig = readStartupConfig(ns);
 }
 
@@ -1539,7 +1547,8 @@ daemons/gang.js
 daemons/home.js
 daemons/corp.js
 daemons/blade.js
-daemons/hacknet.js`;
+daemons/hacknet.js
+daemons/darknet.js`;
   ns.write(START_CONFIG_PATH, defaultConfig, "w");
 }
 
@@ -1580,6 +1589,7 @@ function clearToolStatus(tool: ToolName): void {
     case "blade": cachedData.bladeburnerStatus = null; break;
     case "hacknet": cachedData.hacknetStatus = null; break;
     case "focus": cachedData.focusStatus = null; break;
+    case "darknet": cachedData.darknetStatus = null; break;
   }
 }
 
@@ -1765,5 +1775,6 @@ export function getStateSnapshot(): DashboardState {
     hacknetStatus: cachedData.hacknetStatus,
     focusStatus: cachedData.focusStatus,
     startupConfig: cachedData.startupConfig,
+    darknetStatus: cachedData.darknetStatus,
   };
 }

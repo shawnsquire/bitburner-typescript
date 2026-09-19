@@ -326,6 +326,28 @@ describe("applyReport: lab", () => {
   });
 });
 
+describe("applyReport: starts the income clock", () => {
+  it("sets income.since on the first report, so moneyPerHour reflects money earned since then", () => {
+    const m = createModel(0);
+    expect(m.income.since).toBe(0);
+
+    const t0 = 1000;
+    applyReport(m, batch("agent1", [{ t: "phish", host: "h1", money: 3600, cache: false }]), t0);
+    expect(m.income.since).toBe(t0);
+
+    const instability = { authenticationDurationMultiplier: 1, authenticationTimeoutChance: 0 };
+    const status = toStatus(m, DEFAULT_CONFIG, player, noAccess, instability, t0 + 3_600_000);
+    expect(status.income.moneyPerHour).toBe(3600);
+  });
+
+  it("does not reset the clock on later reports", () => {
+    const m = createModel(0);
+    applyReport(m, batch("agent1", [{ t: "phish", host: "h1", money: 100, cache: false }]), 1000);
+    applyReport(m, batch("agent1", [{ t: "phish", host: "h1", money: 100, cache: false }]), 5000);
+    expect(m.income.since).toBe(1000);
+  });
+});
+
 // === refreshFromDetails ===
 
 describe("refreshFromDetails", () => {
@@ -491,6 +513,61 @@ describe("stasisPriority", () => {
     picks = stasisPriority(m, DEFAULT_CONFIG, { stasisLimit: 1, access: "basic", labName: null }, 0);
     expect(picks).toEqual(["deeper"]);
   });
+
+  it("keeps a real state-\"anchor\" existing link unless a fresh candidate is >=2 rows deeper", () => {
+    // Unlike the fixture above, this uses the actual state a currently-linked
+    // host carries in production (applyReport/refreshFromDetails set "anchor"
+    // from m.stasisHosts membership) rather than "agent", so it exercises the
+    // real candidates-filter bug directly.
+    const m = createModel(0);
+    setCell(m, "oldAnchor", "anchor", { maxRam: 32, depth: 3 });
+    m.stasisHosts.push("oldAnchor");
+    const limits: Limits = { stasisLimit: 1, access: "basic", labName: null };
+
+    // A fresh candidate only 1 row deeper must not evict the anchor.
+    agentCell(m, "close", { maxRam: 32, depth: 4 });
+    m.edges.add(edgeKey("close", "darkweb"));
+    expect(stasisPriority(m, DEFAULT_CONFIG, limits, 0)).toEqual(["oldAnchor"]);
+
+    // A fresh candidate >=2 rows deeper does replace it.
+    m.edges.delete(edgeKey("close", "darkweb"));
+    agentCell(m, "far", { maxRam: 32, depth: 5 });
+    m.edges.add(edgeKey("far", "darkweb"));
+    expect(stasisPriority(m, DEFAULT_CONFIG, limits, 0)).toEqual(["far"]);
+  });
+
+  it("does not let one existing anchor's own reselection count as eviction evidence against another anchor", () => {
+    const m = createModel(0);
+    const limits: Limits = { stasisLimit: 2, access: "full", labName: "cru3l_l4byr1nth" }; // netDepth 12
+    setCell(m, "shallow", "anchor", { maxRam: 32, depth: 3 });
+    m.stasisHosts.push("shallow");
+    m.edges.add(edgeKey("shallow", "darkweb"));
+    // "deep" is itself an existing anchor, picked fresh again via the gap band.
+    setCell(m, "deep", "anchor", { maxRam: 32, depth: 10 });
+    m.stasisHosts.push("deep");
+
+    // Only 1 row deeper than "shallow" - must not evict it, even though "deep"
+    // (an existing anchor, >=2 rows deeper than "shallow") also shows up in
+    // the fresh slate for the unrelated gap-band slot.
+    agentCell(m, "newcomer", { maxRam: 32, depth: 4 });
+    m.edges.add(edgeKey("newcomer", "darkweb"));
+
+    const picks = stasisPriority(m, DEFAULT_CONFIG, limits, 0);
+    expect([...picks].sort()).toEqual(["deep", "shallow"]);
+  });
+
+  it("picks the deepest host from the band just past a crossed gap, not the band before it", () => {
+    const m = createModel(0);
+    // Admin at depth 9 proves gap row 8 has been crossed.
+    setCell(m, "pastGapAdmin", "admin", { depth: 9, difficulty: 9 });
+    // Sits in the OLD (wrong) band (0,8]; must not be picked.
+    agentCell(m, "beforeGap", { maxRam: 32, depth: 7 });
+    // Sits in the correct band (8,16]; must be picked.
+    agentCell(m, "afterGap", { maxRam: 32, depth: 12 });
+
+    const picks = stasisPriority(m, DEFAULT_CONFIG, { stasisLimit: 1, access: "full", labName: "m3rc1l3ss_l4byr1nth" }, 0);
+    expect(picks).toEqual(["afterGap"]);
+  });
 });
 
 // === computePolicy ===
@@ -577,6 +654,110 @@ describe("computePolicy", () => {
     policy = computePolicy(m, DEFAULT_CONFIG, player, { ...limits, stasisLimit: 0 }, 0);
     expect(policy.workers["host1"].stasis).toBe(false);
   });
+
+  it("gates harvest on player.karma meeting harvestKarmaFloor even when blockedRam > 0", () => {
+    const m = createModel(0);
+    agentCell(m, "host1", { maxRam: 32, blockedRam: 5 });
+    const cfg: DarknetConfig = { ...DEFAULT_CONFIG, harvestKarmaFloor: -50 };
+
+    let policy = computePolicy(m, cfg, { charisma: 50, karma: -100 }, noAccess, 0);
+    expect(policy.workers["host1"].harvest).toBe(false);
+
+    policy = computePolicy(m, cfg, { charisma: 50, karma: -50 }, noAccess, 0);
+    expect(policy.workers["host1"].harvest).toBe(true);
+  });
+
+  it("does not reserve stasis RAM when sizing phishThreads (dnet-stasis is one-shot and frees RAM on exit)", () => {
+    const m = createModel(0);
+    agentCell(m, "host1", { maxRam: 32 });
+    m.edges.add(edgeKey("host1", "darkweb"));
+    const cfg: DarknetConfig = { ...DEFAULT_CONFIG, phishMaxThreads: 1000 };
+    const limits: Limits = { stasisLimit: 1, access: "basic", labName: null };
+
+    const policy = computePolicy(m, cfg, player, limits, 0);
+    expect(policy.workers["host1"].stasis).toBe(true); // wants a fresh link this tick
+    // reserved = agent(6.25) only (no harvest: blockedRam 0, no cache; no charge/lab).
+    // free = 32 - 6.25 = 25.75; /3.6 = 7.15 -> 7. The buggy version also
+    // reserved stasis(13.6) here, giving free = 12.15 -> 3 threads.
+    expect(policy.workers["host1"].phishThreads).toBe(7);
+  });
+
+  describe("auto-storm gate", () => {
+    // netDepth 12 (cru3l_l4byr1nth) so the first gap row (8) is reachable and
+    // "stuck" can actually trip, unlike th3_l4byr1nth's netDepth of 7.
+    const stormLimits: Limits = { stasisLimit: 1, access: "full", labName: "cru3l_l4byr1nth" };
+
+    it("does not auto-arm, or livelock, when stuck but no real storm-seed host has reported", () => {
+      const m = createModel(0);
+      const cfg: DarknetConfig = { ...DEFAULT_CONFIG, storm: "auto", gapPatienceMs: 0 };
+      // A single stasis-linked anchor: it both trips "stuck" (an admin host at
+      // the gap edge) and is excluded from carrier selection (already
+      // stasis-linked), and its own fresh reselection satisfies "every
+      // desired stasis link is placed".
+      setCell(m, "anchor1", "anchor", { maxRam: 32, depth: 7 });
+      m.stasisHosts.push("anchor1");
+      m.edges.add(edgeKey("anchor1", "darkweb"));
+
+      let policy = computePolicy(m, cfg, player, stormLimits, 1000);
+      expect(policy.pause).toBe(false);
+      expect(m.stormPending).toBe(false);
+
+      // A second tick must not toggle pause on/off (no arm/resolve/re-arm loop).
+      policy = computePolicy(m, cfg, player, stormLimits, 2000);
+      expect(policy.pause).toBe(false);
+      expect(m.stormPending).toBe(false);
+    });
+
+    it("does not auto-arm when the desired stasis link is picked but not yet actually placed", () => {
+      const m = createModel(0);
+      const cfg: DarknetConfig = { ...DEFAULT_CONFIG, storm: "auto", gapPatienceMs: 0 };
+      // Qualifies as the fresh darkweb-adjacent pick (desired), but is NOT in
+      // m.stasisHosts yet (not actually placed). difficulty kept out of the
+      // carrier band [5,7] so it doesn't also become a migration target.
+      agentCell(m, "candidate1", { maxRam: 32, depth: 7, difficulty: 20 });
+      m.edges.add(edgeKey("candidate1", "darkweb"));
+      m.stormSeedHost = "seedHost";
+      agentCell(m, "seedHost", { maxRam: 32, difficulty: 20 });
+
+      const policy = computePolicy(m, cfg, player, stormLimits, 1000);
+      expect(policy.pause).toBe(false);
+      expect(m.stormPending).toBe(false);
+    });
+
+    it("auto-arms once stuck, a real seed exists, and every desired stasis link is placed, then fires once", () => {
+      const m = createModel(0);
+      const cfg: DarknetConfig = { ...DEFAULT_CONFIG, storm: "auto", gapPatienceMs: 0 };
+      setCell(m, "anchor1", "anchor", { maxRam: 32, depth: 7 });
+      m.stasisHosts.push("anchor1");
+      m.edges.add(edgeKey("anchor1", "darkweb"));
+      m.stormSeedHost = "seedHost";
+      agentCell(m, "seedHost", { maxRam: 32, difficulty: 20 });
+
+      let policy = computePolicy(m, cfg, player, stormLimits, 1000);
+      expect(m.stormPending).toBe(true);
+      expect(policy.pause).toBe(true);
+      expect(policy.workers["seedHost"].storm).toBe(false);
+
+      policy = computePolicy(m, cfg, player, stormLimits, 1000 + 29_999);
+      expect(policy.pause).toBe(true);
+
+      policy = computePolicy(m, cfg, player, stormLimits, 1000 + 30_000);
+      expect(policy.pause).toBe(false);
+      expect(policy.workers["seedHost"].storm).toBe(true);
+      expect(m.stormPending).toBe(false);
+    });
+
+    it("does not arm the pause for a manually-requested storm while no seed host exists", () => {
+      const m = createModel(0);
+      const cfg: DarknetConfig = { ...DEFAULT_CONFIG, storm: "manual" };
+      m.stormPending = true; // e.g. requested via the control port
+      expect(m.stormSeedHost).toBeNull();
+
+      const policy = computePolicy(m, cfg, player, noAccess, 0);
+      expect(policy.pause).toBe(false);
+      expect(m.stormPending).toBe(true); // left pending until a seed appears
+    });
+  });
 });
 
 // === toStatus ===
@@ -628,5 +809,22 @@ describe("toStatus", () => {
     const m = createModel(0);
     expect(toStatus(m, DEFAULT_CONFIG, player, noAccess, instability, 0).netDepth).toBe(5);
     expect(toStatus(m, DEFAULT_CONFIG, player, fullAccess, instability, 0).netDepth).toBe(7);
+  });
+
+  it("augPending is false once the lab clears but before the aug is awarded, true once it is (awaiting install)", () => {
+    const m = createModel(0);
+    m.lab = { name: "th3_l4byr1nth", runner: null, grid: null, moves: 0, cleared: false, password: null };
+
+    // The walker finishes the maze: cleared flips true, but nothing has been
+    // awarded/opened yet.
+    applyReport(m, batch("walker1", [{ t: "lab", host: "walker1", grid: ["#"], pos: [1, 1], moves: 30, cleared: true }]), 1);
+    let status = toStatus(m, DEFAULT_CONFIG, player, fullAccess, instability, 1);
+    expect(status.lab?.cleared).toBe(true);
+    expect(status.lab?.augPending).toBe(false);
+
+    // The great-work cache gets opened: the aug is now awarded and awaits install.
+    applyReport(m, batch("agent1", [{ t: "cache", host: "th3_l4byr1nth", file: "the_great_work.cache", message: "", karmaLoss: 0 }]), 2);
+    status = toStatus(m, DEFAULT_CONFIG, player, fullAccess, instability, 2);
+    expect(status.lab?.augPending).toBe(true);
   });
 });

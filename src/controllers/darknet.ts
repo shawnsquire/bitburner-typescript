@@ -215,6 +215,11 @@ export function applyReport(m: DarknetModel, batch: ReportBatch, now: number): {
   const contracts: { host: string; file: string }[] = [];
   let vaultChanged = false;
 
+  // Start the income clock on the very first report this run ever folds in;
+  // `toStatus` divides by `now - m.income.since`, so leaving it at its
+  // zero-value default means moneyPerHour is always 0.
+  if (m.income.since === 0) m.income.since = now;
+
   // Every batch proves its origin host currently carries a live agent,
   // regardless of what (if anything) this tick's events say about it.
   const fromCell = ensureCell(m, batch.from);
@@ -487,7 +492,10 @@ export function stasisPriority(m: DarknetModel, config: DarknetConfig, limits: L
     return m.manualStasis.slice(0, limits.stasisLimit);
   }
 
-  const candidates = Object.values(m.cells).filter((c) => c.state === "agent" && c.details && stasisFits(c));
+  // A currently-linked host is "anchor", not "agent" (applyReport/
+  // refreshFromDetails derive that from `m.stasisHosts` membership). It must
+  // still be eligible to hold its own link, so both states compete here.
+  const candidates = Object.values(m.cells).filter((c) => (c.state === "agent" || c.state === "anchor") && c.details && stasisFits(c));
   const used = new Set<string>();
   const picks: string[] = [];
 
@@ -505,7 +513,9 @@ export function stasisPriority(m: DarknetModel, config: DarknetConfig, limits: L
   for (let g = 8; g < netDepth; g += 8) {
     const pastGap = Object.values(m.cells).some((c) => c.details && isLiveAdmin(c.state) && c.details.depth > g);
     if (!pastGap) continue;
-    const band = candidates.filter((c) => !used.has(c.host) && c.details!.depth > g - 8 && c.details!.depth <= g);
+    // The band just past this crossed gap (the newly-won foothold), not the
+    // band before it.
+    const band = candidates.filter((c) => !used.has(c.host) && c.details!.depth > g && c.details!.depth <= g + 8);
     const deepest = pickDeepest(band);
     if (deepest) {
       picks.push(deepest.host);
@@ -522,18 +532,36 @@ export function stasisPriority(m: DarknetModel, config: DarknetConfig, limits: L
     }
   }
 
-  const final: string[] = picks.slice(0, limits.stasisLimit);
+  // The fresh slate this pass would choose, capped to budget. The three
+  // priority bands (lab-adjacent, per-gap, darkweb-fallback) don't carry
+  // enough identity to say which slot an existing anchor originally filled,
+  // so as a simplification each anchor is compared against the whole fresh
+  // slate rather than just "its" slot: any entry >=2 rows deeper can outbid
+  // it. Design doc sections 4/6 don't settle this more precisely.
+  const freshSlate = picks.slice(0, limits.stasisLimit);
 
-  // Hysteresis: keep an existing, still-online link that the fresh pass
-  // didn't reselect, unless some fresh pick is >=2 rows deeper than it.
+  // Hysteresis: an existing, still-online link is kept unless a fresh
+  // candidate is two or more rows deeper. This decision is made for every
+  // current anchor before any budget slicing happens below, so simply being
+  // "full" from fresh picks alone can never evict an anchor that doesn't
+  // meet the >=2-rows bar. Only a genuinely new pick counts as "a candidate"
+  // here — another existing anchor reappearing in the fresh slate (it's
+  // still a valid candidate for its own slot) must not count as evidence
+  // against a *different* anchor; otherwise two anchors could evict each
+  // other in a single pass.
+  const kept: string[] = [];
   for (const anchor of m.stasisHosts) {
-    if (final.length >= limits.stasisLimit) break;
-    if (final.includes(anchor)) continue;
     const anchorCell = m.cells[anchor];
-    if (!anchorCell || anchorCell.state === "offline") continue;
+    if (!anchorCell || anchorCell.state === "offline") continue; // moved: host went offline
     const anchorDepth = anchorCell.details?.depth ?? 0;
-    const replacedByDeeper = picks.some((p) => (m.cells[p]?.details?.depth ?? 0) >= anchorDepth + 2);
-    if (!replacedByDeeper) final.push(anchor);
+    const replacedByDeeper = freshSlate.some((p) => !m.stasisHosts.includes(p) && (m.cells[p]?.details?.depth ?? 0) >= anchorDepth + 2);
+    if (!replacedByDeeper) kept.push(anchor);
+  }
+
+  const final: string[] = [...kept];
+  for (const p of freshSlate) {
+    if (final.length >= limits.stasisLimit) break;
+    if (!final.includes(p)) final.push(p);
   }
 
   return final.slice(0, limits.stasisLimit);
@@ -615,12 +643,22 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
   const stasisTargets = stasisPriority(m, config, limits, now);
 
   const stuck = m.stuckSince !== null && now - m.stuckSince >= config.gapPatienceMs;
-  if (config.storm === "auto" && !m.stormPending && stuck && migrationTargets.length === 0 && limits.stasisLimit > 0 && stasisTargets.length >= limits.stasisLimit) {
+  // "Every stasis link is placed" (design doc section 6) means every
+  // currently *desired* host is actually present in `m.stasisHosts` — not
+  // that the desired count has reached the budget limit. A net with fewer
+  // qualifying hosts than `stasisLimit` shouldn't block storm forever, and a
+  // link can be desired for several ticks before an agent finishes setting
+  // it, which is exactly the case this must not race past.
+  const desiredStasisPlaced = stasisTargets.every((h) => m.stasisHosts.includes(h));
+  if (config.storm === "auto" && !m.stormPending && stuck && migrationTargets.length === 0 && desiredStasisPlaced && m.stormSeedHost !== null) {
     m.stormPending = true;
   }
 
   let stormFiring = false;
-  if (m.stormPending) {
+  // Arming the pause (and firing the storm once it elapses) both require a
+  // real seed host. Without one, `stormPending` stays true but inert rather
+  // than cycling pause on/off every tick with nothing to fire at.
+  if (m.stormPending && m.stormSeedHost !== null) {
     if (m.pauseUntil === 0) {
       m.pauseUntil = now + 30_000;
     } else if (now >= m.pauseUntil) {
@@ -642,7 +680,7 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
     anyAgentAlive = true;
 
     const maxRam = cell.details?.maxRam ?? 0;
-    const harvest = config.harvest && ((cell.details?.blockedRam ?? 0) > 0 || cell.cacheSeen);
+    const harvest = config.harvest && ((cell.details?.blockedRam ?? 0) > 0 || cell.cacheSeen) && player.karma >= config.harvestKarmaFloor;
 
     const wantsLink = stasisTargets.includes(cell.host);
     const hasLink = m.stasisHosts.includes(cell.host);
@@ -660,9 +698,11 @@ export function computePolicy(m: DarknetModel, config: DarknetConfig, player: Pl
 
     const lab = config.lab && labHost === cell.host && player.charisma >= labCha && !(m.lab?.cleared ?? false);
 
+    // dnet-stasis.js is one-shot: it sets or clears the link then exits,
+    // freeing its 13.6 GB immediately, so it must not be subtracted from the
+    // ongoing budget phishThreads sizes against.
     let reserved = DNET_WORKER_RAM.agent;
     if (harvest) reserved += DNET_WORKER_RAM.harvest;
-    if (stasis === true || (stasis === null && hasLink)) reserved += DNET_WORKER_RAM.stasis;
     if (charge) reserved += DNET_WORKER_RAM.charge;
     if (lab) reserved += DNET_WORKER_RAM.lab;
 
@@ -787,7 +827,11 @@ export function toStatus(
           runner: m.lab.runner,
           cha: limits.labName ? LAB_HOSTS[limits.labName as keyof typeof LAB_HOSTS]?.cha ?? 0 : 0,
           cleared: m.lab.cleared,
-          augPending: m.lab.cleared && m.income.augsAwarded === 0,
+          // Repo convention (`AugmentsStatus.pendingAugs`): "acquired but not
+          // installed." An aug is acquired once its great-work cache is
+          // opened (`augsAwarded` bumped by the "cache" event), not merely
+          // once the lab is cleared and waiting to be opened.
+          augPending: m.lab.cleared && m.income.augsAwarded > 0,
           moves: m.lab.moves,
         }
       : null,
